@@ -173,7 +173,122 @@ class ImageProcessor {
         }
 
         ctx.putImageData(newImageData, 0, 0);
-        return { canvas, colorMap };
+
+        // Smooth regions to eliminate noise
+        const smoothedColorMap = this.smoothRegions(colorMap, this.width, this.height);
+
+        return { canvas, colorMap: smoothedColorMap };
+    }
+
+    // Smooth regions by merging small regions with their largest neighbor
+    smoothRegions(colorMap, width, height, minSize = 100) {
+        const result = new Uint8Array(colorMap);
+        let changed = true;
+        let iterations = 0;
+        const maxIterations = 10;
+
+        while (changed && iterations < maxIterations) {
+            changed = false;
+            iterations++;
+
+            // Find all regions
+            const visited = new Uint8Array(width * height);
+            const regions = [];
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = y * width + x;
+                    if (visited[idx]) continue;
+
+                    const colorIndex = result[idx];
+                    const region = this.floodFillRegion(result, visited, x, y, width, height, colorIndex);
+
+                    if (region.pixels.length > 0) {
+                        regions.push({
+                            colorIndex,
+                            size: region.pixels.length,
+                            pixels: region.pixels,
+                            neighbors: new Set()
+                        });
+                    }
+                }
+            }
+
+            // For each small region, find its neighbors
+            for (let region of regions) {
+                if (region.size >= minSize) continue;
+
+                // Find all neighboring colors
+                for (let pixelIdx of region.pixels) {
+                    const x = pixelIdx % width;
+                    const y = Math.floor(pixelIdx / width);
+
+                    // Check 4 neighbors
+                    const neighbors = [
+                        [x - 1, y], [x + 1, y],
+                        [x, y - 1], [x, y + 1]
+                    ];
+
+                    for (let [nx, ny] of neighbors) {
+                        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                        const nIdx = ny * width + nx;
+                        const neighborColor = result[nIdx];
+                        if (neighborColor !== region.colorIndex) {
+                            region.neighbors.add(neighborColor);
+                        }
+                    }
+                }
+
+                // Find the largest neighboring region
+                if (region.neighbors.size > 0) {
+                    let largestNeighborSize = 0;
+                    let largestNeighborColor = null;
+
+                    for (let neighborColor of region.neighbors) {
+                        const neighborRegion = regions.find(r => r.colorIndex === neighborColor);
+                        if (neighborRegion && neighborRegion.size > largestNeighborSize) {
+                            largestNeighborSize = neighborRegion.size;
+                            largestNeighborColor = neighborColor;
+                        }
+                    }
+
+                    // Merge this region with largest neighbor
+                    if (largestNeighborColor !== null) {
+                        for (let pixelIdx of region.pixels) {
+                            result[pixelIdx] = largestNeighborColor;
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    floodFillRegion(colorMap, visited, startX, startY, width, height, targetColor) {
+        const pixels = [];
+        const stack = [[startX, startY]];
+
+        while (stack.length > 0) {
+            const [x, y] = stack.pop();
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+            const idx = y * width + x;
+            if (visited[idx]) continue;
+            if (colorMap[idx] !== targetColor) continue;
+
+            visited[idx] = 1;
+            pixels.push(idx);
+
+            // Add 4-connected neighbors
+            stack.push([x + 1, y]);
+            stack.push([x - 1, y]);
+            stack.push([x, y + 1]);
+            stack.push([x, y - 1]);
+        }
+
+        return { pixels };
     }
 
     // Gaussian blur for noise reduction
