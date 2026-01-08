@@ -1,0 +1,336 @@
+// Visualization modes: Original, Paint-by-Numbers, Line Drawing
+
+class Visualizer {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.mode = 'original';
+        this.imageProcessor = null;
+        this.colorManager = null;
+        this.quantizedData = null;
+        this.parameters = {
+            numberSize: 16,
+            lineWidth: 2,
+            detailLevel: 5,
+            minRegionSize: 50
+        };
+    }
+
+    setImageProcessor(processor) {
+        this.imageProcessor = processor;
+    }
+
+    setColorManager(manager) {
+        this.colorManager = manager;
+    }
+
+    setMode(mode) {
+        this.mode = mode;
+    }
+
+    setParameters(params) {
+        this.parameters = { ...this.parameters, ...params };
+    }
+
+    render() {
+        if (!this.imageProcessor || !this.imageProcessor.originalImage) return;
+
+        switch (this.mode) {
+            case 'original':
+                this.renderOriginal();
+                break;
+            case 'paintByNumbers':
+                this.renderPaintByNumbers();
+                break;
+            case 'lineDrawing':
+                this.renderLineDrawing();
+                break;
+        }
+    }
+
+    renderOriginal() {
+        const img = this.imageProcessor.originalImage;
+        this.canvas.width = img.width;
+        this.canvas.height = img.height;
+        this.ctx.drawImage(img, 0, 0);
+    }
+
+    renderPaintByNumbers() {
+        if (!this.colorManager || this.colorManager.getColorCount() === 0) {
+            this.renderOriginal();
+            return;
+        }
+
+        const colors = this.colorManager.getColors();
+        const result = this.imageProcessor.quantizeImage(colors);
+
+        if (!result) return;
+
+        this.quantizedData = result;
+        const { canvas: quantizedCanvas, colorMap } = result;
+
+        this.canvas.width = quantizedCanvas.width;
+        this.canvas.height = quantizedCanvas.height;
+
+        // Draw quantized image
+        this.ctx.drawImage(quantizedCanvas, 0, 0);
+
+        // Apply preview dimming if active
+        if (this.colorManager.isPreviewActive()) {
+            this.applyPreviewEffect(colorMap);
+        }
+
+        // Draw contours
+        this.drawContours(colorMap, colors);
+
+        // Draw numbers
+        this.drawNumbers(colorMap, colors);
+    }
+
+    applyPreviewEffect(colorMap) {
+        const previewIndex = this.colorManager.getPreviewColorIndex();
+        const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        const data = imageData.data;
+
+        for (let i = 0; i < colorMap.length; i++) {
+            if (colorMap[i] !== previewIndex) {
+                const idx = i * 4;
+                // Dim non-preview colors
+                data[idx] = data[idx] * 0.3;
+                data[idx + 1] = data[idx + 1] * 0.3;
+                data[idx + 2] = data[idx + 2] * 0.3;
+            }
+        }
+
+        this.ctx.putImageData(imageData, 0, 0);
+    }
+
+    drawContours(colorMap, colors) {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = this.parameters.lineWidth;
+
+        // Draw borders between different colored regions
+        for (let y = 0; y < height - 1; y++) {
+            for (let x = 0; x < width - 1; x++) {
+                const idx = y * width + x;
+                const currentColor = colorMap[idx];
+
+                // Check right neighbor
+                const rightColor = colorMap[idx + 1];
+                if (currentColor !== rightColor) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x + 1, y);
+                    this.ctx.lineTo(x + 1, y + 1);
+                    this.ctx.stroke();
+                }
+
+                // Check bottom neighbor
+                const bottomColor = colorMap[idx + width];
+                if (currentColor !== bottomColor) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y + 1);
+                    this.ctx.lineTo(x + 1, y + 1);
+                    this.ctx.stroke();
+                }
+            }
+        }
+    }
+
+    drawNumbers(colorMap, colors) {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+
+        // Find regions and their centers
+        const regions = this.findRegions(colorMap, width, height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        for (let region of regions) {
+            if (region.size < this.parameters.minRegionSize) continue;
+
+            const color = colors[region.colorIndex];
+            if (!color) continue;
+
+            // Calculate font size based on region size
+            const fontSize = Math.max(8, Math.min(this.parameters.numberSize, Math.sqrt(region.size) * 0.5));
+            this.ctx.font = `bold ${fontSize}px Arial`;
+
+            // Use contrasting color for text
+            this.ctx.fillStyle = getContrastColor(color.hex);
+
+            // Draw number at region center
+            this.ctx.fillText(color.number.toString(), region.centerX, region.centerY);
+        }
+    }
+
+    findRegions(colorMap, width, height) {
+        const visited = new Uint8Array(width * height);
+        const regions = [];
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = y * width + x;
+                if (visited[idx]) continue;
+
+                const colorIndex = colorMap[idx];
+                const region = this.floodFill(colorMap, visited, x, y, width, height, colorIndex);
+
+                if (region.size > 0) {
+                    regions.push(region);
+                }
+            }
+        }
+
+        return regions;
+    }
+
+    floodFill(colorMap, visited, startX, startY, width, height, targetColor) {
+        const stack = [{ x: startX, y: startY }];
+        const region = {
+            colorIndex: targetColor,
+            size: 0,
+            centerX: 0,
+            centerY: 0,
+            sumX: 0,
+            sumY: 0
+        };
+
+        while (stack.length > 0) {
+            const { x, y } = stack.pop();
+
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+            const idx = y * width + x;
+
+            if (visited[idx] || colorMap[idx] !== targetColor) continue;
+
+            visited[idx] = 1;
+            region.size++;
+            region.sumX += x;
+            region.sumY += y;
+
+            // Add neighbors
+            stack.push({ x: x + 1, y });
+            stack.push({ x: x - 1, y });
+            stack.push({ x, y: y + 1 });
+            stack.push({ x, y: y - 1 });
+        }
+
+        if (region.size > 0) {
+            region.centerX = Math.round(region.sumX / region.size);
+            region.centerY = Math.round(region.sumY / region.size);
+        }
+
+        return region;
+    }
+
+    renderLineDrawing() {
+        const threshold = 100 - (this.parameters.detailLevel * 10);
+        const edgeCanvas = this.imageProcessor.detectEdges(threshold);
+
+        if (!edgeCanvas) {
+            this.renderOriginal();
+            return;
+        }
+
+        this.canvas.width = edgeCanvas.width;
+        this.canvas.height = edgeCanvas.height;
+
+        // Draw white background
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw edges with custom line width
+        const imageData = this.ctx.createImageData(this.canvas.width, this.canvas.height);
+        const edgeCtx = edgeCanvas.getContext('2d');
+        const edgeData = edgeCtx.getImageData(0, 0, edgeCanvas.width, edgeCanvas.height);
+
+        // Apply line width by dilating the edges
+        const lineWidth = this.parameters.lineWidth;
+        for (let y = 0; y < this.canvas.height; y++) {
+            for (let x = 0; x < this.canvas.width; x++) {
+                const idx = (y * this.canvas.width + x) * 4;
+
+                if (edgeData.data[idx] > 0) {
+                    // Draw thicker line
+                    for (let dy = -lineWidth; dy <= lineWidth; dy++) {
+                        for (let dx = -lineWidth; dx <= lineWidth; dx++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+
+                            if (nx >= 0 && nx < this.canvas.width && ny >= 0 && ny < this.canvas.height) {
+                                const nidx = (ny * this.canvas.width + nx) * 4;
+                                imageData.data[nidx] = 0;
+                                imageData.data[nidx + 1] = 0;
+                                imageData.data[nidx + 2] = 0;
+                                imageData.data[nidx + 3] = 255;
+                            }
+                        }
+                    }
+                } else if (imageData.data[idx + 3] === 0) {
+                    // Set white background
+                    imageData.data[idx] = 255;
+                    imageData.data[idx + 1] = 255;
+                    imageData.data[idx + 2] = 255;
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+        }
+
+        this.ctx.putImageData(imageData, 0, 0);
+    }
+
+    getCanvas() {
+        return this.canvas;
+    }
+
+    exportSVG() {
+        if (this.mode !== 'paintByNumbers' || !this.quantizedData) {
+            alert('SVG export is alleen beschikbaar in Paint-by-Numbers mode');
+            return null;
+        }
+
+        const { colorMap } = this.quantizedData;
+        const colors = this.colorManager.getColors();
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+
+        let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+<rect width="${width}" height="${height}" fill="white"/>
+`;
+
+        // Group pixels by color
+        const colorGroups = {};
+        for (let i = 0; i < colorMap.length; i++) {
+            const colorIndex = colorMap[i];
+            if (!colorGroups[colorIndex]) {
+                colorGroups[colorIndex] = [];
+            }
+            colorGroups[colorIndex].push(i);
+        }
+
+        // Draw each color group
+        for (let colorIndex in colorGroups) {
+            const color = colors[colorIndex];
+            if (!color) continue;
+
+            svg += `<g fill="${color.hex}">\n`;
+
+            for (let pixelIdx of colorGroups[colorIndex]) {
+                const x = pixelIdx % width;
+                const y = Math.floor(pixelIdx / width);
+                svg += `  <rect x="${x}" y="${y}" width="1" height="1"/>\n`;
+            }
+
+            svg += `</g>\n`;
+        }
+
+        svg += `</svg>`;
+        return svg;
+    }
+}
