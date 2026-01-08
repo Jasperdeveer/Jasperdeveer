@@ -143,7 +143,7 @@ class Visualizer {
         const width = this.canvas.width;
         const height = this.canvas.height;
 
-        // Find regions and their centers
+        // Find regions and their centers using improved algorithm
         const regions = this.findRegions(colorMap, width, height);
 
         this.ctx.textAlign = 'center';
@@ -155,6 +155,9 @@ class Visualizer {
             const color = colors[region.colorIndex];
             if (!color) continue;
 
+            // Find best center point (furthest from edges)
+            const centerPoint = this.findOptimalCenter(region, colorMap, width, height);
+
             // Calculate font size based on region size
             const fontSize = Math.max(8, Math.min(this.parameters.numberSize, Math.sqrt(region.size) * 0.5));
             this.ctx.font = `bold ${fontSize}px Arial`;
@@ -162,9 +165,75 @@ class Visualizer {
             // Use contrasting color for text
             this.ctx.fillStyle = getContrastColor(color.hex);
 
-            // Draw number at region center
-            this.ctx.fillText(color.number.toString(), region.centerX, region.centerY);
+            // Draw number at optimal center
+            this.ctx.fillText(color.number.toString(), centerPoint.x, centerPoint.y);
         }
+    }
+
+    findOptimalCenter(region, colorMap, width, height) {
+        // If region is small, use geometric center
+        if (region.size < 100) {
+            return { x: region.centerX, y: region.centerY };
+        }
+
+        // For larger regions, find point furthest from edges (distance transform approximation)
+        const pixels = [];
+
+        // Collect all pixels in this region
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = y * width + x;
+                if (colorMap[idx] === region.colorIndex) {
+                    pixels.push({ x, y });
+                }
+            }
+        }
+
+        // Sample a subset if too many pixels (performance)
+        const samplePixels = pixels.length > 500 ?
+            pixels.filter((_, i) => i % Math.ceil(pixels.length / 500) === 0) :
+            pixels;
+
+        let bestPixel = { x: region.centerX, y: region.centerY };
+        let maxMinDist = 0;
+
+        // Find pixel with maximum minimum distance to edges
+        for (let pixel of samplePixels) {
+            let minDistToEdge = Infinity;
+
+            // Check 8 directions for edge distance
+            const directions = [
+                { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+                { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+                { dx: 1, dy: 1 }, { dx: -1, dy: -1 },
+                { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
+            ];
+
+            for (let dir of directions) {
+                let dist = 0;
+                let cx = pixel.x;
+                let cy = pixel.y;
+
+                // Ray cast until we hit a different color
+                while (cx >= 0 && cx < width && cy >= 0 && cy < height) {
+                    const idx = cy * width + cx;
+                    if (colorMap[idx] !== region.colorIndex) break;
+
+                    cx += dir.dx;
+                    cy += dir.dy;
+                    dist++;
+                }
+
+                minDistToEdge = Math.min(minDistToEdge, dist);
+            }
+
+            if (minDistToEdge > maxMinDist) {
+                maxMinDist = minDistToEdge;
+                bestPixel = pixel;
+            }
+        }
+
+        return bestPixel;
     }
 
     findRegions(colorMap, width, height) {
@@ -229,14 +298,39 @@ class Visualizer {
     }
 
     renderLineDrawing() {
-        // Use quantized color map if available for sharper edges
-        const useQuantized = this.colorManager && this.colorManager.getColorCount() > 0 && this.quantizedData;
-        const colorMap = useQuantized ? this.quantizedData.colorMap : null;
+        // ALWAYS use quantized version if colors are detected (removes noise/JPG artifacts)
+        if (this.colorManager && this.colorManager.getColorCount() > 0) {
+            // First ensure we have quantized data
+            if (!this.quantizedData) {
+                const colors = this.colorManager.getColors();
+                this.quantizedData = this.imageProcessor.quantizeImage(colors);
+            }
 
+            if (this.quantizedData) {
+                const { colorMap } = this.quantizedData;
+
+                // Use quantized color map for crystal clear edges
+                const edgeCanvas = this.imageProcessor.detectEdges(
+                    this.parameters.detailLevel,
+                    true,  // Always use quantized
+                    colorMap
+                );
+
+                if (edgeCanvas) {
+                    this.canvas.width = edgeCanvas.width;
+                    this.canvas.height = edgeCanvas.height;
+                    this.ctx.drawImage(edgeCanvas, 0, 0);
+                    this.applyLineDilation();
+                    return;
+                }
+            }
+        }
+
+        // Fallback to original if no colors detected
         const edgeCanvas = this.imageProcessor.detectEdges(
             this.parameters.detailLevel,
-            useQuantized,
-            colorMap
+            false,
+            null
         );
 
         if (!edgeCanvas) {
@@ -246,10 +340,11 @@ class Visualizer {
 
         this.canvas.width = edgeCanvas.width;
         this.canvas.height = edgeCanvas.height;
-
-        // Draw the edge detection result
         this.ctx.drawImage(edgeCanvas, 0, 0);
+        this.applyLineDilation();
+    }
 
+    applyLineDilation() {
         // Apply line width if needed (dilation for thicker lines)
         if (this.parameters.lineWidth > 1) {
             const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
