@@ -131,7 +131,10 @@ class PaintByNumbersApp {
     async handleImageUpload(file) {
         if (!file) return;
 
+        showLoading('Afbeelding laden...');
+
         try {
+            updateLoadingStep('Afbeelding inlezen...');
             const img = await this.imageProcessor.loadImage(file);
 
             // Show preview
@@ -139,25 +142,41 @@ class PaintByNumbersApp {
             preview.innerHTML = `<img src="${img.src}" alt="Preview">`;
 
             // Auto-detect colors
-            this.detectColors();
+            await this.detectColors();
         } catch (error) {
             console.error('Error loading image:', error);
+            hideLoading();
             alert('Fout bij het laden van de afbeelding');
         }
     }
 
-    detectColors() {
-        const numColors = parseInt(document.getElementById('colorCount').value);
-        const colors = this.imageProcessor.detectColors(numColors);
+    async detectColors() {
+        showLoading('Kleuren analyseren...');
 
-        if (colors.length > 0) {
-            this.colorManager.setColors(colors);
-            this.updateColorPalette();
-            this.render();
+        try {
+            const numColors = parseInt(document.getElementById('colorCount').value);
+
+            updateLoadingStep(`K-means clustering voor ${numColors} kleuren...`);
+
+            // Use setTimeout to allow UI to update
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const colors = this.imageProcessor.detectColors(numColors);
+
+            if (colors.length > 0) {
+                updateLoadingStep('Kleurenpalet opslaan...');
+                this.colorManager.setColors(colors);
+                this.updateColorPalette();
+
+                updateLoadingStep('Visualisatie genereren...');
+                await this.render();
+            }
+        } finally {
+            hideLoading();
         }
     }
 
-    setMode(mode) {
+    async setMode(mode) {
         this.currentMode = mode;
         this.visualizer.setMode(mode);
 
@@ -167,22 +186,57 @@ class PaintByNumbersApp {
         });
         document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
 
-        this.render();
+        await this.render();
     }
 
-    render() {
-        this.visualizer.render();
+    async render() {
+        showLoading('Visualisatie genereren...');
 
-        // Calculate region stats for paint-by-numbers mode
-        if (this.currentMode === 'paintByNumbers' && this.visualizer.quantizedData) {
-            const { colorMap } = this.visualizer.quantizedData;
-            this.regionStats = this.imageProcessor.calculateRegionStats(
-                colorMap,
-                this.colorManager.getColors()
-            );
+        try {
+            // Update step based on mode
+            if (this.currentMode === 'paintByNumbers') {
+                updateLoadingStep('Afbeelding quantiseren naar kleurenpalet...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                this.visualizer.render();
+
+                updateLoadingStep('Contouren tekenen...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                updateLoadingStep('Nummers plaatsen in kleurvlakken...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+            } else if (this.currentMode === 'lineDrawing') {
+                updateLoadingStep('Afbeelding quantiseren...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                updateLoadingStep('Canny edge detection uitvoeren...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                this.visualizer.render();
+
+                updateLoadingStep('Lijnen verfijnen...');
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+            } else {
+                this.visualizer.render();
+            }
+
+            // Calculate region stats for paint-by-numbers mode
+            if (this.currentMode === 'paintByNumbers' && this.visualizer.quantizedData) {
+                updateLoadingStep('Statistieken berekenen...');
+                const { colorMap } = this.visualizer.quantizedData;
+                this.regionStats = this.imageProcessor.calculateRegionStats(
+                    colorMap,
+                    this.colorManager.getColors()
+                );
+            }
+
+            updateLoadingStep('Legenda updaten...');
+            this.updateLegend();
+        } finally {
+            hideLoading();
         }
-
-        this.updateLegend();
     }
 
     updateColorPalette() {
@@ -315,24 +369,44 @@ class PaintByNumbersApp {
     }
 
     async exportSVG() {
-        const svg = this.visualizer.exportSVG();
-        if (svg) {
-            downloadFile(svg, 'paint-by-numbers.svg', 'image/svg+xml');
+        showLoading('SVG exporteren...');
+        try {
+            updateLoadingStep('SVG genereren...');
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const svg = this.visualizer.exportSVG();
+            if (svg) {
+                updateLoadingStep('Bestand downloaden...');
+                downloadFile(svg, 'paint-by-numbers.svg', 'image/svg+xml');
+            }
+        } finally {
+            hideLoading();
         }
     }
 
     async exportPNG() {
-        const canvas = this.visualizer.getCanvas();
-        canvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'paint-by-numbers.png';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        });
+        showLoading('PNG exporteren...');
+        try {
+            updateLoadingStep('Afbeelding converteren...');
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const canvas = this.visualizer.getCanvas();
+            canvas.toBlob((blob) => {
+                updateLoadingStep('Bestand downloaden...');
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'paint-by-numbers.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                hideLoading();
+            });
+        } catch (error) {
+            hideLoading();
+            throw error;
+        }
     }
 }
 

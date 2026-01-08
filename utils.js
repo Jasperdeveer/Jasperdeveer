@@ -103,3 +103,40 @@ function canvasToBlob(canvas) {
 function deepClone(obj) {
     return JSON.parse(JSON.stringify(obj));
 }
+
+// Loading indicator functions
+function showLoading(step = 'Bezig...') {
+    const overlay = document.getElementById('loadingOverlay');
+    const stepElement = document.getElementById('loadingStep');
+    if (overlay) {
+        overlay.classList.add('active');
+        if (stepElement) {
+            stepElement.textContent = step;
+        }
+    }
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
+function updateLoadingStep(step) {
+    const stepElement = document.getElementById('loadingStep');
+    if (stepElement) {
+        stepElement.textContent = step;
+    }
+}
+
+// Async wrapper with loading indicator
+async function withLoading(asyncFunc, initialStep = 'Bezig...') {
+    showLoading(initialStep);
+    try {
+        const result = await asyncFunc();
+        return result;
+    } finally {
+        hideLoading();
+    }
+}
