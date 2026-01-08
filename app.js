@@ -19,6 +19,8 @@ class PaintByNumbersApp {
         this.currentMode = 'original';
         this.zoomLevel = 1;
         this.regionStats = null;
+        this.isFullscreen = false;
+        this.modes = ['original', 'paintByNumbers', 'lineDrawing'];
 
         // Initialize UI
         this.initializeEventListeners();

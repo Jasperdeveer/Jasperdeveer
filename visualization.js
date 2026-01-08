@@ -298,7 +298,7 @@ class Visualizer {
     }
 
     renderLineDrawing() {
-        // ALWAYS use quantized version if colors are detected (removes noise/JPG artifacts)
+        // Use direct boundary detection from quantized image for noise-free lines
         if (this.colorManager && this.colorManager.getColorCount() > 0) {
             // First ensure we have quantized data
             if (!this.quantizedData) {
@@ -307,26 +307,27 @@ class Visualizer {
             }
 
             if (this.quantizedData) {
-                const { colorMap } = this.quantizedData;
+                const { canvas: quantizedCanvas, colorMap } = this.quantizedData;
+                const colors = this.colorManager.getColors();
 
-                // Use quantized color map for crystal clear edges
-                const edgeCanvas = this.imageProcessor.detectEdges(
-                    this.parameters.detailLevel,
-                    true,  // Always use quantized
-                    colorMap
-                );
+                // Set canvas size
+                this.canvas.width = quantizedCanvas.width;
+                this.canvas.height = quantizedCanvas.height;
 
-                if (edgeCanvas) {
-                    this.canvas.width = edgeCanvas.width;
-                    this.canvas.height = edgeCanvas.height;
-                    this.ctx.drawImage(edgeCanvas, 0, 0);
-                    this.applyLineDilation();
-                    return;
-                }
+                // Fill with white background
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Draw clean contour lines directly from color boundaries
+                this.drawContours(colorMap, colors);
+
+                // Draw numbers on top of line drawing
+                this.drawNumbers(colorMap, colors);
+                return;
             }
         }
 
-        // Fallback to original if no colors detected
+        // Fallback: use edge detection if no colors detected
         const edgeCanvas = this.imageProcessor.detectEdges(
             this.parameters.detailLevel,
             false,
