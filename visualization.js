@@ -229,8 +229,15 @@ class Visualizer {
     }
 
     renderLineDrawing() {
-        const threshold = 100 - (this.parameters.detailLevel * 10);
-        const edgeCanvas = this.imageProcessor.detectEdges(threshold);
+        // Use quantized color map if available for sharper edges
+        const useQuantized = this.colorManager && this.colorManager.getColorCount() > 0 && this.quantizedData;
+        const colorMap = useQuantized ? this.quantizedData.colorMap : null;
+
+        const edgeCanvas = this.imageProcessor.detectEdges(
+            this.parameters.detailLevel,
+            useQuantized,
+            colorMap
+        );
 
         if (!edgeCanvas) {
             this.renderOriginal();
@@ -240,48 +247,45 @@ class Visualizer {
         this.canvas.width = edgeCanvas.width;
         this.canvas.height = edgeCanvas.height;
 
-        // Draw white background
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Draw the edge detection result
+        this.ctx.drawImage(edgeCanvas, 0, 0);
 
-        // Draw edges with custom line width
-        const imageData = this.ctx.createImageData(this.canvas.width, this.canvas.height);
-        const edgeCtx = edgeCanvas.getContext('2d');
-        const edgeData = edgeCtx.getImageData(0, 0, edgeCanvas.width, edgeCanvas.height);
+        // Apply line width if needed (dilation for thicker lines)
+        if (this.parameters.lineWidth > 1) {
+            const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+            const originalData = new Uint8ClampedArray(imageData.data);
+            const lineWidth = Math.floor(this.parameters.lineWidth / 2);
 
-        // Apply line width by dilating the edges
-        const lineWidth = this.parameters.lineWidth;
-        for (let y = 0; y < this.canvas.height; y++) {
-            for (let x = 0; x < this.canvas.width; x++) {
-                const idx = (y * this.canvas.width + x) * 4;
+            for (let y = 0; y < this.canvas.height; y++) {
+                for (let x = 0; x < this.canvas.width; x++) {
+                    const idx = (y * this.canvas.width + x) * 4;
 
-                if (edgeData.data[idx] > 0) {
-                    // Draw thicker line
-                    for (let dy = -lineWidth; dy <= lineWidth; dy++) {
-                        for (let dx = -lineWidth; dx <= lineWidth; dx++) {
-                            const nx = x + dx;
-                            const ny = y + dy;
+                    // If this pixel is black (edge)
+                    if (originalData[idx] < 128) {
+                        // Dilate by drawing circle
+                        for (let dy = -lineWidth; dy <= lineWidth; dy++) {
+                            for (let dx = -lineWidth; dx <= lineWidth; dx++) {
+                                // Only within circle
+                                if (dx * dx + dy * dy <= lineWidth * lineWidth) {
+                                    const ny = y + dy;
+                                    const nx = x + dx;
 
-                            if (nx >= 0 && nx < this.canvas.width && ny >= 0 && ny < this.canvas.height) {
-                                const nidx = (ny * this.canvas.width + nx) * 4;
-                                imageData.data[nidx] = 0;
-                                imageData.data[nidx + 1] = 0;
-                                imageData.data[nidx + 2] = 0;
-                                imageData.data[nidx + 3] = 255;
+                                    if (nx >= 0 && nx < this.canvas.width && ny >= 0 && ny < this.canvas.height) {
+                                        const nidx = (ny * this.canvas.width + nx) * 4;
+                                        imageData.data[nidx] = 0;
+                                        imageData.data[nidx + 1] = 0;
+                                        imageData.data[nidx + 2] = 0;
+                                        imageData.data[nidx + 3] = 255;
+                                    }
+                                }
                             }
                         }
                     }
-                } else if (imageData.data[idx + 3] === 0) {
-                    // Set white background
-                    imageData.data[idx] = 255;
-                    imageData.data[idx + 1] = 255;
-                    imageData.data[idx + 2] = 255;
-                    imageData.data[idx + 3] = 255;
                 }
             }
-        }
 
-        this.ctx.putImageData(imageData, 0, 0);
+            this.ctx.putImageData(imageData, 0, 0);
+        }
     }
 
     getCanvas() {
