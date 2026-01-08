@@ -37,6 +37,17 @@ header p {
     opacity: 0.9;
 }
 
+.version {
+    font-size: 0.4em;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: normal;
+    margin-left: 10px;
+    vertical-align: middle;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 .main-layout {
     display: grid;
     grid-template-columns: 350px 1fr 350px;
