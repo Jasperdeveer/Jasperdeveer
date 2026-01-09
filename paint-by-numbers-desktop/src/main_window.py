@@ -1,0 +1,600 @@
+"""
+Main Window - PyQt5 GUI for JSPR Beamer Setup
+Native desktop interface for paint-by-numbers generation
+"""
+
+import sys
+import os
+from PyQt5.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLabel, QSlider, QSpinBox, QFileDialog, QScrollArea,
+    QGroupBox, QSplitter, QMessageBox, QProgressDialog
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont
+import cv2
+import numpy as np
+import logging
+
+from image_processor import ImageProcessor
+from color_manager import ColorManager, Color
+from visualizer import Visualizer
+
+logger = logging.getLogger(__name__)
+
+
+class ProcessingThread(QThread):
+    """Background thread for heavy processing tasks"""
+
+    progress = pyqtSignal(int, str)  # percent, message
+    finished = pyqtSignal(object)  # result
+    error = pyqtSignal(str)  # error message
+
+    def __init__(self, task_func, *args, **kwargs):
+        super().__init__()
+        self.task_func = task_func
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self.task_func(*self.args, **self.kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            logger.error(f"Processing error: {e}", exc_info=True)
+            self.error.emit(str(e))
+
+
+class CanvasWidget(QWidget):
+    """Custom widget for displaying rendered image"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image: Optional[np.ndarray] = None
+        self.zoom_level = 1.0
+        self.setMinimumSize(800, 600)
+
+    def set_image(self, image: np.ndarray):
+        """Set image to display (RGB numpy array)"""
+        self.image = image
+        self.update()  # Trigger repaint
+
+    def paintEvent(self, event):
+        """Paint the canvas"""
+        painter = QPainter(self)
+
+        if self.image is not None:
+            # Convert numpy array to QImage
+            height, width, channel = self.image.shape
+            bytes_per_line = 3 * width
+
+            q_image = QImage(
+                self.image.data,
+                width,
+                height,
+                bytes_per_line,
+                QImage.Format_RGB888
+            )
+
+            # Calculate scaled size
+            scaled_width = int(width * self.zoom_level)
+            scaled_height = int(height * self.zoom_level)
+
+            # Center image in widget
+            x = (self.width() - scaled_width) // 2
+            y = (self.height() - scaled_height) // 2
+
+            # Draw scaled image
+            painter.drawImage(
+                x, y, scaled_width, scaled_height,
+                q_image
+            )
+        else:
+            # Draw placeholder
+            painter.fillRect(self.rect(), QColor(50, 50, 50))
+            painter.setPen(QColor(150, 150, 150))
+            painter.drawText(
+                self.rect(),
+                Qt.AlignCenter,
+                "Sleep een afbeelding hierheen of gebruik Bestand > Open"
+            )
+
+    def set_zoom(self, zoom: float):
+        """Set zoom level"""
+        self.zoom_level = max(0.1, min(5.0, zoom))
+        self.update()
+
+
+class JSPRBeamerSetup(QMainWindow):
+    """Main application window"""
+
+    def __init__(self):
+        super().__init__()
+
+        # Initialize components
+        self.image_processor = ImageProcessor()
+        self.color_manager = ColorManager()
+        self.visualizer = Visualizer()
+
+        # Connect components
+        self.visualizer.set_image_processor(self.image_processor)
+        self.visualizer.set_color_manager(self.color_manager)
+
+        # State
+        self.current_mode = 'original'
+        self.current_file_path = None
+
+        # Setup UI
+        self.init_ui()
+
+        logger.info("JSPR Beamer Setup initialized")
+
+    def init_ui(self):
+        """Initialize user interface"""
+        self.setWindowTitle('JSPR Beamer Setup v1.0')
+        self.setGeometry(100, 100, 1600, 900)
+
+        # Create central widget
+        central_widget = QWidget()
+        self.setCentral(central_widget)
+
+        # Main layout
+        main_layout = QHBoxLayout(central_widget)
+
+        # Create splitter for resizable panels
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Left panel: Controls
+        left_panel = self.create_control_panel()
+        splitter.addWidget(left_panel)
+
+        # Center panel: Canvas
+        center_panel = self.create_canvas_panel()
+        splitter.addWidget(center_panel)
+
+        # Right panel: Legend
+        right_panel = self.create_legend_panel()
+        splitter.addWidget(right_panel)
+
+        # Set splitter sizes (proportions)
+        splitter.setSizes([350, 900, 350])
+
+        main_layout.addWidget(splitter)
+
+        # Create menu bar
+        self.create_menu_bar()
+
+        # Create status bar
+        self.statusBar().showMessage('Klaar')
+
+    def create_menu_bar(self):
+        """Create application menu bar"""
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu('Bestand')
+
+        open_action = file_menu.addAction('Open...')
+        open_action.setShortcut('Ctrl+O')
+        open_action.triggered.connect(self.open_image)
+
+        file_menu.addSeparator()
+
+        export_png_action = file_menu.addAction('Exporteer PNG...')
+        export_png_action.setShortcut('Ctrl+E')
+        export_png_action.triggered.connect(self.export_png)
+
+        export_svg_action = file_menu.addAction('Exporteer SVG...')
+        export_svg_action.triggered.connect(self.export_svg)
+
+        file_menu.addSeparator()
+
+        quit_action = file_menu.addAction('Afsluiten')
+        quit_action.setShortcut('Ctrl+Q')
+        quit_action.triggered.connect(self.close)
+
+        # View menu
+        view_menu = menubar.addMenu('Weergave')
+
+        presentation_action = view_menu.addAction('Presentatie Mode')
+        presentation_action.setShortcut('F11')
+        presentation_action.triggered.connect(self.enter_presentation_mode)
+
+        # Help menu
+        help_menu = menubar.addMenu('Help')
+
+        about_action = help_menu.addAction('Over JSPR Beamer Setup')
+        about_action.triggered.connect(self.show_about)
+
+    def create_control_panel(self) -> QWidget:
+        """Create left control panel"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        # Image section
+        image_group = QGroupBox("Afbeelding")
+        image_layout = QVBoxLayout()
+
+        self.open_btn = QPushButton("Open Afbeelding...")
+        self.open_btn.clicked.connect(self.open_image)
+        image_layout.addWidget(self.open_btn)
+
+        # Image preview
+        self.image_preview = QLabel()
+        self.image_preview.setFixedSize(300, 200)
+        self.image_preview.setStyleSheet("border: 1px solid #ccc; background: #2a2a2a;")
+        self.image_preview.setAlignment(Qt.AlignCenter)
+        self.image_preview.setText("Geen afbeelding")
+        image_layout.addWidget(self.image_preview)
+
+        image_group.setLayout(image_layout)
+        layout.addWidget(image_group)
+
+        # Mode selection
+        mode_group = QGroupBox("Visualisatie Mode")
+        mode_layout = QVBoxLayout()
+
+        self.mode_original_btn = QPushButton("Origineel")
+        self.mode_original_btn.setCheckable(True)
+        self.mode_original_btn.setChecked(True)
+        self.mode_original_btn.clicked.connect(lambda: self.set_mode('original'))
+        mode_layout.addWidget(self.mode_original_btn)
+
+        self.mode_pbn_btn = QPushButton("Paint-by-Numbers")
+        self.mode_pbn_btn.setCheckable(True)
+        self.mode_pbn_btn.clicked.connect(lambda: self.set_mode('paintByNumbers'))
+        mode_layout.addWidget(self.mode_pbn_btn)
+
+        self.mode_line_btn = QPushButton("Lijntekening")
+        self.mode_line_btn.setCheckable(True)
+        self.mode_line_btn.clicked.connect(lambda: self.set_mode('lineDrawing'))
+        mode_layout.addWidget(self.mode_line_btn)
+
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
+
+        # Parameters
+        params_group = QGroupBox("Parameters")
+        params_layout = QVBoxLayout()
+
+        # Color count
+        color_count_layout = QHBoxLayout()
+        color_count_layout.addWidget(QLabel("Aantal kleuren:"))
+        self.color_count_spin = QSpinBox()
+        self.color_count_spin.setRange(2, 32)
+        self.color_count_spin.setValue(8)
+        color_count_layout.addWidget(self.color_count_spin)
+        params_layout.addLayout(color_count_layout)
+
+        # Detect colors button
+        self.detect_colors_btn = QPushButton("Detecteer Kleuren")
+        self.detect_colors_btn.clicked.connect(self.detect_colors)
+        params_layout.addWidget(self.detect_colors_btn)
+
+        # Line width
+        line_width_layout = QHBoxLayout()
+        line_width_layout.addWidget(QLabel("Lijndikte:"))
+        self.line_width_spin = QSpinBox()
+        self.line_width_spin.setRange(1, 10)
+        self.line_width_spin.setValue(2)
+        self.line_width_spin.valueChanged.connect(self.update_parameters)
+        line_width_layout.addWidget(self.line_width_spin)
+        params_layout.addLayout(line_width_layout)
+
+        # Min region size
+        region_size_layout = QHBoxLayout()
+        region_size_layout.addWidget(QLabel("Min. vlakgrootte:"))
+        self.region_size_spin = QSpinBox()
+        self.region_size_spin.setRange(10, 500)
+        self.region_size_spin.setValue(20)
+        self.region_size_spin.valueChanged.connect(self.update_parameters)
+        region_size_layout.addWidget(self.region_size_spin)
+        params_layout.addLayout(region_size_layout)
+
+        params_group.setLayout(params_layout)
+        layout.addWidget(params_group)
+
+        # Color palette (scrollable)
+        palette_group = QGroupBox("Kleurenpalet")
+        palette_layout = QVBoxLayout()
+
+        self.color_palette_widget = QWidget()
+        self.color_palette_layout = QVBoxLayout(self.color_palette_widget)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.color_palette_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(300)
+
+        palette_layout.addWidget(scroll_area)
+        palette_group.setLayout(palette_layout)
+        layout.addWidget(palette_group)
+
+        # Stretch to push everything to top
+        layout.addStretch()
+
+        return panel
+
+    def create_canvas_panel(self) -> QWidget:
+        """Create center canvas panel"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        # Canvas controls
+        controls_layout = QHBoxLayout()
+
+        zoom_in_btn = QPushButton("+")
+        zoom_in_btn.setMaximumWidth(40)
+        zoom_in_btn.clicked.connect(lambda: self.zoom(0.1))
+        controls_layout.addWidget(zoom_in_btn)
+
+        zoom_out_btn = QPushButton("-")
+        zoom_out_btn.setMaximumWidth(40)
+        zoom_out_btn.clicked.connect(lambda: self.zoom(-0.1))
+        controls_layout.addWidget(zoom_out_btn)
+
+        zoom_reset_btn = QPushButton("Reset")
+        zoom_reset_btn.clicked.connect(self.reset_zoom)
+        controls_layout.addWidget(zoom_reset_btn)
+
+        presentation_btn = QPushButton("🖥️ Presentatie Mode")
+        presentation_btn.clicked.connect(self.enter_presentation_mode)
+        controls_layout.addWidget(presentation_btn)
+
+        controls_layout.addStretch()
+
+        self.zoom_label = QLabel("100%")
+        controls_layout.addWidget(self.zoom_label)
+
+        layout.addLayout(controls_layout)
+
+        # Canvas
+        self.canvas = CanvasWidget()
+        layout.addWidget(self.canvas)
+
+        return panel
+
+    def create_legend_panel(self) -> QWidget:
+        """Create right legend panel"""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        layout.addWidget(QLabel("<h2>Legenda</h2>"))
+
+        # Legend scroll area
+        self.legend_widget = QWidget()
+        self.legend_layout = QVBoxLayout(self.legend_widget)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(self.legend_widget)
+        scroll_area.setWidgetResizable(True)
+
+        layout.addWidget(scroll_area)
+
+        return panel
+
+    def open_image(self):
+        """Open image file dialog"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Afbeelding",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+        )
+
+        if file_path:
+            self.load_image(file_path)
+
+    def load_image(self, file_path: str):
+        """Load image from file"""
+        self.statusBar().showMessage(f"Laden: {os.path.basename(file_path)}...")
+
+        success = self.image_processor.load_image(file_path)
+
+        if success:
+            self.current_file_path = file_path
+
+            # Update preview
+            img = self.image_processor.get_image_copy()
+            self.update_preview(img)
+
+            # Auto-detect colors
+            self.detect_colors()
+
+            self.statusBar().showMessage(f"Geladen: {os.path.basename(file_path)}")
+        else:
+            QMessageBox.critical(self, "Fout", "Kan afbeelding niet laden")
+            self.statusBar().showMessage("Fout bij laden")
+
+    def update_preview(self, image: np.ndarray):
+        """Update image preview thumbnail"""
+        # Resize for preview
+        height, width = image.shape[:2]
+        scale = min(280 / width, 180 / height)
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+
+        preview = cv2.resize(image, (new_width, new_height))
+
+        # Convert to QPixmap
+        bytes_per_line = 3 * new_width
+        q_image = QImage(
+            preview.data,
+            new_width,
+            new_height,
+            bytes_per_line,
+            QImage.Format_RGB888
+        )
+
+        pixmap = QPixmap.fromImage(q_image)
+        self.image_preview.setPixmap(pixmap)
+
+    def detect_colors(self):
+        """Detect colors using K-means"""
+        if self.image_processor.original_image is None:
+            return
+
+        num_colors = self.color_count_spin.value()
+
+        # Show progress dialog
+        progress = QProgressDialog("Kleuren detecteren...", None, 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+
+        def progress_callback(percent, message):
+            progress.setValue(int(percent))
+            progress.setLabelText(message)
+
+        # Detect colors
+        progress_callback(0, "K-means clustering...")
+        colors = self.image_processor.detect_colors(num_colors)
+
+        progress_callback(50, "Kleuren verwerken...")
+        self.color_manager.set_colors(colors)
+
+        progress_callback(80, "Interface updaten...")
+        self.update_color_palette()
+
+        progress_callback(100, "Klaar!")
+        progress.close()
+
+        # Render
+        self.render()
+
+    def update_color_palette(self):
+        """Update color palette display"""
+        # Clear existing
+        while self.color_palette_layout.count():
+            child = self.color_palette_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Add color items
+        colors = self.color_manager.get_colors()
+
+        for color in colors:
+            item_widget = QWidget()
+            item_layout = QHBoxLayout(item_widget)
+            item_layout.setContentsMargins(5, 5, 5, 5)
+
+            # Number label
+            num_label = QLabel(f"<b>{color.number}</b>")
+            num_label.setFixedWidth(30)
+            item_layout.addWidget(num_label)
+
+            # Color swatch
+            swatch = QLabel()
+            swatch.setFixedSize(40, 40)
+            swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 1px solid #ccc;")
+            item_layout.addWidget(swatch)
+
+            # Color name
+            name_label = QLabel(color.name)
+            item_layout.addWidget(name_label)
+
+            item_layout.addStretch()
+
+            self.color_palette_layout.addWidget(item_widget)
+
+        self.color_palette_layout.addStretch()
+
+    def set_mode(self, mode: str):
+        """Set visualization mode"""
+        self.current_mode = mode
+        self.visualizer.set_mode(mode)
+
+        # Update button states
+        self.mode_original_btn.setChecked(mode == 'original')
+        self.mode_pbn_btn.setChecked(mode == 'paintByNumbers')
+        self.mode_line_btn.setChecked(mode == 'lineDrawing')
+
+        # Render
+        self.render()
+
+    def update_parameters(self):
+        """Update visualization parameters"""
+        self.visualizer.set_parameters(
+            line_width=self.line_width_spin.value(),
+            min_region_size=self.region_size_spin.value()
+        )
+
+        # Clear cache to force re-render
+        self.visualizer.clear_cache()
+
+        # Re-render
+        self.render()
+
+    def render(self):
+        """Render current visualization"""
+        if self.image_processor.original_image is None:
+            return
+
+        self.statusBar().showMessage("Renderen...")
+
+        # Render image
+        result = self.visualizer.render()
+
+        if result is not None:
+            self.canvas.set_image(result)
+            self.statusBar().showMessage("Klaar")
+        else:
+            self.statusBar().showMessage("Fout bij renderen")
+
+    def zoom(self, delta: float):
+        """Zoom canvas"""
+        current_zoom = self.canvas.zoom_level
+        new_zoom = current_zoom + delta
+        self.canvas.set_zoom(new_zoom)
+        self.zoom_label.setText(f"{int(new_zoom * 100)}%")
+
+    def reset_zoom(self):
+        """Reset zoom to 100%"""
+        self.canvas.set_zoom(1.0)
+        self.zoom_label.setText("100%")
+
+    def enter_presentation_mode(self):
+        """Enter fullscreen presentation mode"""
+        # TODO: Implement presentation mode window
+        QMessageBox.information(
+            self,
+            "Presentatie Mode",
+            "Presentatie mode komt binnenkort beschikbaar!"
+        )
+
+    def export_png(self):
+        """Export as PNG"""
+        if self.canvas.image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exporteer PNG",
+            "",
+            "PNG Files (*.png)"
+        )
+
+        if file_path:
+            # Convert RGB to BGR for OpenCV
+            bgr = cv2.cvtColor(self.canvas.image, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(file_path, bgr)
+            self.statusBar().showMessage(f"Geëxporteerd: {os.path.basename(file_path)}")
+
+    def export_svg(self):
+        """Export as SVG"""
+        QMessageBox.information(
+            self,
+            "SVG Export",
+            "SVG export komt binnenkort beschikbaar!"
+        )
+
+    def show_about(self):
+        """Show about dialog"""
+        QMessageBox.about(
+            self,
+            "Over JSPR Beamer Setup",
+            "<h2>JSPR Beamer Setup v1.0</h2>"
+            "<p>Voor street art en spuitbus projecten met beamer projectie</p>"
+            "<p>High-performance Python + OpenCV + PyQt5 desktop applicatie</p>"
+            "<p>© 2026 JSPR</p>"
+        )
