@@ -15,6 +15,9 @@ class PaintByNumbersApp {
         this.visualizer.setImageProcessor(this.imageProcessor);
         this.visualizer.setColorManager(this.colorManager);
 
+        // Presentation mode (initialized but not active)
+        this.presentationMode = null;
+
         // State
         this.currentMode = 'original';
         this.zoomLevel = 1;
@@ -111,6 +114,11 @@ class PaintByNumbersApp {
 
         document.getElementById('zoomReset').addEventListener('click', () => {
             this.resetZoom();
+        });
+
+        // Presentation mode
+        document.getElementById('presentationMode').addEventListener('click', () => {
+            this.activatePresentationMode();
         });
 
         // Export
@@ -368,6 +376,23 @@ class PaintByNumbersApp {
         canvas.style.transform = `scale(${this.zoomLevel})`;
         canvas.style.transformOrigin = 'top left';
         document.getElementById('zoomLevel').textContent = `${Math.round(this.zoomLevel * 100)}%`;
+    }
+
+    activatePresentationMode() {
+        // Check if we have an image loaded
+        if (!this.imageProcessor.originalImage) {
+            alert('Upload eerst een afbeelding om presentatie mode te gebruiken.');
+            return;
+        }
+
+        // Initialize presentation mode if not already done
+        if (!this.presentationMode) {
+            const canvas = this.visualizer.getCanvas();
+            this.presentationMode = new PresentationMode(canvas, this.visualizer);
+        }
+
+        // Enter fullscreen automatically
+        this.presentationMode.enterFullscreen();
     }
 
     async exportSVG() {
