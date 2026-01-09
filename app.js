@@ -391,8 +391,8 @@ class PaintByNumbersApp {
             this.presentationMode = new PresentationMode(canvas, this.visualizer);
         }
 
-        // Enter fullscreen automatically
-        this.presentationMode.enterFullscreen();
+        // Activate presentation mode
+        this.presentationMode.activate();
     }
 
     async exportSVG() {

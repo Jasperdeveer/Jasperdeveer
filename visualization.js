@@ -9,6 +9,15 @@ class Visualizer {
         this.colorManager = null;
         this.quantizedData = null;
         this.contourTracer = new ContourTracer();
+        this.showNumbers = true; // Toggle for showing numbers in presentation mode
+
+        // Cached canvases to avoid recomputation on mode switches
+        this.cachedCanvases = {
+            original: null,
+            paintByNumbers: null,
+            lineDrawing: null
+        };
+
         this.parameters = {
             numberSize: 16,
             lineWidth: 2,
@@ -192,6 +201,9 @@ class Visualizer {
     }
 
     drawNumbers(colorMap, colors) {
+        // Skip drawing numbers if disabled (e.g., in presentation mode)
+        if (!this.showNumbers) return;
+
         const width = this.canvas.width;
         const height = this.canvas.height;
 
@@ -445,6 +457,71 @@ class Visualizer {
 
     getCanvas() {
         return this.canvas;
+    }
+
+    setShowNumbers(show) {
+        this.showNumbers = show;
+    }
+
+    renderCurrentMode() {
+        // Re-render the current mode without recomputing quantization
+        // This is used when toggling numbers in presentation mode
+        if (!this.imageProcessor || !this.imageProcessor.originalImage) return;
+
+        switch (this.mode) {
+            case 'original':
+                this.renderOriginal();
+                break;
+            case 'paintByNumbers':
+                // Only redraw if we have cached data
+                if (this.quantizedData) {
+                    const { canvas: quantizedCanvas, colorMap } = this.quantizedData;
+                    const colors = this.colorManager.getColors();
+
+                    this.canvas.width = quantizedCanvas.width;
+                    this.canvas.height = quantizedCanvas.height;
+
+                    // Draw quantized image
+                    this.ctx.drawImage(quantizedCanvas, 0, 0);
+
+                    // Apply preview dimming if active
+                    if (this.colorManager.isPreviewActive()) {
+                        this.applyPreviewEffect(colorMap);
+                    }
+
+                    // Draw contours
+                    this.drawContours(colorMap, colors);
+
+                    // Draw numbers (respects showNumbers flag)
+                    this.drawNumbers(colorMap, colors);
+                } else {
+                    this.renderPaintByNumbers();
+                }
+                break;
+            case 'lineDrawing':
+                // Only redraw if we have cached data
+                if (this.quantizedData && this.colorManager && this.colorManager.getColorCount() > 0) {
+                    const { canvas: quantizedCanvas, colorMap } = this.quantizedData;
+                    const colors = this.colorManager.getColors();
+
+                    // Set canvas size
+                    this.canvas.width = quantizedCanvas.width;
+                    this.canvas.height = quantizedCanvas.height;
+
+                    // Fill with white background
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                    // Draw clean contour lines directly from color boundaries
+                    this.drawContours(colorMap, colors);
+
+                    // Draw numbers on top of line drawing (respects showNumbers flag)
+                    this.drawNumbers(colorMap, colors);
+                } else {
+                    this.renderLineDrawing();
+                }
+                break;
+        }
     }
 
     exportSVG() {
