@@ -301,7 +301,8 @@ class Visualizer:
             number_text = str(color.number)
 
             # Get text size for proper positioning
-            font = cv2.FONT_HERSHEY_BOLD
+            # OpenCV doesn't have FONT_HERSHEY_BOLD, use SIMPLEX with higher thickness
+            font = cv2.FONT_HERSHEY_SIMPLEX
             (text_width, text_height), _ = cv2.getTextSize(
                 number_text,
                 font,
