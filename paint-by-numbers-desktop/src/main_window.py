@@ -10,8 +10,8 @@ from PyQt5.QtWidgets import (
     QLabel, QSlider, QSpinBox, QFileDialog, QScrollArea,
     QGroupBox, QSplitter, QMessageBox, QProgressDialog
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
 import cv2
 import numpy as np
 import logging
@@ -48,11 +48,17 @@ class ProcessingThread(QThread):
 class CanvasWidget(QWidget):
     """Custom widget for displaying rendered image"""
 
+    # Signal emitted when color is picked (r, g, b)
+    color_picked = pyqtSignal(int, int, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.image: Optional[np.ndarray] = None
+        self.original_image: Optional[np.ndarray] = None  # For eyedropper
         self.zoom_level = 1.0
+        self.eyedropper_mode = False
         self.setMinimumSize(800, 600)
+        self.setMouseTracking(True)  # Track mouse for cursor changes
 
     def set_image(self, image: np.ndarray):
         """Set image to display (RGB numpy array)"""
@@ -102,6 +108,49 @@ class CanvasWidget(QWidget):
         """Set zoom level"""
         self.zoom_level = max(0.1, min(5.0, zoom))
         self.update()
+
+    def set_eyedropper_mode(self, enabled: bool):
+        """Enable/disable eyedropper mode"""
+        self.eyedropper_mode = enabled
+        if enabled:
+            self.setCursor(QCursor(Qt.CrossCursor))
+        else:
+            self.setCursor(QCursor(Qt.ArrowCursor))
+
+    def set_original_image(self, image: np.ndarray):
+        """Set original image for eyedropper sampling"""
+        self.original_image = image
+
+    def mousePressEvent(self, event):
+        """Handle mouse clicks for eyedropper"""
+        if self.eyedropper_mode and self.original_image is not None and event.button() == Qt.LeftButton:
+            # Get click position
+            click_pos = event.pos()
+
+            # Convert widget coordinates to image coordinates
+            if self.image is not None:
+                height, width = self.image.shape[:2]
+                scaled_width = int(width * self.zoom_level)
+                scaled_height = int(height * self.zoom_level)
+
+                # Calculate image position in widget
+                x_offset = (self.width() - scaled_width) // 2
+                y_offset = (self.height() - scaled_height) // 2
+
+                # Convert to image coordinates
+                img_x = int((click_pos.x() - x_offset) / self.zoom_level)
+                img_y = int((click_pos.y() - y_offset) / self.zoom_level)
+
+                # Check bounds
+                if 0 <= img_x < width and 0 <= img_y < height:
+                    # Sample color from original image
+                    color = self.original_image[img_y, img_x]
+                    r, g, b = int(color[0]), int(color[1]), int(color[2])
+
+                    # Emit signal
+                    self.color_picked.emit(r, g, b)
+        else:
+            super().mousePressEvent(event)
 
 
 class JSPRBeamerSetup(QMainWindow):
@@ -270,6 +319,13 @@ class JSPRBeamerSetup(QMainWindow):
         self.detect_colors_btn.clicked.connect(self.detect_colors)
         params_layout.addWidget(self.detect_colors_btn)
 
+        # Eyedropper button
+        self.eyedropper_btn = QPushButton("🎨 Pipet (Kleur Kiezen)")
+        self.eyedropper_btn.setCheckable(True)
+        self.eyedropper_btn.setObjectName("primaryButton")
+        self.eyedropper_btn.clicked.connect(self.toggle_eyedropper)
+        params_layout.addWidget(self.eyedropper_btn)
+
         # Line width
         line_width_layout = QHBoxLayout()
         line_width_layout.addWidget(QLabel("Lijndikte:"))
@@ -349,6 +405,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Canvas
         self.canvas = CanvasWidget()
+        self.canvas.color_picked.connect(self.on_color_picked)
         layout.addWidget(self.canvas)
 
         return panel
@@ -396,6 +453,9 @@ class JSPRBeamerSetup(QMainWindow):
             # Update preview
             img = self.image_processor.get_image_copy()
             self.update_preview(img)
+
+            # Set original image for eyedropper
+            self.canvas.set_original_image(img)
 
             # Auto-detect colors
             self.detect_colors()
@@ -550,6 +610,72 @@ class JSPRBeamerSetup(QMainWindow):
         """Reset zoom to 100%"""
         self.canvas.set_zoom(1.0)
         self.zoom_label.setText("100%")
+
+    def toggle_eyedropper(self):
+        """Toggle eyedropper mode"""
+        is_checked = self.eyedropper_btn.isChecked()
+        self.canvas.set_eyedropper_mode(is_checked)
+
+        if is_checked:
+            self.statusBar().showMessage("Pipet modus: Klik op de afbeelding om een kleur te kiezen")
+        else:
+            self.statusBar().showMessage("Pipet modus uitgeschakeld")
+
+    def on_color_picked(self, r: int, g: int, b: int):
+        """Handle color picked from eyedropper"""
+        # Show confirmation message with color preview
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Kleur Gepickt")
+        msg.setText(f"Kleur gepickt: RGB({r}, {g}, {b})")
+        msg.setInformativeText("Wil je deze kleur toevoegen aan het palet?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.Yes)
+
+        # Create color swatch label
+        color_hex = f"#{r:02x}{g:02x}{b:02x}"
+        swatch_html = f'<div style="width: 100px; height: 50px; background-color: {color_hex}; border: 2px solid #ccc;"></div>'
+
+        result = msg.exec_()
+
+        if result == QMessageBox.Yes:
+            # Add color to palette
+            self.add_color_to_palette(r, g, b)
+
+            # Turn off eyedropper mode
+            self.eyedropper_btn.setChecked(False)
+            self.canvas.set_eyedropper_mode(False)
+
+            self.statusBar().showMessage(f"Kleur RGB({r}, {g}, {b}) toegevoegd aan palet")
+        else:
+            self.statusBar().showMessage("Kleur niet toegevoegd")
+
+    def add_color_to_palette(self, r: int, g: int, b: int):
+        """Add a new color to the palette"""
+        # Get existing colors
+        colors = self.color_manager.get_colors()
+
+        # Check if color already exists (within threshold)
+        threshold = 10
+        for color in colors:
+            if (abs(color.r - r) < threshold and
+                abs(color.g - g) < threshold and
+                abs(color.b - b) < threshold):
+                QMessageBox.information(
+                    self,
+                    "Kleur bestaat al",
+                    f"Deze kleur bestaat al in het palet als '{color.name}'"
+                )
+                return
+
+        # Add new color
+        self.color_manager.add_color(r, g, b)
+
+        # Update UI
+        self.update_color_palette()
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        self.render()
 
     def enter_presentation_mode(self):
         """Enter fullscreen presentation mode"""
