@@ -84,11 +84,10 @@ class CanvasWidget(QWidget):
             x = (self.width() - scaled_width) // 2
             y = (self.height() - scaled_height) // 2
 
-            # Draw scaled image
-            painter.drawImage(
-                x, y, scaled_width, scaled_height,
-                q_image
-            )
+            # Draw scaled image using target rectangle
+            from PyQt5.QtCore import QRect
+            target_rect = QRect(x, y, scaled_width, scaled_height)
+            painter.drawImage(target_rect, q_image)
         else:
             # Draw placeholder
             painter.fillRect(self.rect(), QColor(50, 50, 50))
