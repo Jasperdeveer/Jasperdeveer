@@ -8,11 +8,13 @@ import sys
 import logging
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPalette, QColor
 
 # Add src to path
 sys.path.insert(0, 'src')
 
 from main_window import JSPRBeamerSetup
+from stylesheet import get_glassmorphism_stylesheet
 
 
 def setup_logging():
@@ -25,6 +27,33 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
+
+
+def setup_dark_theme(app):
+    """Setup custom dark theme with glassmorphism"""
+    # Set Fusion style as base
+    app.setStyle("Fusion")
+
+    # Create dark palette
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(15, 15, 15))
+    palette.setColor(QPalette.WindowText, Qt.white)
+    palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.AlternateBase, QColor(30, 30, 30))
+    palette.setColor(QPalette.ToolTipBase, Qt.white)
+    palette.setColor(QPalette.ToolTipText, Qt.white)
+    palette.setColor(QPalette.Text, Qt.white)
+    palette.setColor(QPalette.Button, QColor(40, 40, 40))
+    palette.setColor(QPalette.ButtonText, Qt.white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, QColor(102, 126, 234))
+    palette.setColor(QPalette.Highlight, QColor(102, 126, 234))
+    palette.setColor(QPalette.HighlightedText, Qt.black)
+
+    app.setPalette(palette)
+
+    # Apply glassmorphism stylesheet
+    app.setStyleSheet(get_glassmorphism_stylesheet())
 
 
 def main():
@@ -42,8 +71,8 @@ def main():
     app.setApplicationName("JSPR Beamer Setup")
     app.setOrganizationName("JSPR")
 
-    # Set dark theme
-    app.setStyle("Fusion")
+    # Setup glassmorphism dark theme
+    setup_dark_theme(app)
 
     # Create and show main window
     window = JSPRBeamerSetup()
