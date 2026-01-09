@@ -15,7 +15,11 @@ Een professionele web applicatie voor het converteren van afbeeldingen naar pain
 Toggle tussen drie modes:
 1. **Origineel** - Oorspronkelijke afbeelding
 2. **Paint-by-Numbers** - Genummerde vlakken met contouren
-3. **Lijntekening** - Alleen contouren (edge detection)
+3. **Lijntekening** - Alleen contouren met **enhanced precision**
+   - **Marching Squares** algoritme voor vloeiende contouren
+   - **Ramer-Douglas-Peucker** lijn simplificatie
+   - **Chaikin's corner cutting** voor gladde curves
+   - Cijfers met **witte outline** voor maximale zichtbaarheid
 
 ### ✅ Instelbare Parameters
 - **Aantal kleuren** (2-32)
@@ -55,7 +59,10 @@ Toggle tussen drie modes:
 - **Vanilla JavaScript** (ES6+)
 - **HTML5 Canvas API** voor beeldverwerking
 - **K-means clustering** voor kleurdetectie
-- **Sobel edge detection** voor lijntekeningen
+- **Advanced contour tracing** met Marching Squares
+- **Ramer-Douglas-Peucker** algoritme voor lijn simplificatie
+- **Chaikin's corner cutting** voor curve smoothing
+- **Catmull-Rom splines** (optioneel) voor perfecte curves
 - **Flood fill algoritme** voor regio detectie
 - **SVG generation** voor vector export
 
@@ -68,7 +75,21 @@ Gebruikt K-means clustering om de meest dominante kleuren in een afbeelding te i
 3. Itereert tot convergentie
 4. Genereert automatisch kleurnamen
 
-### Edge Detection
+### Enhanced Line Drawing
+**Nieuwe precisie-verbeterde lijntekening pipeline:**
+
+1. **Contour Extraction**: Detecteert kleurengrenzen met pixel-perfecte nauwkeurigheid
+2. **Marching Squares**: Converteert pixel boundaries naar vloeiende contouren
+3. **Path Simplification**: Ramer-Douglas-Peucker algoritme reduceert onnodige punten
+4. **Curve Smoothing**: Chaikin's corner cutting voor natuurlijke, gladde lijnen
+5. **Optimized Rendering**: Canvas anti-aliasing en line cap/join optimalisaties
+
+**Resultaat**: Strakke, professionele lijnen zonder pixelatie of trappende effecten.
+
+### Number Visibility Enhancement
+Cijfers worden getekend met een **witte outline** (stroke) om perfecte leesbaarheid te garanderen in alle visualisatie modes, vooral in de lijntekening mode.
+
+### Edge Detection (Legacy Fallback)
 Sobel operator voor het detecteren van randen in de afbeelding, met instelbare threshold voor detailniveau.
 
 ### Regio Detectie

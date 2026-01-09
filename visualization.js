@@ -8,11 +8,17 @@ class Visualizer {
         this.imageProcessor = null;
         this.colorManager = null;
         this.quantizedData = null;
+        this.contourTracer = new ContourTracer();
         this.parameters = {
             numberSize: 16,
             lineWidth: 2,
             detailLevel: 5,
-            minRegionSize: 50
+            minRegionSize: 50,
+            // New parameters for enhanced line drawing
+            simplifyEpsilon: 1.0,
+            smoothingIterations: 2,
+            useCatmullRom: false,
+            enableAntiAliasing: true
         };
     }
 
@@ -109,6 +115,50 @@ class Visualizer {
         const width = this.canvas.width;
         const height = this.canvas.height;
 
+        // Configure canvas for optimal line rendering
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = this.parameters.lineWidth;
+        this.ctx.lineCap = 'round';
+        this.ctx.lineJoin = 'round';
+
+        // Enable or disable anti-aliasing based on preference
+        if (this.parameters.enableAntiAliasing) {
+            this.ctx.imageSmoothingEnabled = true;
+            this.ctx.imageSmoothingQuality = 'high';
+        } else {
+            this.ctx.imageSmoothingEnabled = false;
+        }
+
+        // Trace smooth contours using advanced algorithms
+        const paths = this.contourTracer.traceColorBoundaries(colorMap, width, height, {
+            simplifyEpsilon: this.parameters.simplifyEpsilon,
+            smoothingIterations: this.parameters.smoothingIterations,
+            useCatmullRom: this.parameters.useCatmullRom,
+            segmentsPerPoint: 6
+        });
+
+        // Draw all contour paths
+        for (let path of paths) {
+            if (path.length < 2) continue;
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(path[0].x, path[0].y);
+
+            for (let i = 1; i < path.length; i++) {
+                this.ctx.lineTo(path[i].x, path[i].y);
+            }
+
+            this.ctx.stroke();
+        }
+
+        // Fallback: if no paths found, use simple boundary detection
+        if (paths.length === 0) {
+            this.drawSimpleContours(colorMap, width, height);
+        }
+    }
+
+    // Fallback method: simple pixel-based contour drawing
+    drawSimpleContours(colorMap, width, height) {
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = this.parameters.lineWidth;
 
@@ -162,11 +212,18 @@ class Visualizer {
             const fontSize = Math.max(8, Math.min(this.parameters.numberSize, Math.sqrt(region.size) * 0.5));
             this.ctx.font = `bold ${fontSize}px Arial`;
 
-            // Use contrasting color for text
-            this.ctx.fillStyle = getContrastColor(color.hex);
+            const numberText = color.number.toString();
 
-            // Draw number at optimal center
-            this.ctx.fillText(color.number.toString(), centerPoint.x, centerPoint.y);
+            // Draw white outline for better visibility (especially in line drawing mode)
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = Math.max(3, fontSize * 0.25);
+            this.ctx.lineJoin = 'round';
+            this.ctx.miterLimit = 2;
+            this.ctx.strokeText(numberText, centerPoint.x, centerPoint.y);
+
+            // Draw black number on top
+            this.ctx.fillStyle = '#000000';
+            this.ctx.fillText(numberText, centerPoint.x, centerPoint.y);
         }
     }
 
