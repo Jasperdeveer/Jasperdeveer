@@ -114,14 +114,26 @@ class ImageProcessor {
             if (!changed) break;
         }
 
-        // Convert to color objects with names
-        return centroids.map((c, index) => ({
+        // Convert to color objects
+        const rawColors = centroids.map((c, index) => ({
             id: Date.now() + index,
             r: c.r,
             g: c.g,
             b: c.b,
-            hex: rgbToHex(c.r, c.g, c.b),
-            name: generateColorName(c.r, c.g, c.b)
+            hex: rgbToHex(c.r, c.g, c.b)
+        }));
+
+        // Post-process: merge similar colors and add intelligent names
+        const processed = processDetectedColors(rawColors, 30, 'brightness');
+
+        // Add unique IDs and return
+        return processed.map((c, index) => ({
+            id: Date.now() + index,
+            r: c.r,
+            g: c.g,
+            b: c.b,
+            hex: c.hex,
+            name: c.name
         }));
     }
 
