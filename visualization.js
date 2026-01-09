@@ -13,7 +13,7 @@ class Visualizer {
             numberSize: 16,
             lineWidth: 2,
             detailLevel: 5,
-            minRegionSize: 50,
+            minRegionSize: 20, // Lowered from 50 to show more numbers
             // New parameters for enhanced line drawing
             simplifyEpsilon: 1.0,
             smoothingIterations: 2,

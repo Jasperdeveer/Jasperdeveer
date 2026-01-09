@@ -1,6 +1,8 @@
-# 🎨 Paint-by-Numbers Generator - Street Art Editie
+# 🎨 Paint-by-Numbers Generator - Street Art Editie (v5.0 AI)
 
 Een professionele web applicatie voor het converteren van afbeeldingen naar paint-by-numbers sjablonen, speciaal ontworpen voor street art en spuitbus projecten.
+
+**🤖 Nieuw in v5.0: AI-Powered Edge Detection** - Gebruik makend van geavanceerde computer vision algoritmes voor de scherpste en meest precieze lijndetectie ooit!
 
 ## Features
 
@@ -15,11 +17,18 @@ Een professionele web applicatie voor het converteren van afbeeldingen naar pain
 Toggle tussen drie modes:
 1. **Origineel** - Oorspronkelijke afbeelding
 2. **Paint-by-Numbers** - Genummerde vlakken met contouren
-3. **Lijntekening** - Alleen contouren met **enhanced precision**
-   - **Marching Squares** algoritme voor vloeiende contouren
+3. **Lijntekening** - 🤖 **AI-Powered Edge Detection** met maximale precisie
+   - **Bilateral Filtering** - edge-preserving noise reduction
+   - **Adaptive Thresholding** - intelligente drempelwaarde bepaling
+   - **Non-Maximum Suppression** - pixel-perfecte lijn dikte
+   - **Hysteresis Edge Tracking** - verbindt zwakke edges met sterke
+   - **Morphological Operations** - elimineert gaten en ruis
+   - **Zhang-Suen Thinning** - ultradunne, precieze lijnen
+   - **Marching Squares** voor vloeiende contouren
    - **Ramer-Douglas-Peucker** lijn simplificatie
    - **Chaikin's corner cutting** voor gladde curves
    - Cijfers met **witte outline** voor maximale zichtbaarheid
+   - **Meer nummers** door lagere minimale vlakgrootte (20px)
 
 ### ✅ Instelbare Parameters
 - **Aantal kleuren** (2-32)
@@ -56,9 +65,17 @@ Toggle tussen drie modes:
 
 ## Technologie
 
+- **TensorFlow.js** (optioneel) - AI/ML framework voor advanced image processing
 - **Vanilla JavaScript** (ES6+)
 - **HTML5 Canvas API** voor beeldverwerking
 - **K-means clustering** voor kleurdetectie
+- **AI-Powered Edge Detection**:
+  - Bilateral Filtering
+  - Adaptive Thresholding
+  - Non-Maximum Suppression
+  - Hysteresis Edge Tracking
+  - Morphological Operations (Dilation/Erosion)
+  - Zhang-Suen Thinning Algorithm
 - **Advanced contour tracing** met Marching Squares
 - **Ramer-Douglas-Peucker** algoritme voor lijn simplificatie
 - **Chaikin's corner cutting** voor curve smoothing
@@ -86,11 +103,26 @@ Gebruikt K-means clustering om de meest dominante kleuren in een afbeelding te i
 
 **Resultaat**: Strakke, professionele lijnen zonder pixelatie of trappende effecten.
 
-### Number Visibility Enhancement
-Cijfers worden getekend met een **witte outline** (stroke) om perfecte leesbaarheid te garanderen in alle visualisatie modes, vooral in de lijntekening mode.
+### AI-Powered Edge Detection (v5.0) 🤖
+**De meest geavanceerde edge detection pipeline:**
 
-### Edge Detection (Legacy Fallback)
-Sobel operator voor het detecteren van randen in de afbeelding, met instelbare threshold voor detailniveau.
+1. **Grayscale Conversion** - Luminance-based conversie voor optimale edge detectie
+2. **Bilateral Filtering** - Edge-preserving noise reduction die ruis verwijdert maar edges behoudt
+3. **Sobel Gradient Calculation** - Berekent gradient magnitude en richting met 3x3 kernels
+4. **Non-Maximum Suppression** - Verdunt edges tot single-pixel breedte langs gradient richting
+5. **Adaptive Thresholding** - Intelligente drempelwaarde bepaling op basis van lokale statistieken
+6. **Hysteresis Edge Tracking** - Verbindt zwakke edges met sterke edges (iteratief)
+7. **Morphological Closing** - Vult kleine gaten met dilation gevolgd door erosion
+8. **Zhang-Suen Thinning** - Optionele ultra-thinning voor perfecte lijnen
+
+**Voordelen t.o.v. klassieke Canny:**
+- ✅ Edge-preserving smoothing (geen blur van belangrijke randen)
+- ✅ Adaptieve thresholds (geen handmatige tuning nodig)
+- ✅ Betere noise rejection door morphological operations
+- ✅ Dunnere, preciezere lijnen door advanced thinning
+
+### Number Visibility Enhancement
+Cijfers worden getekend met een **witte outline** (stroke) om perfecte leesbaarheid te garanderen in alle visualisatie modes, vooral in de lijntekening mode. Minimale vlakgrootte verlaagd naar 20px voor meer nummers.
 
 ### Regio Detectie
 Flood fill algoritme om samenhangende kleurgebieden te vinden en hun zwaartepunten te berekenen voor optimale nummer plaatsing.

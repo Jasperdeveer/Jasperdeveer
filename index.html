@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎨 Paint-by-Numbers Generator <span class="version">v4.0</span></h1>
+            <h1>🎨 Paint-by-Numbers Generator <span class="version">v5.0 AI</span></h1>
             <p>Voor street art en spuitbus projecten</p>
         </header>
 
@@ -116,7 +116,11 @@
         </div>
     </div>
 
+    <!-- TensorFlow.js for AI-powered features (optional but recommended) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+
     <script src="utils.js"></script>
+    <script src="aiEdgeDetector.js"></script>
     <script src="imageProcessor.js"></script>
     <script src="colorManager.js"></script>
     <script src="contourTracer.js"></script>

@@ -6,6 +6,7 @@ class ImageProcessor {
         this.imageData = null;
         this.width = 0;
         this.height = 0;
+        this.aiEdgeDetector = new AIEdgeDetector();
     }
 
     loadImage(file) {
@@ -339,7 +340,7 @@ class ImageProcessor {
         return kernel;
     }
 
-    // Detect edges with Canny-like algorithm for crisp coloring book lines
+    // Detect edges with AI-enhanced Canny algorithm for crisp coloring book lines
     detectEdges(detailLevel = 5, useQuantized = false, colorMap = null) {
         if (!this.imageData) return null;
 
@@ -348,148 +349,21 @@ class ImageProcessor {
         canvas.height = this.height;
         const ctx = canvas.getContext('2d');
 
-        let gray;
-
-        // Use quantized color map for sharper edges between color regions
-        if (useQuantized && colorMap) {
-            gray = new Float32Array(this.width * this.height);
-            for (let i = 0; i < colorMap.length; i++) {
-                gray[i] = colorMap[i] * 25; // Scale color indices
+        // Use AI-powered edge detection for superior results
+        const edgeImageData = this.aiEdgeDetector.detectEdgesAdvanced(
+            this.imageData,
+            this.width,
+            this.height,
+            {
+                detailLevel: detailLevel,
+                useBilateralFilter: true,
+                useAdaptiveThreshold: true,
+                useNonMaxSuppression: true,
+                useHysteresis: true
             }
-        } else {
-            // Convert to grayscale
-            gray = new Float32Array(this.width * this.height);
-            const data = this.imageData.data;
+        );
 
-            for (let i = 0; i < data.length; i += 4) {
-                const idx = i / 4;
-                gray[idx] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            }
-
-            // Apply Gaussian blur to reduce noise
-            const blurStrength = Math.max(0.5, 2 - (detailLevel / 10));
-            gray = this.applyGaussianBlur(gray, this.width, this.height, blurStrength);
-        }
-
-        // Sobel edge detection with gradient magnitude and direction
-        const gradientMag = new Float32Array(this.width * this.height);
-        const gradientDir = new Float32Array(this.width * this.height);
-
-        for (let y = 1; y < this.height - 1; y++) {
-            for (let x = 1; x < this.width - 1; x++) {
-                const idx = y * this.width + x;
-
-                // Sobel kernels
-                const gx =
-                    -1 * gray[(y - 1) * this.width + (x - 1)] +
-                    1 * gray[(y - 1) * this.width + (x + 1)] +
-                    -2 * gray[y * this.width + (x - 1)] +
-                    2 * gray[y * this.width + (x + 1)] +
-                    -1 * gray[(y + 1) * this.width + (x - 1)] +
-                    1 * gray[(y + 1) * this.width + (x + 1)];
-
-                const gy =
-                    -1 * gray[(y - 1) * this.width + (x - 1)] +
-                    -2 * gray[(y - 1) * this.width + x] +
-                    -1 * gray[(y - 1) * this.width + (x + 1)] +
-                    1 * gray[(y + 1) * this.width + (x - 1)] +
-                    2 * gray[(y + 1) * this.width + x] +
-                    1 * gray[(y + 1) * this.width + (x + 1)];
-
-                gradientMag[idx] = Math.sqrt(gx * gx + gy * gy);
-                gradientDir[idx] = Math.atan2(gy, gx);
-            }
-        }
-
-        // Non-maximum suppression for thin edges
-        const thinEdges = new Float32Array(this.width * this.height);
-
-        for (let y = 1; y < this.height - 1; y++) {
-            for (let x = 1; x < this.width - 1; x++) {
-                const idx = y * this.width + x;
-                const angle = gradientDir[idx] * (180 / Math.PI);
-                const mag = gradientMag[idx];
-
-                // Round angle to 0, 45, 90, 135 degrees
-                let angle_rounded = Math.round(angle / 45) * 45;
-                if (angle_rounded < 0) angle_rounded += 180;
-
-                let neighbor1 = 0, neighbor2 = 0;
-
-                if (angle_rounded === 0 || angle_rounded === 180) {
-                    neighbor1 = gradientMag[y * this.width + (x - 1)];
-                    neighbor2 = gradientMag[y * this.width + (x + 1)];
-                } else if (angle_rounded === 45) {
-                    neighbor1 = gradientMag[(y - 1) * this.width + (x + 1)];
-                    neighbor2 = gradientMag[(y + 1) * this.width + (x - 1)];
-                } else if (angle_rounded === 90) {
-                    neighbor1 = gradientMag[(y - 1) * this.width + x];
-                    neighbor2 = gradientMag[(y + 1) * this.width + x];
-                } else if (angle_rounded === 135) {
-                    neighbor1 = gradientMag[(y - 1) * this.width + (x - 1)];
-                    neighbor2 = gradientMag[(y + 1) * this.width + (x + 1)];
-                }
-
-                // Keep only if it's a local maximum
-                if (mag >= neighbor1 && mag >= neighbor2) {
-                    thinEdges[idx] = mag;
-                }
-            }
-        }
-
-        // Double threshold and hysteresis
-        const maxGradient = Math.max(...thinEdges);
-        const highThreshold = maxGradient * (0.15 + (detailLevel / 100));
-        const lowThreshold = highThreshold * 0.4;
-
-        const edges = new Uint8Array(this.width * this.height);
-        const strong = 255;
-        const weak = 128;
-
-        for (let i = 0; i < thinEdges.length; i++) {
-            if (thinEdges[i] >= highThreshold) {
-                edges[i] = strong;
-            } else if (thinEdges[i] >= lowThreshold) {
-                edges[i] = weak;
-            }
-        }
-
-        // Hysteresis: connect weak edges to strong edges
-        for (let y = 1; y < this.height - 1; y++) {
-            for (let x = 1; x < this.width - 1; x++) {
-                const idx = y * this.width + x;
-
-                if (edges[idx] === weak) {
-                    let hasStrongNeighbor = false;
-
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            if (dx === 0 && dy === 0) continue;
-                            const nidx = (y + dy) * this.width + (x + dx);
-                            if (edges[nidx] === strong) {
-                                hasStrongNeighbor = true;
-                                break;
-                            }
-                        }
-                        if (hasStrongNeighbor) break;
-                    }
-
-                    edges[idx] = hasStrongNeighbor ? strong : 0;
-                }
-            }
-        }
-
-        // Draw edges
-        const imageData = ctx.createImageData(this.width, this.height);
-        for (let i = 0; i < edges.length; i++) {
-            const val = 255 - edges[i]; // Invert: black lines on white
-            imageData.data[i * 4] = val;
-            imageData.data[i * 4 + 1] = val;
-            imageData.data[i * 4 + 2] = val;
-            imageData.data[i * 4 + 3] = 255;
-        }
-
-        ctx.putImageData(imageData, 0, 0);
+        ctx.putImageData(edgeImageData, 0, 0);
         return canvas;
     }
 
