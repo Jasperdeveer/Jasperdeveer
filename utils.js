@@ -113,6 +113,7 @@ function showLoading(step = 'Bezig...') {
         if (stepElement) {
             stepElement.textContent = step;
         }
+        resetProgress(); // Reset progress bar when showing loading
     }
 }
 
@@ -127,6 +128,37 @@ function updateLoadingStep(step) {
     const stepElement = document.getElementById('loadingStep');
     if (stepElement) {
         stepElement.textContent = step;
+    }
+}
+
+function updateProgress(percent, message) {
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const stepElement = document.getElementById('loadingStep');
+
+    if (progressFill) {
+        progressFill.style.width = `${percent}%`;
+    }
+
+    if (progressText) {
+        progressText.textContent = `${Math.round(percent)}%`;
+    }
+
+    if (message && stepElement) {
+        stepElement.textContent = message;
+    }
+}
+
+function resetProgress() {
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+
+    if (progressFill) {
+        progressFill.style.width = '0%';
+    }
+
+    if (progressText) {
+        progressText.textContent = '0%';
     }
 }
 

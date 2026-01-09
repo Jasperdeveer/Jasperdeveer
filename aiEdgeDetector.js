@@ -5,6 +5,23 @@ class AIEdgeDetector {
     constructor() {
         this.tfLoaded = false;
         this.model = null;
+        this.progressCallback = null;
+    }
+
+    /**
+     * Set progress callback for reporting processing status
+     */
+    setProgressCallback(callback) {
+        this.progressCallback = callback;
+    }
+
+    /**
+     * Report progress to callback if available
+     */
+    reportProgress(percent, message) {
+        if (this.progressCallback) {
+            this.progressCallback(percent, message);
+        }
     }
 
     /**
@@ -32,11 +49,29 @@ class AIEdgeDetector {
             useNonMaxSuppression = true,
             useHysteresis = true,
             minThreshold = 0.1,
-            maxThreshold = 0.3
+            maxThreshold = 0.3,
+            useMultiScale = true,
+            preserveCorners = true
         } = options;
+
+        this.reportProgress(5, 'Grayscale conversie...');
 
         // Step 1: Convert to grayscale
         const gray = this.toGrayscale(imageData, width, height);
+
+        // Use multi-scale detection for better detail preservation
+        if (useMultiScale) {
+            return this.multiScaleEdgeDetection(gray, width, height, {
+                detailLevel,
+                useBilateralFilter,
+                useAdaptiveThreshold,
+                useNonMaxSuppression,
+                useHysteresis,
+                preserveCorners
+            });
+        }
+
+        this.reportProgress(15, 'Noise filtering...');
 
         // Step 2: Apply bilateral filter for edge-preserving smoothing
         let filtered = gray;
@@ -51,14 +86,27 @@ class AIEdgeDetector {
             filtered = this.gaussianBlur(gray, width, height, 1.4);
         }
 
+        this.reportProgress(30, 'Gradient berekening...');
+
         // Step 3: Sobel operator for gradient calculation
         const { magnitude, direction } = this.sobelGradient(filtered, width, height);
+
+        // Detect corners for preservation
+        let corners = null;
+        if (preserveCorners) {
+            this.reportProgress(40, 'Corner detection...');
+            corners = this.harrisCornerDetector(gray, width, height);
+        }
+
+        this.reportProgress(50, 'Non-maximum suppression...');
 
         // Step 4: Non-maximum suppression for thin edges
         let edges = magnitude;
         if (useNonMaxSuppression) {
             edges = this.nonMaximumSuppression(magnitude, direction, width, height);
         }
+
+        this.reportProgress(60, 'Adaptive thresholding...');
 
         // Step 5: Adaptive or fixed thresholding
         let binary;
@@ -68,18 +116,220 @@ class AIEdgeDetector {
             binary = this.doubleThreshold(edges, width, height, minThreshold, maxThreshold);
         }
 
+        this.reportProgress(70, 'Hysteresis tracking...');
+
         // Step 6: Hysteresis edge tracking
         if (useHysteresis) {
             binary = this.hysteresisEdgeTracking(binary, width, height);
         }
 
+        this.reportProgress(80, 'Morphological operations...');
+
         // Step 7: Morphological operations for cleaner edges
         binary = this.morphologicalClose(binary, width, height);
+
+        // Add corners back to preserve sharp features
+        if (preserveCorners && corners) {
+            this.reportProgress(85, 'Corner preservation...');
+            binary = this.addCorners(binary, corners, width, height);
+        }
+
+        this.reportProgress(90, 'Edge thinning...');
 
         // Step 8: Edge thinning for precise lines
         binary = this.edgeThinning(binary, width, height);
 
+        this.reportProgress(100, 'Klaar!');
+
         return this.createImageData(binary, width, height);
+    }
+
+    /**
+     * Multi-Scale Edge Detection
+     * Combines edges detected at different scales for optimal detail preservation
+     */
+    multiScaleEdgeDetection(gray, width, height, options) {
+        const scales = [
+            { sigma: 0.5, weight: 0.3, name: 'Fijne details' },   // Fine details
+            { sigma: 1.5, weight: 0.4, name: 'Medium details' },  // Medium details
+            { sigma: 3.0, weight: 0.3, name: 'Grove contouren' }  // Coarse contours
+        ];
+
+        const edgeMaps = [];
+
+        // Detect edges at each scale
+        for (let i = 0; i < scales.length; i++) {
+            const scale = scales[i];
+            const progress = 15 + (i * 20);
+            this.reportProgress(progress, `${scale.name}...`);
+
+            // Apply Gaussian blur at this scale
+            const filtered = this.gaussianBlur(gray, width, height, scale.sigma);
+
+            // Compute gradients
+            const { magnitude, direction } = this.sobelGradient(filtered, width, height);
+
+            // Non-maximum suppression
+            const edges = this.nonMaximumSuppression(magnitude, direction, width, height);
+
+            edgeMaps.push({ edges, weight: scale.weight });
+        }
+
+        this.reportProgress(60, 'Schalen combineren...');
+
+        // Combine edge maps with weighted sum
+        const combined = new Float32Array(width * height);
+        for (let i = 0; i < combined.length; i++) {
+            let sum = 0;
+            for (let map of edgeMaps) {
+                sum += map.edges[i] * map.weight;
+            }
+            combined[i] = sum;
+        }
+
+        this.reportProgress(70, 'Adaptive thresholding...');
+
+        // Apply adaptive thresholding
+        const binary = this.adaptiveThreshold(combined, width, height, options.detailLevel);
+
+        this.reportProgress(80, 'Hysteresis tracking...');
+
+        // Hysteresis edge tracking
+        const tracked = this.hysteresisEdgeTracking(binary, width, height);
+
+        this.reportProgress(90, 'Corner detection...');
+
+        // Detect and preserve corners
+        if (options.preserveCorners) {
+            const corners = this.harrisCornerDetector(gray, width, height);
+            const withCorners = this.addCorners(tracked, corners, width, height);
+
+            this.reportProgress(100, 'Klaar!');
+            return this.createImageData(withCorners, width, height);
+        }
+
+        this.reportProgress(100, 'Klaar!');
+        return this.createImageData(tracked, width, height);
+    }
+
+    /**
+     * Harris Corner Detector
+     * Detects corners to preserve sharp features
+     */
+    harrisCornerDetector(gray, width, height, threshold = 0.01) {
+        const corners = new Uint8Array(width * height);
+
+        // Compute image gradients
+        const Ix = new Float32Array(width * height);
+        const Iy = new Float32Array(width * height);
+
+        // Sobel for gradients
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const idx = y * width + x;
+
+                // Sobel X
+                Ix[idx] = (
+                    -gray[(y - 1) * width + (x - 1)] + gray[(y - 1) * width + (x + 1)] +
+                    -2 * gray[y * width + (x - 1)] + 2 * gray[y * width + (x + 1)] +
+                    -gray[(y + 1) * width + (x - 1)] + gray[(y + 1) * width + (x + 1)]
+                );
+
+                // Sobel Y
+                Iy[idx] = (
+                    -gray[(y - 1) * width + (x - 1)] - 2 * gray[(y - 1) * width + x] - gray[(y - 1) * width + (x + 1)] +
+                    gray[(y + 1) * width + (x - 1)] + 2 * gray[(y + 1) * width + x] + gray[(y + 1) * width + (x + 1)]
+                );
+            }
+        }
+
+        // Compute products of derivatives
+        const Ix2 = new Float32Array(width * height);
+        const Iy2 = new Float32Array(width * height);
+        const Ixy = new Float32Array(width * height);
+
+        for (let i = 0; i < width * height; i++) {
+            Ix2[i] = Ix[i] * Ix[i];
+            Iy2[i] = Iy[i] * Iy[i];
+            Ixy[i] = Ix[i] * Iy[i];
+        }
+
+        // Apply Gaussian window
+        const windowSize = 3;
+        const Sx2 = this.gaussianBlur(Ix2, width, height, 1.0);
+        const Sy2 = this.gaussianBlur(Iy2, width, height, 1.0);
+        const Sxy = this.gaussianBlur(Ixy, width, height, 1.0);
+
+        // Compute corner response
+        const k = 0.04;
+        const R = new Float32Array(width * height);
+        let maxR = 0;
+
+        for (let i = 0; i < width * height; i++) {
+            const det = Sx2[i] * Sy2[i] - Sxy[i] * Sxy[i];
+            const trace = Sx2[i] + Sy2[i];
+            R[i] = det - k * trace * trace;
+            maxR = Math.max(maxR, R[i]);
+        }
+
+        // Threshold and non-maximum suppression
+        const cornerThreshold = maxR * threshold;
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const idx = y * width + x;
+
+                if (R[idx] > cornerThreshold) {
+                    // Check if local maximum
+                    let isMax = true;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nidx = (y + dy) * width + (x + dx);
+                            if (R[nidx] > R[idx]) {
+                                isMax = false;
+                                break;
+                            }
+                        }
+                        if (!isMax) break;
+                    }
+
+                    if (isMax) {
+                        corners[idx] = 255;
+                    }
+                }
+            }
+        }
+
+        return corners;
+    }
+
+    /**
+     * Add detected corners to edge map
+     */
+    addCorners(binary, corners, width, height) {
+        const result = new Uint8Array(binary);
+
+        // Dilate corners slightly to ensure connectivity
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const idx = y * width + x;
+
+                if (corners[idx] > 0) {
+                    // Add corner and small neighborhood
+                    result[idx] = 255;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const nidx = (y + dy) * width + (x + dx);
+                            if (result[nidx] > 0) {
+                                result[nidx] = 255;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     /**

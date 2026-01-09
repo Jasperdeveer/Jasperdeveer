@@ -274,9 +274,13 @@ class ContourTracer {
     /**
      * Alternative: Chaikin's corner cutting algorithm for smoothing
      * Simpler and faster than splines, but effective
+     * Now with corner preservation!
      */
-    smoothPathChaikin(points, iterations = 2) {
+    smoothPathChaikin(points, iterations = 2, cornerAngleThreshold = 120) {
         if (points.length < 3) return points;
+
+        // Detect corners first
+        const corners = this.detectCorners(points, cornerAngleThreshold);
 
         let smoothed = [...points];
 
@@ -291,15 +295,24 @@ class ContourTracer {
                 const p1 = smoothed[i];
                 const p2 = smoothed[i + 1];
 
-                // Create two new points at 1/4 and 3/4 along the segment
-                newPoints.push({
-                    x: 0.75 * p1.x + 0.25 * p2.x,
-                    y: 0.75 * p1.y + 0.25 * p2.y
-                });
-                newPoints.push({
-                    x: 0.25 * p1.x + 0.75 * p2.x,
-                    y: 0.25 * p1.y + 0.75 * p2.y
-                });
+                // Check if this is a corner point (should be preserved)
+                const isCorner = corners.has(i);
+
+                if (isCorner) {
+                    // Preserve corners - don't smooth them
+                    newPoints.push(p1);
+                    newPoints.push(p2);
+                } else {
+                    // Create two new points at 1/4 and 3/4 along the segment
+                    newPoints.push({
+                        x: 0.75 * p1.x + 0.25 * p2.x,
+                        y: 0.75 * p1.y + 0.25 * p2.y
+                    });
+                    newPoints.push({
+                        x: 0.25 * p1.x + 0.75 * p2.x,
+                        y: 0.25 * p1.y + 0.75 * p2.y
+                    });
+                }
             }
 
             // Keep last point
@@ -309,6 +322,46 @@ class ContourTracer {
         }
 
         return smoothed;
+    }
+
+    /**
+     * Detect corners in a path based on angle threshold
+     * Returns a Set of indices where corners are detected
+     */
+    detectCorners(points, angleThreshold = 120) {
+        const corners = new Set();
+
+        if (points.length < 3) return corners;
+
+        // Convert angle threshold to radians
+        const thresholdRad = (angleThreshold * Math.PI) / 180;
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const p0 = points[i - 1];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+
+            // Calculate vectors
+            const v1 = { x: p1.x - p0.x, y: p1.y - p0.y };
+            const v2 = { x: p2.x - p1.x, y: p2.y - p1.y };
+
+            // Calculate angle between vectors using dot product
+            const dot = v1.x * v2.x + v1.y * v2.y;
+            const len1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            const len2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+
+            if (len1 === 0 || len2 === 0) continue;
+
+            const cosAngle = dot / (len1 * len2);
+            const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+
+            // If angle is sharp (less than threshold), mark as corner
+            if (angle < thresholdRad) {
+                corners.add(i);
+            }
+        }
+
+        return corners;
     }
 
     /**
@@ -329,7 +382,8 @@ class ContourTracer {
             simplifyEpsilon = 1.0,
             smoothingIterations = 2,
             useCatmullRom = false,
-            segmentsPerPoint = 6
+            segmentsPerPoint = 6,
+            cornerAngleThreshold = 120  // Preserve corners sharper than this angle
         } = options;
 
         // Step 1: Extract raw boundary pixels
@@ -343,12 +397,12 @@ class ContourTracer {
             this.simplifyPath(path, simplifyEpsilon)
         );
 
-        // Step 4: Smooth paths
+        // Step 4: Smooth paths with corner preservation
         const smoothedPaths = simplifiedPaths.map(path => {
             if (useCatmullRom) {
                 return this.smoothPathWithSpline(path, segmentsPerPoint);
             } else {
-                return this.smoothPathChaikin(path, smoothingIterations);
+                return this.smoothPathChaikin(path, smoothingIterations, cornerAngleThreshold);
             }
         });
 

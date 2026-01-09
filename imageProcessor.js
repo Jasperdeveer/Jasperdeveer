@@ -349,6 +349,13 @@ class ImageProcessor {
         canvas.height = this.height;
         const ctx = canvas.getContext('2d');
 
+        // Setup progress callback if available
+        if (typeof updateProgress === 'function') {
+            this.aiEdgeDetector.setProgressCallback((percent, message) => {
+                updateProgress(percent, message);
+            });
+        }
+
         // Use AI-powered edge detection for superior results
         const edgeImageData = this.aiEdgeDetector.detectEdgesAdvanced(
             this.imageData,
@@ -359,7 +366,9 @@ class ImageProcessor {
                 useBilateralFilter: true,
                 useAdaptiveThreshold: true,
                 useNonMaxSuppression: true,
-                useHysteresis: true
+                useHysteresis: true,
+                useMultiScale: true,      // Enable multi-scale for detail preservation
+                preserveCorners: true     // Enable corner detection
             }
         );
 

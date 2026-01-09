@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎨 Paint-by-Numbers Generator <span class="version">v5.0 AI</span></h1>
+            <h1>🎨 Paint-by-Numbers Generator <span class="version">v6.0 AI Pro</span></h1>
             <p>Voor street art en spuitbus projecten</p>
         </header>
 
@@ -107,12 +107,18 @@
         </div>
     </div>
 
-    <!-- Loading Indicator -->
+    <!-- Loading Indicator with Progress Bar -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-content">
             <div class="spinner"></div>
             <div class="loading-text">Bezig...</div>
             <div class="loading-step" id="loadingStep">Initialiseren</div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
         </div>
     </div>
 

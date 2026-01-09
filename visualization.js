@@ -18,7 +18,8 @@ class Visualizer {
             simplifyEpsilon: 1.0,
             smoothingIterations: 2,
             useCatmullRom: false,
-            enableAntiAliasing: true
+            enableAntiAliasing: true,
+            cornerAngleThreshold: 120 // Angles sharper than this (degrees) are preserved
         };
     }
 
@@ -134,7 +135,8 @@ class Visualizer {
             simplifyEpsilon: this.parameters.simplifyEpsilon,
             smoothingIterations: this.parameters.smoothingIterations,
             useCatmullRom: this.parameters.useCatmullRom,
-            segmentsPerPoint: 6
+            segmentsPerPoint: 6,
+            cornerAngleThreshold: this.parameters.cornerAngleThreshold
         });
 
         // Draw all contour paths
