@@ -136,7 +136,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Create central widget
         central_widget = QWidget()
-        self.setCentral(central_widget)
+        self.setCentralWidget(central_widget)
 
         # Main layout
         main_layout = QHBoxLayout(central_widget)
