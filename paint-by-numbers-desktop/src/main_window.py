@@ -19,6 +19,7 @@ import logging
 from image_processor import ImageProcessor
 from color_manager import ColorManager, Color
 from visualizer import Visualizer
+from presentation_mode import PresentationMode
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,7 @@ class JSPRBeamerSetup(QMainWindow):
         # State
         self.current_mode = 'original'
         self.current_file_path = None
+        self.presentation_window = None
 
         # Setup UI
         self.init_ui()
@@ -679,12 +681,68 @@ class JSPRBeamerSetup(QMainWindow):
 
     def enter_presentation_mode(self):
         """Enter fullscreen presentation mode"""
-        # TODO: Implement presentation mode window
-        QMessageBox.information(
-            self,
-            "Presentatie Mode",
-            "Presentatie mode komt binnenkort beschikbaar!"
-        )
+        if self.canvas.image is None:
+            QMessageBox.warning(
+                self,
+                "Geen afbeelding",
+                "Render eerst een afbeelding voordat je naar presentatie mode gaat"
+            )
+            return
+
+        # Create presentation window if it doesn't exist
+        if self.presentation_window is None:
+            self.presentation_window = PresentationMode()
+            self.presentation_window.closed.connect(self.on_presentation_closed)
+            self.presentation_window.toggle_numbers_requested.connect(self.on_toggle_numbers_presentation)
+            self.presentation_window.cycle_mode_requested.connect(self.on_cycle_mode_presentation)
+
+        # Set current image
+        self.presentation_window.set_image(self.canvas.image)
+        if self.image_processor.original_image is not None:
+            self.presentation_window.set_original_image(
+                self.image_processor.get_image_copy()
+            )
+
+        # Show in fullscreen
+        self.presentation_window.showFullScreen()
+        self.statusBar().showMessage("Presentatie mode gestart - Druk ESC om te sluiten")
+
+    def on_presentation_closed(self):
+        """Handle presentation mode closed"""
+        self.statusBar().showMessage("Presentatie mode gesloten")
+
+    def on_toggle_numbers_presentation(self):
+        """Handle toggle numbers from presentation mode"""
+        # Toggle in visualizer
+        current_state = self.visualizer.show_numbers
+        self.visualizer.set_show_numbers(not current_state)
+
+        # Re-render
+        result = self.visualizer.render_current_mode()
+        if result is not None:
+            self.canvas.set_image(result)
+            # Update presentation window
+            if self.presentation_window:
+                self.presentation_window.set_image(result)
+
+        logger.info(f"Numbers toggled: {self.visualizer.show_numbers}")
+
+    def on_cycle_mode_presentation(self):
+        """Handle cycle mode from presentation mode"""
+        # Cycle through modes
+        modes = ['original', 'paintByNumbers', 'lineDrawing']
+        current_idx = modes.index(self.current_mode)
+        next_idx = (current_idx + 1) % len(modes)
+        next_mode = modes[next_idx]
+
+        # Set new mode
+        self.set_mode(next_mode)
+
+        # Update presentation window
+        if self.presentation_window and self.canvas.image is not None:
+            self.presentation_window.set_image(self.canvas.image)
+
+        logger.info(f"Mode cycled to: {next_mode}")
 
     def export_png(self):
         """Export as PNG"""
