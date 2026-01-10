@@ -129,6 +129,10 @@ class ManualColorPicker(QWidget):
 
     def __init__(self, original_image: np.ndarray, parent=None):
         super().__init__(parent)
+
+        # Set window flags to make it a standalone window
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+
         self.original_image = original_image.copy()
         self.working_image = original_image.copy()
         self.display_image = original_image.copy()
@@ -143,6 +147,8 @@ class ManualColorPicker(QWidget):
         self.selection_mask = np.zeros(original_image.shape[:2], dtype=bool)
 
         self.init_ui()
+
+        logger.info("ManualColorPicker initialized")
 
     def init_ui(self):
         """Initialize UI"""

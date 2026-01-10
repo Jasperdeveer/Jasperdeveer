@@ -539,7 +539,10 @@ class JSPRBeamerSetup(QMainWindow):
         logger.info("Signals connected")
 
         # Show fullscreen and ensure it's on top
-        logger.info("Calling showFullScreen()...")
+        logger.info("Calling show() first...")
+        self.manual_picker.show()  # Show normally first
+
+        logger.info("Now calling showFullScreen()...")
         self.manual_picker.showFullScreen()
         self.manual_picker.raise_()
         self.manual_picker.activateWindow()
