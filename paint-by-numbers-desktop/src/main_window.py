@@ -498,16 +498,26 @@ class JSPRBeamerSetup(QMainWindow):
             self.canvas.set_original_image(img)
 
             # Show color selection dialog
+            logger.info("Showing ColorSelectionDialog...")
             dialog = ColorSelectionDialog(self)
-            if dialog.exec_() == QDialog.Accepted:
+            result = dialog.exec_()
+
+            logger.info(f"Dialog result: {result}, selection_mode: {dialog.selection_mode}")
+
+            if result == QDialog.Accepted:
                 if dialog.selection_mode == 'automatic':
+                    logger.info("Starting automatic color detection")
                     # Auto-detect colors
                     self.detect_colors()
                 elif dialog.selection_mode == 'manual':
+                    logger.info("Starting manual color picker")
                     # Show manual color picker
                     self.show_manual_color_picker(img)
+                else:
+                    logger.warning(f"Unknown selection mode: {dialog.selection_mode}")
             else:
                 # Dialog was closed without selection
+                logger.info("ColorSelectionDialog was cancelled")
                 self.statusBar().showMessage(f"Geladen: {os.path.basename(file_path)} - Kies kleuren om verder te gaan")
 
             self.statusBar().showMessage(f"Geladen: {os.path.basename(file_path)}")
@@ -517,17 +527,23 @@ class JSPRBeamerSetup(QMainWindow):
 
     def show_manual_color_picker(self, image: np.ndarray):
         """Show manual color picker fullscreen interface"""
+        logger.info("Creating ManualColorPicker window...")
+
         # Create manual color picker and store as instance variable
         self.manual_picker = ManualColorPicker(image, self)
+        logger.info(f"ManualColorPicker created: {self.manual_picker}")
 
         # Connect signals
         self.manual_picker.colors_selected.connect(self.on_manual_colors_selected)
         self.manual_picker.cancelled.connect(self.on_manual_selection_cancelled)
+        logger.info("Signals connected")
 
         # Show fullscreen and ensure it's on top
+        logger.info("Calling showFullScreen()...")
         self.manual_picker.showFullScreen()
         self.manual_picker.raise_()
         self.manual_picker.activateWindow()
+        logger.info("ManualColorPicker should now be visible")
 
         self.statusBar().showMessage("Handmatige kleur selectie - Klik op kleuren om toe te voegen")
 

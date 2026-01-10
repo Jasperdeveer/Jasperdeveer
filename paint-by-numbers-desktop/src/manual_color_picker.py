@@ -109,11 +109,13 @@ class ColorSelectionDialog(QDialog):
 
     def select_automatic(self):
         """Select automatic mode"""
+        logger.info("User selected AUTOMATIC color detection")
         self.selection_mode = 'automatic'
         self.accept()
 
     def select_manual(self):
         """Select manual mode"""
+        logger.info("User selected MANUAL color picker")
         self.selection_mode = 'manual'
         self.accept()
 
