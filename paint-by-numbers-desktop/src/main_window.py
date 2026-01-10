@@ -524,8 +524,10 @@ class JSPRBeamerSetup(QMainWindow):
         self.manual_picker.colors_selected.connect(self.on_manual_colors_selected)
         self.manual_picker.cancelled.connect(self.on_manual_selection_cancelled)
 
-        # Show fullscreen
+        # Show fullscreen and ensure it's on top
         self.manual_picker.showFullScreen()
+        self.manual_picker.raise_()
+        self.manual_picker.activateWindow()
 
         self.statusBar().showMessage("Handmatige kleur selectie - Klik op kleuren om toe te voegen")
 
