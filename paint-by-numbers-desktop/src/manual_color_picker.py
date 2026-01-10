@@ -162,9 +162,6 @@ class ManualColorPicker(QWidget):
         canvas.setMinimumSize(800, 600)
         main_layout.addWidget(canvas, stretch=1)
 
-        # Show fullscreen
-        self.showFullScreen()
-
     def create_sidebar(self) -> QWidget:
         """Create left sidebar with palette and controls"""
         sidebar = QWidget()
