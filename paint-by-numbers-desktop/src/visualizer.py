@@ -244,7 +244,7 @@ class Visualizer:
             image,
             self.contours,
             color=(0, 0, 0),  # Black
-            thickness=self.parameters['line_width']
+            thickness=int(self.parameters['line_width'])
         )
 
         return result

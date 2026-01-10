@@ -449,6 +449,8 @@ class ManualColorPicker(QWidget):
 
         # Check for similar existing colors
         similar_color = None
+        merge_with_existing = False
+
         for existing_color in self.selected_colors:
             if are_colors_similar(r, g, b, existing_color.r, existing_color.g, existing_color.b, self.merge_threshold):
                 similar_color = existing_color
@@ -464,11 +466,9 @@ class ManualColorPicker(QWidget):
             msg.setDefaultButton(QMessageBox.Yes)
 
             result = msg.exec_()
-            if result == QMessageBox.No:
-                # User wants to keep as separate color, continue normally
-                pass
-            else:
+            if result == QMessageBox.Yes:
                 # Merge - use the existing color but select similar pixels
+                merge_with_existing = True
                 logger.info(f"Merging with existing color: {similar_color.name}")
                 r, g, b = similar_color.r, similar_color.g, similar_color.b
 
@@ -481,7 +481,7 @@ class ManualColorPicker(QWidget):
             return
 
         # Create new color (or use existing if merging)
-        if similar_color and result == QMessageBox.Yes:
+        if merge_with_existing and similar_color:
             # Don't add a new color, just update the mask
             new_color = similar_color
         else:

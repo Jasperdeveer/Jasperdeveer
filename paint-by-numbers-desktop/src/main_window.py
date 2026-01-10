@@ -175,6 +175,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.current_mode = 'original'
         self.current_file_path = None
         self.presentation_window = None
+        self.manual_picker = None
 
         # Setup UI
         self.init_ui()
@@ -516,12 +517,12 @@ class JSPRBeamerSetup(QMainWindow):
 
     def show_manual_color_picker(self, image: np.ndarray):
         """Show manual color picker fullscreen interface"""
-        # Create manual color picker
-        picker = ManualColorPicker(image, self)
+        # Create manual color picker and store as instance variable
+        self.manual_picker = ManualColorPicker(image, self)
 
         # Connect signals
-        picker.colors_selected.connect(self.on_manual_colors_selected)
-        picker.cancelled.connect(self.on_manual_selection_cancelled)
+        self.manual_picker.colors_selected.connect(self.on_manual_colors_selected)
+        self.manual_picker.cancelled.connect(self.on_manual_selection_cancelled)
 
         # Show (it will show itself fullscreen in init_ui)
         self.statusBar().showMessage("Handmatige kleur selectie - Klik op kleuren om toe te voegen")
@@ -544,10 +545,16 @@ class JSPRBeamerSetup(QMainWindow):
 
         self.statusBar().showMessage(f"Handmatige selectie voltooid: {len(colors)} kleuren geselecteerd")
 
+        # Cleanup picker reference
+        self.manual_picker = None
+
     def on_manual_selection_cancelled(self):
         """Handle manual color selection cancelled"""
         logger.info("Manual color selection cancelled")
         self.statusBar().showMessage("Handmatige kleur selectie geannuleerd")
+
+        # Cleanup picker reference
+        self.manual_picker = None
 
     def update_preview(self, image: np.ndarray):
         """Update image preview thumbnail"""
