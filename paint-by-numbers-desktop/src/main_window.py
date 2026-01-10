@@ -5,10 +5,11 @@ Native desktop interface for paint-by-numbers generation
 
 import sys
 import os
+from typing import List, Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
-    QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox
+    QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
@@ -20,6 +21,7 @@ from image_processor import ImageProcessor
 from color_manager import ColorManager, Color
 from visualizer import Visualizer
 from presentation_mode import PresentationMode
+from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 
 logger = logging.getLogger(__name__)
 
@@ -494,13 +496,58 @@ class JSPRBeamerSetup(QMainWindow):
             # Set original image for eyedropper
             self.canvas.set_original_image(img)
 
-            # Auto-detect colors
-            self.detect_colors()
+            # Show color selection dialog
+            dialog = ColorSelectionDialog(self)
+            if dialog.exec_() == QDialog.Accepted:
+                if dialog.selection_mode == 'automatic':
+                    # Auto-detect colors
+                    self.detect_colors()
+                elif dialog.selection_mode == 'manual':
+                    # Show manual color picker
+                    self.show_manual_color_picker(img)
+            else:
+                # Dialog was closed without selection
+                self.statusBar().showMessage(f"Geladen: {os.path.basename(file_path)} - Kies kleuren om verder te gaan")
 
             self.statusBar().showMessage(f"Geladen: {os.path.basename(file_path)}")
         else:
             QMessageBox.critical(self, "Fout", "Kan afbeelding niet laden")
             self.statusBar().showMessage("Fout bij laden")
+
+    def show_manual_color_picker(self, image: np.ndarray):
+        """Show manual color picker fullscreen interface"""
+        # Create manual color picker
+        picker = ManualColorPicker(image, self)
+
+        # Connect signals
+        picker.colors_selected.connect(self.on_manual_colors_selected)
+        picker.cancelled.connect(self.on_manual_selection_cancelled)
+
+        # Show (it will show itself fullscreen in init_ui)
+        self.statusBar().showMessage("Handmatige kleur selectie - Klik op kleuren om toe te voegen")
+
+    def on_manual_colors_selected(self, colors: List[Color]):
+        """Handle colors selected from manual picker"""
+        logger.info(f"Manual selection complete: {len(colors)} colors")
+
+        # Update color manager with selected colors
+        self.color_manager.colors = colors
+
+        # Update color palette display
+        self.update_color_palette()
+
+        # Clear visualizer cache
+        self.visualizer.clear_cache()
+
+        # Render the image with the selected colors
+        self.render()
+
+        self.statusBar().showMessage(f"Handmatige selectie voltooid: {len(colors)} kleuren geselecteerd")
+
+    def on_manual_selection_cancelled(self):
+        """Handle manual color selection cancelled"""
+        logger.info("Manual color selection cancelled")
+        self.statusBar().showMessage("Handmatige kleur selectie geannuleerd")
 
     def update_preview(self, image: np.ndarray):
         """Update image preview thumbnail"""
