@@ -28,6 +28,13 @@ class PresentationMode(QWidget):
         self.show_numbers = True
         self.show_grid = False
         self.grid_size = 4  # 4x4 grid (A1, A2, B1, B2, etc.)
+        self.grid_color_index = 0  # 0=neon green, 1=magenta
+        self.grid_colors = [
+            (0, 255, 0),      # Neon green / Gifgroen
+            (255, 0, 255),    # Magenta
+            (0, 255, 255),    # Cyan
+            (255, 255, 0)     # Yellow
+        ]
         self.zoom_level = 1.0
         self.pan_x = 0
         self.pan_y = 0
@@ -66,6 +73,25 @@ class PresentationMode(QWidget):
         """Toggle grid overlay"""
         self.show_grid = not self.show_grid
         logger.info(f"Grid: {'ON' if self.show_grid else 'OFF'}")
+        self.update()
+
+    def cycle_grid_color(self):
+        """Cycle through grid colors"""
+        self.grid_color_index = (self.grid_color_index + 1) % len(self.grid_colors)
+        color_names = ["Gifgroen", "Magenta", "Cyaan", "Geel"]
+        logger.info(f"Grid kleur: {color_names[self.grid_color_index]}")
+        self.update()
+
+    def increase_grid_size(self):
+        """Increase grid size"""
+        self.grid_size = min(12, self.grid_size + 1)
+        logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+        self.update()
+
+    def decrease_grid_size(self):
+        """Decrease grid size"""
+        self.grid_size = max(2, self.grid_size - 1)
+        logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
         self.update()
 
     def toggle_shortcuts(self):
@@ -146,6 +172,16 @@ class PresentationMode(QWidget):
         elif key == Qt.Key_G:
             self.toggle_grid()
 
+        # C: Cycle grid color
+        elif key == Qt.Key_C:
+            self.cycle_grid_color()
+
+        # [ and ]: Adjust grid size
+        elif key == Qt.Key_BracketLeft:
+            self.decrease_grid_size()
+        elif key == Qt.Key_BracketRight:
+            self.increase_grid_size()
+
         # H: Toggle shortcuts help
         elif key == Qt.Key_H:
             self.toggle_shortcuts()
@@ -225,9 +261,12 @@ class PresentationMode(QWidget):
         """Draw grid overlay (A1, A2, B1, etc.)"""
         painter.save()
 
+        # Get current grid color
+        r, g, b = self.grid_colors[self.grid_color_index]
+
         # Grid lines
-        pen = QPen(QColor(255, 255, 255, 150))
-        pen.setWidth(2)
+        pen = QPen(QColor(r, g, b, 255))  # Full opacity for visibility
+        pen.setWidth(3)  # Thicker for beamer visibility
         painter.setPen(pen)
 
         cell_width = width / self.grid_size
@@ -246,7 +285,7 @@ class PresentationMode(QWidget):
         # Draw labels (A1, A2, B1, etc.)
         font = QFont("Arial", 20, QFont.Bold)
         painter.setFont(font)
-        painter.setPen(QColor(255, 255, 255, 200))
+        painter.setPen(QColor(r, g, b, 255))  # Match grid color
 
         letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         for row in range(self.grid_size):
@@ -262,9 +301,9 @@ class PresentationMode(QWidget):
         """Draw keyboard shortcuts overlay"""
         painter.save()
 
-        # Semi-transparent background
+        # Semi-transparent background - larger for more shortcuts
         bg_color = QColor(0, 0, 0, int(150 * self.shortcuts_opacity))
-        painter.fillRect(10, 10, 300, 400, bg_color)
+        painter.fillRect(10, 10, 320, 450, bg_color)
 
         # White text
         painter.setPen(QColor(255, 255, 255, int(255 * self.shortcuts_opacity)))
@@ -283,6 +322,8 @@ class PresentationMode(QWidget):
             ("F11", "Volledig scherm"),
             ("N", "Nummers aan/uit"),
             ("G", "Grid aan/uit"),
+            ("C", "Grid kleur"),
+            ("[ / ]", "Grid grootte"),
             ("H", "Deze hulp aan/uit"),
             ("+/-", "Zoom in/uit"),
             ("0", "Reset zoom"),
@@ -310,10 +351,11 @@ class PresentationMode(QWidget):
         if self.show_numbers:
             status_text += " | Nummers: ON"
         if self.show_grid:
-            status_text += f" | Grid: {self.grid_size}x{self.grid_size}"
+            color_names = ["Gifgroen", "Magenta", "Cyaan", "Geel"]
+            status_text += f" | Grid: {self.grid_size}x{self.grid_size} ({color_names[self.grid_color_index]})"
 
         painter.drawText(
-            self.width() - 300,
+            self.width() - 400,
             self.height() - 20,
             status_text
         )

@@ -7,8 +7,8 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QSlider, QSpinBox, QFileDialog, QScrollArea,
-    QGroupBox, QSplitter, QMessageBox, QProgressDialog
+    QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
+    QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
@@ -264,14 +264,16 @@ class JSPRBeamerSetup(QMainWindow):
         # Image section
         image_group = QGroupBox("Afbeelding")
         image_layout = QVBoxLayout()
+        image_layout.setSpacing(5)
+        image_layout.setContentsMargins(5, 5, 5, 5)
 
         self.open_btn = QPushButton("Open Afbeelding...")
         self.open_btn.clicked.connect(self.open_image)
         image_layout.addWidget(self.open_btn)
 
-        # Image preview
+        # Image preview - smaller for compact UI
         self.image_preview = QLabel()
-        self.image_preview.setFixedSize(300, 200)
+        self.image_preview.setFixedSize(280, 180)
         self.image_preview.setStyleSheet("border: 1px solid #ccc; background: #2a2a2a;")
         self.image_preview.setAlignment(Qt.AlignCenter)
         self.image_preview.setText("Geen afbeelding")
@@ -281,8 +283,10 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(image_group)
 
         # Mode selection
-        mode_group = QGroupBox("Visualisatie Mode")
+        mode_group = QGroupBox("Visualisatie")
         mode_layout = QVBoxLayout()
+        mode_layout.setSpacing(3)
+        mode_layout.setContentsMargins(5, 5, 5, 5)
 
         self.mode_original_btn = QPushButton("Origineel")
         self.mode_original_btn.setCheckable(True)
@@ -306,13 +310,16 @@ class JSPRBeamerSetup(QMainWindow):
         # Parameters
         params_group = QGroupBox("Parameters")
         params_layout = QVBoxLayout()
+        params_layout.setSpacing(3)  # Compacter
+        params_layout.setContentsMargins(5, 5, 5, 5)
 
         # Color count
         color_count_layout = QHBoxLayout()
-        color_count_layout.addWidget(QLabel("Aantal kleuren:"))
+        color_count_layout.addWidget(QLabel("Kleuren:"))
         self.color_count_spin = QSpinBox()
         self.color_count_spin.setRange(2, 32)
         self.color_count_spin.setValue(8)
+        self.color_count_spin.setMaximumWidth(60)
         color_count_layout.addWidget(self.color_count_spin)
         params_layout.addLayout(color_count_layout)
 
@@ -322,29 +329,54 @@ class JSPRBeamerSetup(QMainWindow):
         params_layout.addWidget(self.detect_colors_btn)
 
         # Eyedropper button
-        self.eyedropper_btn = QPushButton("🎨 Pipet (Kleur Kiezen)")
+        self.eyedropper_btn = QPushButton("🎨 Pipet")
         self.eyedropper_btn.setCheckable(True)
         self.eyedropper_btn.setObjectName("primaryButton")
         self.eyedropper_btn.clicked.connect(self.toggle_eyedropper)
         params_layout.addWidget(self.eyedropper_btn)
 
-        # Line width
+        # Real-time updates checkbox
+        self.realtime_checkbox = QCheckBox("Real-time updates")
+        self.realtime_checkbox.setChecked(False)
+        params_layout.addWidget(self.realtime_checkbox)
+
+        # Herbereken button
+        self.recalc_btn = QPushButton("↻ Herbereken")
+        self.recalc_btn.clicked.connect(self.update_parameters)
+        params_layout.addWidget(self.recalc_btn)
+
+        # Line width (with decimals)
         line_width_layout = QHBoxLayout()
         line_width_layout.addWidget(QLabel("Lijndikte:"))
-        self.line_width_spin = QSpinBox()
-        self.line_width_spin.setRange(1, 10)
-        self.line_width_spin.setValue(2)
-        self.line_width_spin.valueChanged.connect(self.update_parameters)
+        self.line_width_spin = QDoubleSpinBox()
+        self.line_width_spin.setRange(0.5, 10.0)
+        self.line_width_spin.setSingleStep(0.5)
+        self.line_width_spin.setValue(2.0)
+        self.line_width_spin.setDecimals(1)
+        self.line_width_spin.setMaximumWidth(60)
+        self.line_width_spin.valueChanged.connect(self.on_parameter_changed)
         line_width_layout.addWidget(self.line_width_spin)
         params_layout.addLayout(line_width_layout)
 
+        # Number size
+        number_size_layout = QHBoxLayout()
+        number_size_layout.addWidget(QLabel("Cijfergrootte:"))
+        self.number_size_spin = QSpinBox()
+        self.number_size_spin.setRange(6, 32)
+        self.number_size_spin.setValue(16)
+        self.number_size_spin.setMaximumWidth(60)
+        self.number_size_spin.valueChanged.connect(self.on_parameter_changed)
+        number_size_layout.addWidget(self.number_size_spin)
+        params_layout.addLayout(number_size_layout)
+
         # Min region size
         region_size_layout = QHBoxLayout()
-        region_size_layout.addWidget(QLabel("Min. vlakgrootte:"))
+        region_size_layout.addWidget(QLabel("Min. vlak:"))
         self.region_size_spin = QSpinBox()
         self.region_size_spin.setRange(10, 500)
         self.region_size_spin.setValue(20)
-        self.region_size_spin.valueChanged.connect(self.update_parameters)
+        self.region_size_spin.setMaximumWidth(60)
+        self.region_size_spin.valueChanged.connect(self.on_parameter_changed)
         region_size_layout.addWidget(self.region_size_spin)
         params_layout.addLayout(region_size_layout)
 
@@ -352,16 +384,19 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(params_group)
 
         # Color palette (scrollable)
-        palette_group = QGroupBox("Kleurenpalet")
+        palette_group = QGroupBox("Kleuren")
         palette_layout = QVBoxLayout()
+        palette_layout.setSpacing(3)
+        palette_layout.setContentsMargins(5, 5, 5, 5)
 
         self.color_palette_widget = QWidget()
         self.color_palette_layout = QVBoxLayout(self.color_palette_widget)
+        self.color_palette_layout.setSpacing(2)  # Compact color items
 
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.color_palette_widget)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setMaximumHeight(300)
+        scroll_area.setMaximumHeight(250)  # Smaller for compact UI
 
         palette_layout.addWidget(scroll_area)
         palette_group.setLayout(palette_layout)
@@ -536,21 +571,23 @@ class JSPRBeamerSetup(QMainWindow):
         for color in colors:
             item_widget = QWidget()
             item_layout = QHBoxLayout(item_widget)
-            item_layout.setContentsMargins(5, 5, 5, 5)
+            item_layout.setContentsMargins(2, 2, 2, 2)
+            item_layout.setSpacing(5)
 
             # Number label
             num_label = QLabel(f"<b>{color.number}</b>")
-            num_label.setFixedWidth(30)
+            num_label.setFixedWidth(25)
             item_layout.addWidget(num_label)
 
-            # Color swatch
+            # Color swatch - smaller
             swatch = QLabel()
-            swatch.setFixedSize(40, 40)
+            swatch.setFixedSize(30, 30)
             swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 1px solid #ccc;")
             item_layout.addWidget(swatch)
 
             # Color name
             name_label = QLabel(color.name)
+            name_label.setStyleSheet("font-size: 11px;")  # Smaller font
             item_layout.addWidget(name_label)
 
             item_layout.addStretch()
@@ -572,10 +609,16 @@ class JSPRBeamerSetup(QMainWindow):
         # Render
         self.render()
 
+    def on_parameter_changed(self):
+        """Handle parameter change - only update if real-time is enabled"""
+        if self.realtime_checkbox.isChecked():
+            self.update_parameters()
+
     def update_parameters(self):
         """Update visualization parameters"""
         self.visualizer.set_parameters(
             line_width=self.line_width_spin.value(),
+            number_size=self.number_size_spin.value(),
             min_region_size=self.region_size_spin.value()
         )
 
