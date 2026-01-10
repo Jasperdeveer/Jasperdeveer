@@ -15,7 +15,9 @@ DATA_FILES = [
         'src/visualizer.py',
         'src/main_window.py',
         'src/presentation_mode.py',
-        'src/stylesheet.py'
+        'src/stylesheet.py',
+        'src/color_naming.py',
+        'src/manual_color_picker.py'
     ])
 ]
 OPTIONS = {
@@ -40,7 +42,9 @@ OPTIONS = {
         'src.visualizer',
         'src.main_window',
         'src.presentation_mode',
-        'src.stylesheet'
+        'src.stylesheet',
+        'src.color_naming',
+        'src.manual_color_picker'
     ],
     'excludes': [
         'matplotlib',
