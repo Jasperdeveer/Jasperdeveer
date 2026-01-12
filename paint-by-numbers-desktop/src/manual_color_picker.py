@@ -633,6 +633,78 @@ class ManualColorPicker(QWidget):
         self.display_image = self.working_image.copy()
         self.canvas.set_image(self.display_image)
 
+    def cleanup_unselected_pixels(self):
+        """Assign all unselected pixels to nearest selected color"""
+        # Get mask of unselected pixels
+        unselected_mask = ~self.selection_mask
+
+        if not np.any(unselected_mask):
+            logger.info("No unselected pixels to cleanup")
+            return
+
+        # Get unselected pixel positions
+        unselected_coords = np.where(unselected_mask)
+        num_unselected = len(unselected_coords[0])
+
+        logger.info(f"Cleaning up {num_unselected} unselected pixels...")
+
+        # For each unselected pixel, find closest color
+        for i in range(num_unselected):
+            y = unselected_coords[0][i]
+            x = unselected_coords[1][i]
+
+            # Get pixel color from original image
+            pixel_color = self.original_image[y, x]
+            r, g, b = int(pixel_color[0]), int(pixel_color[1]), int(pixel_color[2])
+
+            # Find closest selected color
+            min_distance = float('inf')
+            closest_color = None
+
+            for color in self.selected_colors:
+                distance = calculate_color_distance(r, g, b, color.r, color.g, color.b)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_color = color
+
+            # Assign pixel to closest color
+            if closest_color:
+                self.working_image[y, x] = [closest_color.r, closest_color.g, closest_color.b]
+
+        # Update selection mask - everything is now selected
+        self.selection_mask[:] = True
+
+        # Apply morphological operations to smooth edges
+        logger.info("Applying morphological smoothing...")
+        self.smooth_color_regions()
+
+        # Update display
+        self.update_display_image()
+
+        logger.info("Cleanup complete")
+
+    def smooth_color_regions(self):
+        """Apply morphological operations to smooth color region boundaries"""
+        # Convert to individual color masks and smooth each
+        for color in self.selected_colors:
+            # Create mask for this color
+            color_mask = np.all(
+                self.working_image == [color.r, color.g, color.b],
+                axis=2
+            ).astype(np.uint8) * 255
+
+            # Apply morphological closing (removes small holes)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            closed = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+            # Apply opening (removes small noise)
+            opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=1)
+
+            # Update working image where mask is set
+            self.working_image[opened > 0] = [color.r, color.g, color.b]
+
+        logger.info("Morphological smoothing complete")
+
     def undo_last_color(self):
         """Undo the last color selection"""
         if not self.color_history:
@@ -667,6 +739,29 @@ class ManualColorPicker(QWidget):
                 "Selecteer minimaal één kleur voordat je klikt op Klaar"
             )
             return
+
+        # Check if there are unselected pixels
+        total_pixels = self.selection_mask.size
+        selected_pixels = np.sum(self.selection_mask)
+        unselected_pixels = total_pixels - selected_pixels
+
+        if unselected_pixels > 0:
+            # Ask user if they want to cleanup
+            coverage = (selected_pixels / total_pixels) * 100
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Opschonen")
+            msg.setText(f"Je hebt {coverage:.1f}% van de afbeelding geselecteerd.")
+            msg.setInformativeText(
+                f"{unselected_pixels} pixels zijn nog niet toegewezen.\n\n"
+                "Wil je deze automatisch toewijzen aan de dichtstbijzijnde kleuren?\n"
+                "Dit verwijdert ruis en maakt de lijnen strakker."
+            )
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.Yes)
+
+            if msg.exec_() == QMessageBox.Yes:
+                logger.info("Cleaning up unselected pixels...")
+                self.cleanup_unselected_pixels()
 
         logger.info(f"Finished manual color selection: {len(self.selected_colors)} colors")
         self.colors_selected.emit(self.selected_colors)
