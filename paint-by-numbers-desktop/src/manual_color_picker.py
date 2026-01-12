@@ -120,6 +120,100 @@ class ColorSelectionDialog(QDialog):
         self.accept()
 
 
+class ImageCanvas(QWidget):
+    """Canvas widget for displaying and interacting with the image"""
+
+    # Signal emitted when image is clicked: (img_x, img_y)
+    image_clicked = pyqtSignal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.display_image = None
+        self.setMinimumSize(800, 600)
+        self.setCursor(QCursor(Qt.CrossCursor))
+        self.last_scale = 1.0
+        self.last_offset_x = 0
+        self.last_offset_y = 0
+
+    def set_image(self, image: np.ndarray):
+        """Set the image to display"""
+        self.display_image = image
+        self.update()
+
+    def mousePressEvent(self, event):
+        """Handle mouse clicks on the canvas"""
+        if event.button() != Qt.LeftButton or self.display_image is None:
+            return
+
+        # Get click position
+        click_pos = event.pos()
+
+        # Get image dimensions
+        height, width = self.display_image.shape[:2]
+
+        # Convert widget coordinates to image coordinates using last known scale
+        img_x = int((click_pos.x() - self.last_offset_x) / self.last_scale)
+        img_y = int((click_pos.y() - self.last_offset_y) / self.last_scale)
+
+        # Check bounds and emit signal
+        if 0 <= img_x < width and 0 <= img_y < height:
+            logger.info(f"Canvas clicked at widget ({click_pos.x()}, {click_pos.y()}) -> image ({img_x}, {img_y})")
+            self.image_clicked.emit(img_x, img_y)
+        else:
+            logger.debug(f"Click outside image bounds: ({img_x}, {img_y})")
+
+    def paintEvent(self, event):
+        """Paint the image"""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0))
+
+        if self.display_image is not None:
+            try:
+                # Ensure image is contiguous in memory
+                display_img = np.ascontiguousarray(self.display_image)
+
+                height, width, channel = display_img.shape
+                bytes_per_line = 3 * width
+
+                # Convert numpy array to QImage
+                q_image = QImage(
+                    display_img.data,
+                    width,
+                    height,
+                    bytes_per_line,
+                    QImage.Format_RGB888
+                )
+
+                # Calculate scaled size (fit to widget)
+                widget_width = self.width()
+                widget_height = self.height()
+
+                scale = min(widget_width / width, widget_height / height)
+                scaled_width = int(width * scale)
+                scaled_height = int(height * scale)
+
+                # Center image in widget
+                x_offset = (widget_width - scaled_width) // 2
+                y_offset = (widget_height - scaled_height) // 2
+
+                # Store for coordinate conversion in mouse events
+                self.last_scale = scale
+                self.last_offset_x = x_offset
+                self.last_offset_y = y_offset
+
+                # Draw scaled image
+                from PyQt5.QtCore import QRect
+                target_rect = QRect(x_offset, y_offset, scaled_width, scaled_height)
+                painter.drawImage(target_rect, q_image)
+
+                logger.debug(f"Canvas painted image: {width}x{height} at ({x_offset}, {y_offset}), scale: {scale:.2f}")
+            except Exception as e:
+                logger.error(f"Error painting image: {e}", exc_info=True)
+                # Draw error message
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(self.rect(), Qt.AlignCenter, f"Error: {str(e)}")
+
+
 class ManualColorPicker(QWidget):
     """Fullscreen manual color picker with flood fill selection"""
 
@@ -156,7 +250,6 @@ class ManualColorPicker(QWidget):
         """Initialize UI"""
         self.setWindowTitle("Handmatige Kleur Selectie - Klik op kleuren om toe te voegen")
         self.setStyleSheet("background-color: black;")
-        self.setCursor(QCursor(Qt.CrossCursor))
 
         # Main layout
         main_layout = QHBoxLayout(self)
@@ -167,14 +260,15 @@ class ManualColorPicker(QWidget):
         sidebar = self.create_sidebar()
         main_layout.addWidget(sidebar)
 
-        # Center: Image canvas (will be drawn in paintEvent)
-        canvas = QWidget()
-        canvas.setMinimumSize(800, 600)
-        main_layout.addWidget(canvas, stretch=1)
+        # Right side: Image canvas
+        self.canvas = ImageCanvas(self)
+        self.canvas.set_image(self.display_image)
+        self.canvas.image_clicked.connect(self.on_canvas_clicked)
+        main_layout.addWidget(self.canvas, stretch=1)
 
         # Force initial paint
-        logger.info("init_ui complete, forcing initial update")
-        self.update()
+        logger.info("init_ui complete, image canvas created")
+        self.canvas.update()
 
     def create_sidebar(self) -> QWidget:
         """Create left sidebar with palette and controls"""
@@ -417,42 +511,16 @@ class ManualColorPicker(QWidget):
 
         return item
 
-    def mousePressEvent(self, event):
-        """Handle mouse click on image"""
-        if event.button() != Qt.LeftButton:
+    def on_canvas_clicked(self, img_x: int, img_y: int):
+        """Handle canvas click event with image coordinates"""
+        # Check if clicking on already selected pixel
+        if self.selection_mask[img_y, img_x]:
+            logger.info("Clicked on already selected pixel, ignoring")
             return
 
-        # Get click position relative to displayed image
-        click_pos = event.pos()
-
-        # Calculate image position and scale
-        height, width = self.display_image.shape[:2]
-        widget_width = self.width() - 350  # Minus sidebar
-        widget_height = self.height()
-
-        # Calculate scaled size (fit to window)
-        scale = min(widget_width / width, widget_height / height)
-        scaled_width = int(width * scale)
-        scaled_height = int(height * scale)
-
-        # Calculate image offset
-        x_offset = 350 + (widget_width - scaled_width) // 2
-        y_offset = (widget_height - scaled_height) // 2
-
-        # Convert to image coordinates
-        img_x = int((click_pos.x() - x_offset) / scale)
-        img_y = int((click_pos.y() - y_offset) / scale)
-
-        # Check bounds
-        if 0 <= img_x < width and 0 <= img_y < height:
-            # Check if clicking on already selected pixel
-            if self.selection_mask[img_y, img_x]:
-                logger.info("Clicked on already selected pixel, ignoring")
-                return
-
-            # Get clicked color
-            r, g, b = self.working_image[img_y, img_x]
-            self.select_color_at_pixel(img_x, img_y, r, g, b)
+        # Get clicked color
+        r, g, b = self.working_image[img_y, img_x]
+        self.select_color_at_pixel(img_x, img_y, r, g, b)
 
     def select_color_at_pixel(self, x: int, y: int, r: int, g: int, b: int):
         """Select all similar pixels and add color to palette"""
@@ -563,6 +631,7 @@ class ManualColorPicker(QWidget):
     def update_display_image(self):
         """Update the display image for rendering"""
         self.display_image = self.working_image.copy()
+        self.canvas.set_image(self.display_image)
 
     def undo_last_color(self):
         """Undo the last color selection"""
@@ -627,51 +696,3 @@ class ManualColorPicker(QWidget):
             self.undo_last_color()
         else:
             super().keyPressEvent(event)
-
-    def paintEvent(self, event):
-        """Paint the canvas with the image"""
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0))
-
-        if self.display_image is not None:
-            try:
-                # Ensure image is contiguous in memory
-                display_img = np.ascontiguousarray(self.display_image)
-
-                height, width, channel = display_img.shape
-                bytes_per_line = 3 * width
-
-                # Convert numpy array to QImage
-                q_image = QImage(
-                    display_img.data,
-                    width,
-                    height,
-                    bytes_per_line,
-                    QImage.Format_RGB888
-                )
-
-                # Calculate scaled size (fit to window, leaving room for sidebar)
-                widget_width = self.width() - 350
-                widget_height = self.height()
-
-                scale = min(widget_width / width, widget_height / height)
-                scaled_width = int(width * scale)
-                scaled_height = int(height * scale)
-
-                # Center image
-                x_offset = 350 + (widget_width - scaled_width) // 2
-                y_offset = (widget_height - scaled_height) // 2
-
-                # Draw scaled image
-                from PyQt5.QtCore import QRect
-                target_rect = QRect(x_offset, y_offset, scaled_width, scaled_height)
-                painter.drawImage(target_rect, q_image)
-
-                logger.debug(f"Painted image: {width}x{height} at ({x_offset}, {y_offset}), scale: {scale:.2f}")
-            except Exception as e:
-                logger.error(f"Error painting image: {e}", exc_info=True)
-                # Draw error message
-                painter.setPen(QColor(255, 255, 255))
-                painter.drawText(self.rect(), Qt.AlignCenter, f"Error: {str(e)}")
-        else:
-            logger.warning("No display image to paint")
