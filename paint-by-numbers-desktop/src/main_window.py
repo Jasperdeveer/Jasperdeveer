@@ -26,6 +26,99 @@ from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 logger = logging.getLogger(__name__)
 
 
+class BlackWhiteSelectionDialog(QDialog):
+    """Dialog for selecting which colors should be treated as black or white"""
+
+    def __init__(self, color_manager: ColorManager, parent=None):
+        super().__init__(parent)
+        self.color_manager = color_manager
+        self.black_checkboxes = []
+        self.white_checkboxes = []
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize UI"""
+        self.setWindowTitle("Zwart/Wit Kleuren Selecteren")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self.setMinimumHeight(500)
+
+        layout = QVBoxLayout()
+
+        # Instructions
+        instructions = QLabel(
+            "Selecteer welke kleuren als zwart of wit behandeld moeten worden:\n"
+            "• Zwart: volledig gevuld, geen cijfers\n"
+            "• Wit: geen cijfers"
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+
+        # Scroll area for colors
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+
+        # Add checkbox row for each color
+        colors = self.color_manager.get_colors()
+        for color in colors:
+            color_row = QHBoxLayout()
+
+            # Color preview box
+            color_preview = QLabel()
+            color_preview.setFixedSize(30, 30)
+            color_preview.setStyleSheet(
+                f"background-color: rgb({color.r}, {color.g}, {color.b}); border: 1px solid black;"
+            )
+            color_row.addWidget(color_preview)
+
+            # Color name and number
+            color_label = QLabel(f"{color.number}. {color.name}")
+            color_label.setMinimumWidth(150)
+            color_row.addWidget(color_label)
+
+            # Black checkbox
+            black_cb = QCheckBox("Zwart")
+            black_cb.setChecked(hasattr(color, 'is_black') and color.is_black)
+            self.black_checkboxes.append((color, black_cb))
+            color_row.addWidget(black_cb)
+
+            # White checkbox
+            white_cb = QCheckBox("Wit")
+            white_cb.setChecked(hasattr(color, 'is_white') and color.is_white)
+            self.white_checkboxes.append((color, white_cb))
+            color_row.addWidget(white_cb)
+
+            color_row.addStretch()
+            scroll_layout.addLayout(color_row)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        cancel_btn = QPushButton("Annuleren")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        ok_btn = QPushButton("Klaar")
+        ok_btn.setObjectName("primaryButton")
+        ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(ok_btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def get_selections(self):
+        """Get the selected black and white colors"""
+        black_colors = [color for color, cb in self.black_checkboxes if cb.isChecked()]
+        white_colors = [color for color, cb in self.white_checkboxes if cb.isChecked()]
+        return black_colors, white_colors
+
+
 class ProcessingThread(QThread):
     """Background thread for heavy processing tasks"""
 
@@ -367,6 +460,11 @@ class JSPRBeamerSetup(QMainWindow):
         self.eyedropper_btn.setObjectName("primaryButton")
         self.eyedropper_btn.clicked.connect(self.toggle_eyedropper)
         params_layout.addWidget(self.eyedropper_btn)
+
+        # Black/White selection button
+        self.black_white_btn = QPushButton("⚫⚪ Zwart/Wit")
+        self.black_white_btn.clicked.connect(self.open_black_white_dialog)
+        params_layout.addWidget(self.black_white_btn)
 
         # Real-time updates checkbox
         self.realtime_checkbox = QCheckBox("Real-time updates")
@@ -839,6 +937,51 @@ class JSPRBeamerSetup(QMainWindow):
         self.visualizer.clear_cache()
         self.render()
 
+    def open_black_white_dialog(self):
+        """Open dialog to select black/white colors"""
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(
+                self,
+                "Geen kleuren",
+                "Detecteer eerst kleuren voordat je zwart/wit kan selecteren"
+            )
+            return
+
+        # Open dialog
+        dialog = BlackWhiteSelectionDialog(self.color_manager, self)
+        if dialog.exec_() == QDialog.Accepted:
+            # Get selections
+            black_colors, white_colors = dialog.get_selections()
+
+            # Reset all colors first
+            for color in self.color_manager.get_colors():
+                color.is_black = False
+                color.is_white = False
+
+            # Apply black selections
+            for color in black_colors:
+                color.is_black = True
+                color.is_white = False  # Can't be both
+                logger.info(f"Color {color.number} '{color.name}' marked as black")
+
+            # Apply white selections
+            for color in white_colors:
+                color.is_white = True
+                color.is_black = False  # Can't be both
+                logger.info(f"Color {color.number} '{color.name}' marked as white")
+
+            # Clear cache and re-render immediately
+            self.visualizer.clear_cache()
+            self.render()
+
+            # Update presentation mode if open
+            if self.presentation_window and self.canvas.image is not None:
+                self.presentation_window.set_image(self.canvas.image)
+
+            self.statusBar().showMessage(
+                f"Zwart/wit selectie toegepast: {len(black_colors)} zwart, {len(white_colors)} wit"
+            )
+
     def enter_presentation_mode(self):
         """Enter fullscreen presentation mode"""
         if self.canvas.image is None:
@@ -855,6 +998,7 @@ class JSPRBeamerSetup(QMainWindow):
             self.presentation_window.closed.connect(self.on_presentation_closed)
             self.presentation_window.toggle_numbers_requested.connect(self.on_toggle_numbers_presentation)
             self.presentation_window.cycle_mode_requested.connect(self.on_cycle_mode_presentation)
+            self.presentation_window.toggle_outlines_requested.connect(self.on_toggle_outlines_presentation)
 
         # Set current image
         self.presentation_window.set_image(self.canvas.image)
@@ -886,6 +1030,31 @@ class JSPRBeamerSetup(QMainWindow):
                 self.presentation_window.set_image(result)
 
         logger.info(f"Numbers toggled: {self.visualizer.show_numbers}")
+
+    def on_toggle_outlines_presentation(self):
+        """Handle toggle outlines from presentation mode"""
+        # Toggle checkbox state
+        current_state = self.show_outlines_checkbox.isChecked()
+        self.show_outlines_checkbox.setChecked(not current_state)
+
+        # Update visualizer parameters
+        self.visualizer.set_parameters(
+            line_width=self.line_width_spin.value(),
+            number_size=self.number_size_spin.value(),
+            min_region_size=self.region_size_spin.value(),
+            show_outlines=not current_state
+        )
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        result = self.visualizer.render_current_mode()
+        if result is not None:
+            self.canvas.set_image(result)
+            # Update presentation window
+            if self.presentation_window:
+                self.presentation_window.set_image(result)
+
+        logger.info(f"Outlines toggled: {not current_state}")
 
     def on_cycle_mode_presentation(self):
         """Handle cycle mode from presentation mode"""

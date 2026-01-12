@@ -20,6 +20,7 @@ class PresentationMode(QWidget):
     closed = pyqtSignal()
     toggle_numbers_requested = pyqtSignal()
     cycle_mode_requested = pyqtSignal()
+    toggle_outlines_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,23 +241,27 @@ class PresentationMode(QWidget):
         elif key == Qt.Key_C:
             self.cycle_grid_color()
 
-        # [ and ]: Adjust grid size
-        elif key == Qt.Key_BracketLeft:
-            self.decrease_grid_size()
-        elif key == Qt.Key_BracketRight:
-            self.increase_grid_size()
+        # O: Toggle outlines
+        elif key == Qt.Key_O:
+            self.toggle_outlines_requested.emit()
 
         # H: Toggle shortcuts help
         elif key == Qt.Key_H:
             self.toggle_shortcuts()
 
-        # +/=: Zoom in
+        # +/=: Zoom in (or increase grid size with Shift)
         elif key in (Qt.Key_Plus, Qt.Key_Equal):
-            self.zoom_in()
+            if event.modifiers() & Qt.ShiftModifier:
+                self.increase_grid_size()
+            else:
+                self.zoom_in()
 
-        # -: Zoom out
+        # -: Zoom out (or decrease grid size with Shift)
         elif key == Qt.Key_Minus:
-            self.zoom_out()
+            if event.modifiers() & Qt.ShiftModifier:
+                self.decrease_grid_size()
+            else:
+                self.zoom_out()
 
         # 0: Reset zoom
         elif key == Qt.Key_0:
@@ -385,9 +390,10 @@ class PresentationMode(QWidget):
             ("ESC / Q", "Afsluiten"),
             ("F11", "Volledig scherm"),
             ("N", "Nummers aan/uit"),
+            ("O", "Outlines aan/uit"),
             ("G", "Grid aan/uit"),
             ("C", "Grid kleur"),
-            ("[ / ]", "Grid grootte"),
+            ("Shift +/-", "Grid grootte"),
             ("H", "Deze hulp aan/uit"),
             ("+/-", "Zoom in/uit"),
             ("0", "Reset zoom"),
