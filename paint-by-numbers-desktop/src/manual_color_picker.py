@@ -146,6 +146,8 @@ class ManualColorPicker(QWidget):
         # Mask of selected pixels
         self.selection_mask = np.zeros(original_image.shape[:2], dtype=bool)
 
+        logger.info(f"ManualColorPicker: Image shape: {self.original_image.shape}, dtype: {self.original_image.dtype}")
+
         self.init_ui()
 
         logger.info("ManualColorPicker initialized")
@@ -169,6 +171,10 @@ class ManualColorPicker(QWidget):
         canvas = QWidget()
         canvas.setMinimumSize(800, 600)
         main_layout.addWidget(canvas, stretch=1)
+
+        # Force initial paint
+        logger.info("init_ui complete, forcing initial update")
+        self.update()
 
     def create_sidebar(self) -> QWidget:
         """Create left sidebar with palette and controls"""
@@ -628,31 +634,44 @@ class ManualColorPicker(QWidget):
         painter.fillRect(self.rect(), QColor(0, 0, 0))
 
         if self.display_image is not None:
-            # Convert numpy array to QImage
-            height, width, channel = self.display_image.shape
-            bytes_per_line = 3 * width
+            try:
+                # Ensure image is contiguous in memory
+                display_img = np.ascontiguousarray(self.display_image)
 
-            q_image = QImage(
-                self.display_image.data,
-                width,
-                height,
-                bytes_per_line,
-                QImage.Format_RGB888
-            )
+                height, width, channel = display_img.shape
+                bytes_per_line = 3 * width
 
-            # Calculate scaled size (fit to window, leaving room for sidebar)
-            widget_width = self.width() - 350
-            widget_height = self.height()
+                # Convert numpy array to QImage
+                q_image = QImage(
+                    display_img.data,
+                    width,
+                    height,
+                    bytes_per_line,
+                    QImage.Format_RGB888
+                )
 
-            scale = min(widget_width / width, widget_height / height)
-            scaled_width = int(width * scale)
-            scaled_height = int(height * scale)
+                # Calculate scaled size (fit to window, leaving room for sidebar)
+                widget_width = self.width() - 350
+                widget_height = self.height()
 
-            # Center image
-            x_offset = 350 + (widget_width - scaled_width) // 2
-            y_offset = (widget_height - scaled_height) // 2
+                scale = min(widget_width / width, widget_height / height)
+                scaled_width = int(width * scale)
+                scaled_height = int(height * scale)
 
-            # Draw scaled image
-            from PyQt5.QtCore import QRect
-            target_rect = QRect(x_offset, y_offset, scaled_width, scaled_height)
-            painter.drawImage(target_rect, q_image)
+                # Center image
+                x_offset = 350 + (widget_width - scaled_width) // 2
+                y_offset = (widget_height - scaled_height) // 2
+
+                # Draw scaled image
+                from PyQt5.QtCore import QRect
+                target_rect = QRect(x_offset, y_offset, scaled_width, scaled_height)
+                painter.drawImage(target_rect, q_image)
+
+                logger.debug(f"Painted image: {width}x{height} at ({x_offset}, {y_offset}), scale: {scale:.2f}")
+            except Exception as e:
+                logger.error(f"Error painting image: {e}", exc_info=True)
+                # Draw error message
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(self.rect(), Qt.AlignCenter, f"Error: {str(e)}")
+        else:
+            logger.warning("No display image to paint")
