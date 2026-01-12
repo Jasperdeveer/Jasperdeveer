@@ -40,7 +40,8 @@ class Visualizer:
             'min_region_size': 20,
             'simplify_epsilon': 1.0,
             'smoothing_iterations': 2,
-            'corner_angle_threshold': 120
+            'corner_angle_threshold': 120,
+            'show_outlines': True  # Toggle to show/hide contour outlines
         }
 
     def set_image_processor(self, processor: ImageProcessor):
@@ -139,8 +140,9 @@ class Visualizer:
         if progress_callback:
             progress_callback(40, "Tracing contours...")
 
-        # Draw contours
-        result = self.draw_contours(result)
+        # Draw contours (if enabled)
+        if self.parameters.get('show_outlines', True):
+            result = self.draw_contours(result)
 
         if progress_callback:
             progress_callback(70, "Placing numbers...")
@@ -195,8 +197,10 @@ class Visualizer:
         if progress_callback:
             progress_callback(40, "Tracing contours...")
 
-        # Draw contours (but not for black regions)
-        result = self.draw_contours(result)
+        # Draw contours (if enabled)
+        if self.parameters.get('show_outlines', True):
+            # For black regions, only draw external boundary (not internal details)
+            result = self.draw_contours(result, exclude_internal_for_black=True)
 
         if progress_callback:
             progress_callback(70, "Placing numbers...")
@@ -232,12 +236,13 @@ class Visualizer:
 
         return edges_rgb
 
-    def draw_contours(self, image: np.ndarray) -> np.ndarray:
+    def draw_contours(self, image: np.ndarray, exclude_internal_for_black: bool = False) -> np.ndarray:
         """
         Draw contours on image
 
         Args:
             image: RGB image
+            exclude_internal_for_black: If True, skip internal contours within black regions
 
         Returns:
             Image with contours drawn
@@ -257,13 +262,41 @@ class Visualizer:
                 preserve_corners=True
             )
 
+        # If excluding internal black contours, create a mask
+        black_mask = None
+        if exclude_internal_for_black and self.color_manager:
+            black_mask = np.zeros((height, width), dtype=bool)
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    mask = color_map_2d == (color.number - 1)
+                    black_mask |= mask
+
+            # Erode mask slightly so we keep the external boundary
+            if np.any(black_mask):
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                black_mask = cv2.erode(black_mask.astype(np.uint8), kernel).astype(bool)
+
         # Draw contours
-        result = self.contour_tracer.draw_contours_on_image(
-            image,
-            self.contours,
-            color=(0, 0, 0),  # Black
-            thickness=int(self.parameters['line_width'])
-        )
+        result = image.copy()
+        for contour in self.contours:
+            # Skip if this contour is entirely within black region
+            if black_mask is not None and len(contour) > 0:
+                # Sample a few points from the contour
+                sample_points = contour[::max(1, len(contour)//10)]
+                points_in_black = 0
+                for point in sample_points:
+                    x, y = int(point[0][0]), int(point[0][1])
+                    if 0 <= y < height and 0 <= x < width:
+                        if black_mask[y, x]:
+                            points_in_black += 1
+
+                # If most points are in black, skip this contour
+                if points_in_black > len(sample_points) * 0.8:
+                    continue
+
+            # Draw this contour
+            cv2.drawContours(result, [contour], -1, (0, 0, 0), int(self.parameters['line_width']))
 
         return result
 
@@ -381,7 +414,20 @@ class Visualizer:
 
         elif self.mode == 'paintByNumbers' and self.quantized_image is not None:
             result = self.quantized_image.copy()
-            result = self.draw_contours(result)
+
+            # Fill black regions completely
+            if self.color_map is not None and self.color_manager:
+                height, width = result.shape[:2]
+                color_map_2d = self.color_map.reshape(height, width)
+                for color in self.color_manager.get_colors():
+                    if hasattr(color, 'is_black') and color.is_black:
+                        mask = color_map_2d == (color.number - 1)
+                        result[mask] = [0, 0, 0]
+
+            # Draw contours if enabled
+            if self.parameters.get('show_outlines', True):
+                result = self.draw_contours(result)
+
             if self.show_numbers:
                 result = self.draw_numbers(result)
             return result
@@ -389,7 +435,19 @@ class Visualizer:
         elif self.mode == 'lineDrawing' and self.quantized_image is not None:
             height, width = self.quantized_image.shape[:2]
             result = np.ones((height, width, 3), dtype=np.uint8) * 255
-            result = self.draw_contours(result)
+
+            # Fill black regions completely (before contours)
+            if self.color_map is not None and self.color_manager:
+                color_map_2d = self.color_map.reshape(height, width)
+                for color in self.color_manager.get_colors():
+                    if hasattr(color, 'is_black') and color.is_black:
+                        mask = color_map_2d == (color.number - 1)
+                        result[mask] = [0, 0, 0]
+
+            # Draw contours if enabled (exclude internal black contours)
+            if self.parameters.get('show_outlines', True):
+                result = self.draw_contours(result, exclude_internal_for_black=True)
+
             if self.show_numbers:
                 result = self.draw_numbers(result)
             return result

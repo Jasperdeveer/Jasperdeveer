@@ -124,6 +124,36 @@ class CanvasWidget(QWidget):
         """Set original image for eyedropper sampling"""
         self.original_image = image
 
+    def wheelEvent(self, event):
+        """Handle mouse wheel for zoom"""
+        # Get the angle delta (usually 120 for one notch)
+        delta = event.angleDelta().y()
+
+        # Determine zoom increment based on Shift key
+        if event.modifiers() & Qt.ShiftModifier:
+            zoom_factor = 0.10  # 10% per scroll
+        else:
+            zoom_factor = 0.02  # 2% per scroll
+
+        # Apply zoom
+        if delta > 0:
+            # Scroll up = zoom in
+            self.zoom_level *= (1 + zoom_factor)
+        else:
+            # Scroll down = zoom out
+            self.zoom_level *= (1 - zoom_factor)
+
+        # Clamp zoom level
+        self.zoom_level = max(0.1, min(5.0, self.zoom_level))
+
+        # Update display
+        self.update()
+
+        # Update parent's zoom label if it exists
+        parent = self.parent()
+        if parent and hasattr(parent, 'zoom_label'):
+            parent.zoom_label.setText(f"{int(self.zoom_level * 100)}%")
+
     def mousePressEvent(self, event):
         """Handle mouse clicks for eyedropper"""
         if self.eyedropper_mode and self.original_image is not None and event.button() == Qt.LeftButton:
@@ -342,6 +372,12 @@ class JSPRBeamerSetup(QMainWindow):
         self.realtime_checkbox = QCheckBox("Real-time updates")
         self.realtime_checkbox.setChecked(False)
         params_layout.addWidget(self.realtime_checkbox)
+
+        # Show outlines checkbox
+        self.show_outlines_checkbox = QCheckBox("Toon outlines")
+        self.show_outlines_checkbox.setChecked(True)  # Default: outlines visible
+        self.show_outlines_checkbox.stateChanged.connect(self.on_parameter_changed)
+        params_layout.addWidget(self.show_outlines_checkbox)
 
         # Herbereken button
         self.recalc_btn = QPushButton("↻ Herbereken")
@@ -699,7 +735,8 @@ class JSPRBeamerSetup(QMainWindow):
         self.visualizer.set_parameters(
             line_width=self.line_width_spin.value(),
             number_size=self.number_size_spin.value(),
-            min_region_size=self.region_size_spin.value()
+            min_region_size=self.region_size_spin.value(),
+            show_outlines=self.show_outlines_checkbox.isChecked()
         )
 
         # Clear cache to force re-render

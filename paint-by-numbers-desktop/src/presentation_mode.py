@@ -184,6 +184,32 @@ class PresentationMode(QWidget):
             self.setCursor(Qt.ArrowCursor)
             logger.debug(f"Stopped dragging - pan position: ({self.pan_x}, {self.pan_y})")
 
+    def wheelEvent(self, event):
+        """Handle mouse wheel for zoom"""
+        # Get the angle delta (usually 120 for one notch)
+        delta = event.angleDelta().y()
+
+        # Determine zoom increment based on Shift key
+        if event.modifiers() & Qt.ShiftModifier:
+            zoom_factor = 0.10  # 10% per scroll
+        else:
+            zoom_factor = 0.02  # 2% per scroll
+
+        # Apply zoom
+        if delta > 0:
+            # Scroll up = zoom in
+            self.zoom_level *= (1 + zoom_factor)
+        else:
+            # Scroll down = zoom out
+            self.zoom_level *= (1 - zoom_factor)
+
+        # Clamp zoom level
+        self.zoom_level = max(0.1, min(5.0, self.zoom_level))
+
+        # Update display
+        self.update()
+        logger.debug(f"Zoom: {int(self.zoom_level * 100)}%")
+
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
         key = event.key()
