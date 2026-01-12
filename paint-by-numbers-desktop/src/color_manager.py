@@ -13,13 +13,15 @@ logger = logging.getLogger(__name__)
 class Color:
     """Represents a single color with metadata"""
 
-    def __init__(self, r: int, g: int, b: int, number: int, name: str = ""):
+    def __init__(self, r: int, g: int, b: int, number: int, name: str = "", is_black: bool = False, is_white: bool = False):
         self.r = r
         self.g = g
         self.b = b
         self.number = number
         self.name = name if name else f"Kleur {number}"
         self.id = id(self)  # Unique ID
+        self.is_black = is_black  # Special handling for black (filled, no outline)
+        self.is_white = is_white  # Special handling for white (no numbers)
 
     def to_rgb_array(self) -> np.ndarray:
         """Return as numpy array [r, g, b]"""

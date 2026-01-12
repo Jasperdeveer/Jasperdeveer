@@ -705,6 +705,87 @@ class ManualColorPicker(QWidget):
 
         logger.info("Morphological smoothing complete")
 
+    def detect_black_white_regions(self):
+        """Detect and handle black and white regions"""
+        # Ask user if they want to detect black/white
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Zwart/Wit Detecteren")
+        msg.setText("Wil je automatisch zwart en wit gebieden detecteren?")
+        msg.setInformativeText(
+            "Zwart wordt volledig gevuld met spuitbus (geen outline in lijntekening).\n"
+            "Wit krijgt geen cijfers (alleen outline).\n\n"
+            "Thresholds: Zwart < 30, Wit > 225"
+        )
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.Yes)
+
+        if msg.exec_() != QMessageBox.Yes:
+            logger.info("Black/white detection skipped")
+            return
+
+        BLACK_THRESHOLD = 30
+        WHITE_THRESHOLD = 225
+
+        # Detect black regions in original image
+        gray = cv2.cvtColor(self.original_image, cv2.COLOR_RGB2GRAY)
+        black_mask = gray < BLACK_THRESHOLD
+        white_mask = gray > WHITE_THRESHOLD
+
+        black_pixels = np.sum(black_mask)
+        white_pixels = np.sum(white_mask)
+
+        logger.info(f"Detected {black_pixels} black pixels, {white_pixels} white pixels")
+
+        # Check if we have significant black/white regions
+        total_pixels = self.original_image.shape[0] * self.original_image.shape[1]
+        black_percentage = (black_pixels / total_pixels) * 100
+        white_percentage = (white_pixels / total_pixels) * 100
+
+        # Add or merge black color
+        if black_pixels > 0 and black_percentage > 0.5:  # At least 0.5% coverage
+            self.add_or_merge_special_color(0, 0, 0, "Zwart", is_black=True, mask=black_mask)
+
+        # Add or merge white color
+        if white_pixels > 0 and white_percentage > 0.5:  # At least 0.5% coverage
+            self.add_or_merge_special_color(255, 255, 255, "Wit", is_white=True, mask=white_mask)
+
+        # Update display
+        self.update_display_image()
+        logger.info("Black/white detection complete")
+
+    def add_or_merge_special_color(self, r: int, g: int, b: int, name: str, is_black: bool = False, is_white: bool = False, mask: np.ndarray = None):
+        """Add or merge a special color (black/white) with existing colors"""
+        # Check if similar color already exists
+        existing_color = None
+        for color in self.selected_colors:
+            # Check if very similar (within 50 distance for black/white merging)
+            from color_naming import calculate_color_distance
+            distance = calculate_color_distance(r, g, b, color.r, color.g, color.b)
+            if distance < 50:
+                existing_color = color
+                break
+
+        if existing_color:
+            # Merge with existing color - update its special flags
+            logger.info(f"Merging {name} with existing color: {existing_color.name}")
+            existing_color.is_black = is_black
+            existing_color.is_white = is_white
+            existing_color.name = name  # Rename to Zwart/Wit
+
+            # Update pixels to exact black/white
+            if mask is not None:
+                self.working_image[mask] = [r, g, b]
+        else:
+            # Add as new color
+            new_color = Color(r, g, b, len(self.selected_colors) + 1, name, is_black=is_black, is_white=is_white)
+            self.selected_colors.append(new_color)
+            logger.info(f"Added new special color: {name}")
+
+            # Update pixels
+            if mask is not None:
+                self.working_image[mask] = [r, g, b]
+                self.selection_mask |= mask
+
     def undo_last_color(self):
         """Undo the last color selection"""
         if not self.color_history:
@@ -762,6 +843,9 @@ class ManualColorPicker(QWidget):
             if msg.exec_() == QMessageBox.Yes:
                 logger.info("Cleaning up unselected pixels...")
                 self.cleanup_unselected_pixels()
+
+        # Detect black and white regions
+        self.detect_black_white_regions()
 
         logger.info(f"Finished manual color selection: {len(self.selected_colors)} colors")
         self.colors_selected.emit(self.selected_colors)

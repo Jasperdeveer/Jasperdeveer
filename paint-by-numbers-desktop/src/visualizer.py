@@ -127,6 +127,15 @@ class Visualizer:
 
         result = self.quantized_image.copy()
 
+        # Fill black regions completely (pure black, no outline needed)
+        height, width = result.shape[:2]
+        color_map_2d = self.color_map.reshape(height, width)
+        for color in self.color_manager.get_colors():
+            if hasattr(color, 'is_black') and color.is_black:
+                # Fill all pixels of this color with pure black
+                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                result[mask] = [0, 0, 0]
+
         if progress_callback:
             progress_callback(40, "Tracing contours...")
 
@@ -174,10 +183,19 @@ class Visualizer:
         height, width = self.quantized_image.shape[:2]
         result = np.ones((height, width, 3), dtype=np.uint8) * 255
 
+        # Fill black regions completely (before contours)
+        color_map_2d = self.color_map.reshape(height, width)
+        for color in self.color_manager.get_colors():
+            if hasattr(color, 'is_black') and color.is_black:
+                # Fill all pixels of this color with pure black
+                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                result[mask] = [0, 0, 0]
+                logger.info(f"Filled black regions: {np.sum(mask)} pixels")
+
         if progress_callback:
             progress_callback(40, "Tracing contours...")
 
-        # Draw contours
+        # Draw contours (but not for black regions)
         result = self.draw_contours(result)
 
         if progress_callback:
@@ -283,6 +301,12 @@ class Visualizer:
 
             if color is None:
                 continue
+
+            # Skip numbers for white and black regions
+            if hasattr(color, 'is_white') and color.is_white:
+                continue  # Wit krijgt geen cijfers
+            if hasattr(color, 'is_black') and color.is_black:
+                continue  # Zwart krijgt geen cijfers
 
             # Get optimal center for this region
             center = self.contour_tracer.find_optimal_center(

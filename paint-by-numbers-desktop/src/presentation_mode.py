@@ -39,6 +39,13 @@ class PresentationMode(QWidget):
         self.pan_x = 0
         self.pan_y = 0
 
+        # Mouse drag state
+        self.is_dragging = False
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.drag_start_pan_x = 0
+        self.drag_start_pan_y = 0
+
         # Keyboard shortcuts overlay
         self.show_shortcuts = True
         self.shortcuts_opacity = 1.0
@@ -145,6 +152,37 @@ class PresentationMode(QWidget):
         self.pan_x += dx
         self.pan_y += dy
         self.update()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for drag start"""
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = True
+            self.drag_start_x = event.x()
+            self.drag_start_y = event.y()
+            self.drag_start_pan_x = self.pan_x
+            self.drag_start_pan_y = self.pan_y
+            self.setCursor(Qt.ClosedHandCursor)
+            logger.debug("Started dragging")
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for dragging"""
+        if self.is_dragging:
+            # Calculate delta from drag start
+            dx = event.x() - self.drag_start_x
+            dy = event.y() - self.drag_start_y
+
+            # Update pan position
+            self.pan_x = self.drag_start_pan_x + dx
+            self.pan_y = self.drag_start_pan_y + dy
+
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release for drag end"""
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = False
+            self.setCursor(Qt.ArrowCursor)
+            logger.debug(f"Stopped dragging - pan position: ({self.pan_x}, {self.pan_y})")
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
