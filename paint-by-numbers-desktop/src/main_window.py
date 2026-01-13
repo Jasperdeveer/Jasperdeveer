@@ -1187,6 +1187,10 @@ class JSPRBeamerSetup(QMainWindow):
 
     def on_presentation_closed(self):
         """Handle presentation mode closed"""
+        # Bring main window to front and activate it
+        self.show()
+        self.raise_()
+        self.activateWindow()
         self.statusBar().showMessage("Presentatie mode gesloten")
 
     def on_toggle_numbers_presentation(self):
