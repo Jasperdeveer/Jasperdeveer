@@ -237,6 +237,11 @@ class ManualColorPicker(QWidget):
         self.tolerance = 20  # Color tolerance for flood fill
         self.merge_threshold = 30  # Threshold for suggesting merge
 
+        # Step-based selection state
+        self.current_step = 'SELECTING_BLACK'  # SELECTING_BLACK -> SELECTING_WHITE -> SELECTING_COLORS
+        self.black_colors: List[Color] = []
+        self.white_colors: List[Color] = []
+
         # Mask of selected pixels
         self.selection_mask = np.zeros(original_image.shape[:2], dtype=bool)
 
@@ -292,6 +297,20 @@ class ManualColorPicker(QWidget):
         title.setStyleSheet("color: white; background: transparent;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
+
+        # Instruction label (shows current step)
+        self.instruction_label = QLabel("STAP 1: Selecteer alle zwarte gebieden")
+        self.instruction_label.setStyleSheet("""
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            background: rgba(76, 175, 80, 150);
+            padding: 10px;
+            border-radius: 5px;
+        """)
+        self.instruction_label.setAlignment(Qt.AlignCenter)
+        self.instruction_label.setWordWrap(True)
+        layout.addWidget(self.instruction_label)
 
         # Stats
         self.stats_label = QLabel("Klik op de afbeelding om te beginnen")
@@ -384,10 +403,30 @@ class ManualColorPicker(QWidget):
         self.undo_btn = undo_btn
         button_layout.addWidget(undo_btn)
 
-        # Done button
-        done_btn = QPushButton("✓ Klaar")
-        done_btn.setMinimumHeight(50)
-        done_btn.setStyleSheet("""
+        # Skip button (for black/white steps)
+        skip_btn = QPushButton("→ Overslaan")
+        skip_btn.setMinimumHeight(45)
+        skip_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(100, 100, 100, 150);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 100);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: rgba(120, 120, 120, 180);
+            }
+        """)
+        skip_btn.clicked.connect(self.skip_current_step)
+        self.skip_btn = skip_btn
+        button_layout.addWidget(skip_btn)
+
+        # Next/Done button
+        next_btn = QPushButton("→ Volgende")
+        next_btn.setMinimumHeight(50)
+        next_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 rgba(76, 175, 80, 200),
@@ -404,8 +443,9 @@ class ManualColorPicker(QWidget):
                     stop:1 rgba(79, 170, 83, 230));
             }
         """)
-        done_btn.clicked.connect(self.finish_selection)
-        button_layout.addWidget(done_btn)
+        next_btn.clicked.connect(self.next_step)
+        self.next_btn = next_btn
+        button_layout.addWidget(next_btn)
 
         # Cancel button
         cancel_btn = QPushButton("✕ Annuleren")
@@ -563,10 +603,24 @@ class ManualColorPicker(QWidget):
         if merge_with_existing and similar_color:
             # Don't add a new color, just update the mask
             new_color = similar_color
+            # Merge the masks
+            if hasattr(new_color, 'mask'):
+                new_color.mask = new_color.mask | mask
+            else:
+                new_color.mask = mask.copy()
         else:
             # Generate intelligent color name
             color_name = get_color_name(r, g, b)
-            new_color = Color(r, g, b, len(self.selected_colors) + 1, color_name)
+
+            # Determine is_black and is_white based on current step
+            is_black = (self.current_step == 'SELECTING_BLACK')
+            is_white = (self.current_step == 'SELECTING_WHITE')
+
+            new_color = Color(r, g, b, len(self.selected_colors) + 1, color_name, is_black=is_black, is_white=is_white)
+
+            # Store the mask in the color for later use
+            new_color.mask = mask.copy()
+
             self.selected_colors.append(new_color)
 
         # Save for undo
@@ -813,7 +867,10 @@ class ManualColorPicker(QWidget):
 
     def finish_selection(self):
         """Finish color selection and emit selected colors"""
-        if not self.selected_colors:
+        # Combine all colors: black + white + regular colors
+        all_colors = self.black_colors + self.white_colors + self.selected_colors
+
+        if not all_colors:
             QMessageBox.warning(
                 self,
                 "Geen kleuren",
@@ -842,13 +899,18 @@ class ManualColorPicker(QWidget):
 
             if msg.exec_() == QMessageBox.Yes:
                 logger.info("Cleaning up unselected pixels...")
+                # Update selected_colors temporarily for cleanup
+                temp_colors = self.selected_colors
+                self.selected_colors = all_colors
                 self.cleanup_unselected_pixels()
+                self.selected_colors = temp_colors
 
-        # Detect black and white regions
-        self.detect_black_white_regions()
+        # Renumber all colors sequentially
+        for i, color in enumerate(all_colors):
+            color.number = i + 1
 
-        logger.info(f"Finished manual color selection: {len(self.selected_colors)} colors")
-        self.colors_selected.emit(self.selected_colors)
+        logger.info(f"Finished manual color selection: {len(all_colors)} colors ({len(self.black_colors)} black, {len(self.white_colors)} white, {len(self.selected_colors)} regular)")
+        self.colors_selected.emit(all_colors)
         self.close()
 
     def cancel_selection(self):
@@ -865,12 +927,133 @@ class ManualColorPicker(QWidget):
             self.cancelled.emit()
             self.close()
 
+    def skip_current_step(self):
+        """Skip the current step (black or white selection)"""
+        if self.current_step == 'SELECTING_BLACK':
+            logger.info("Skipped black selection")
+            self.current_step = 'SELECTING_WHITE'
+            self.update_ui_for_step()
+        elif self.current_step == 'SELECTING_WHITE':
+            logger.info("Skipped white selection")
+            self.current_step = 'SELECTING_COLORS'
+            self.update_ui_for_step()
+
+    def next_step(self):
+        """Move to next step"""
+        if self.current_step == 'SELECTING_BLACK':
+            # Save black colors
+            self.black_colors = self.selected_colors.copy()
+            logger.info(f"Black selection complete: {len(self.black_colors)} colors")
+
+            # Move to white selection
+            self.current_step = 'SELECTING_WHITE'
+            self.update_ui_for_step()
+
+        elif self.current_step == 'SELECTING_WHITE':
+            # Save white colors
+            self.white_colors = self.selected_colors.copy()
+            logger.info(f"White selection complete: {len(self.white_colors)} colors")
+
+            # Move to regular color selection
+            self.current_step = 'SELECTING_COLORS'
+            self.update_ui_for_step()
+
+        elif self.current_step == 'SELECTING_COLORS':
+            # Finish selection
+            self.finish_selection()
+
+    def update_ui_for_step(self):
+        """Update UI elements based on current step"""
+        if self.current_step == 'SELECTING_BLACK':
+            self.instruction_label.setText("STAP 1: Selecteer alle zwarte gebieden")
+            self.instruction_label.setStyleSheet("""
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                background: rgba(50, 50, 50, 200);
+                padding: 10px;
+                border-radius: 5px;
+            """)
+            self.next_btn.setText("→ Volgende")
+            self.skip_btn.setVisible(True)
+
+            # Clear previous selections
+            self.selected_colors = []
+            self.color_history = []
+            self.selection_mask = np.zeros(self.original_image.shape[:2], dtype=bool)
+            self.working_image = self.original_image.copy()
+            self.display_image = self.original_image.copy()
+            self.canvas.set_image(self.display_image)
+            self.update_color_list()
+
+        elif self.current_step == 'SELECTING_WHITE':
+            self.instruction_label.setText("STAP 2: Selecteer alle witte gebieden")
+            self.instruction_label.setStyleSheet("""
+                color: black;
+                font-size: 14px;
+                font-weight: bold;
+                background: rgba(255, 255, 255, 200);
+                padding: 10px;
+                border-radius: 5px;
+            """)
+            self.next_btn.setText("→ Volgende")
+            self.skip_btn.setVisible(True)
+
+            # Clear previous selections but keep black colors in working image
+            self.selected_colors = []
+            self.color_history = []
+            self.selection_mask = np.zeros(self.original_image.shape[:2], dtype=bool)
+
+            # Restore black colors to working image
+            for color in self.black_colors:
+                if hasattr(color, 'mask'):
+                    self.working_image[color.mask] = [color.r, color.g, color.b]
+                    self.selection_mask |= color.mask
+
+            self.display_image = self.working_image.copy()
+            self.canvas.set_image(self.display_image)
+            self.update_color_list()
+
+        elif self.current_step == 'SELECTING_COLORS':
+            self.instruction_label.setText("STAP 3: Selecteer overige kleuren")
+            self.instruction_label.setStyleSheet("""
+                color: white;
+                font-size: 14px;
+                font-weight: bold;
+                background: rgba(76, 175, 80, 150);
+                padding: 10px;
+                border-radius: 5px;
+            """)
+            self.next_btn.setText("✓ Klaar")
+            self.skip_btn.setVisible(False)
+
+            # Clear previous selections but keep black and white colors in working image
+            self.selected_colors = []
+            self.color_history = []
+            self.selection_mask = np.zeros(self.original_image.shape[:2], dtype=bool)
+
+            # Restore black colors
+            for color in self.black_colors:
+                if hasattr(color, 'mask'):
+                    self.working_image[color.mask] = [color.r, color.g, color.b]
+                    self.selection_mask |= color.mask
+
+            # Restore white colors
+            for color in self.white_colors:
+                if hasattr(color, 'mask'):
+                    self.working_image[color.mask] = [color.r, color.g, color.b]
+                    self.selection_mask |= color.mask
+
+            self.display_image = self.working_image.copy()
+            self.canvas.set_image(self.display_image)
+            self.update_color_list()
+
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
         if event.key() == Qt.Key_Escape:
             self.cancel_selection()
         elif event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
-            self.finish_selection()
+            self.next_step()  # Use next_step instead of finish_selection
         elif event.key() == Qt.Key_Z and event.modifiers() == Qt.ControlModifier:
             self.undo_last_color()
         else:

@@ -488,7 +488,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.line_width_spin = QDoubleSpinBox()
         self.line_width_spin.setRange(0.5, 10.0)
         self.line_width_spin.setSingleStep(0.5)
-        self.line_width_spin.setValue(2.0)
+        self.line_width_spin.setValue(0.5)
         self.line_width_spin.setDecimals(1)
         self.line_width_spin.setMaximumWidth(60)
         self.line_width_spin.valueChanged.connect(self.on_parameter_changed)
