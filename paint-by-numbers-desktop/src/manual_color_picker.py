@@ -1027,21 +1027,27 @@ class ManualColorPicker(QWidget):
             self.next_btn.setText("✓ Klaar")
             self.skip_btn.setVisible(False)
 
-            # Clear previous selections but keep black and white colors in working image
+            # Clear previous selections
             self.selected_colors = []
             self.color_history = []
             self.selection_mask = np.zeros(self.original_image.shape[:2], dtype=bool)
 
-            # Restore black colors
+            # Start with original image
+            self.working_image = self.original_image.copy()
+
+            # Hide black and white regions by replacing them with neutral gray
+            neutral_color = [200, 200, 200]  # Light gray to indicate already processed areas
+
+            # Hide black regions
             for color in self.black_colors:
                 if hasattr(color, 'mask'):
-                    self.working_image[color.mask] = [color.r, color.g, color.b]
+                    self.working_image[color.mask] = neutral_color
                     self.selection_mask |= color.mask
 
-            # Restore white colors
+            # Hide white regions
             for color in self.white_colors:
                 if hasattr(color, 'mask'):
-                    self.working_image[color.mask] = [color.r, color.g, color.b]
+                    self.working_image[color.mask] = neutral_color
                     self.selection_mask |= color.mask
 
             self.display_image = self.working_image.copy()

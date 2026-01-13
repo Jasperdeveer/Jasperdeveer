@@ -218,7 +218,7 @@ class PresentationMode(QWidget):
         # Reset fade on any key press
         self.reset_shortcuts_fade()
 
-        # ESC or Q: Exit fullscreen
+        # ESC or Q: Return to main interface
         if key in (Qt.Key_Escape, Qt.Key_Q):
             self.close()
 
