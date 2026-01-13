@@ -23,6 +23,7 @@ from color_manager import ColorManager, Color
 from visualizer import Visualizer
 from presentation_mode import PresentationMode
 from manual_color_picker import ColorSelectionDialog, ManualColorPicker
+from project_manager import ProjectManager
 
 logger = logging.getLogger(__name__)
 
@@ -380,15 +381,29 @@ class JSPRBeamerSetup(QMainWindow):
         # File menu
         file_menu = menubar.addMenu('Bestand')
 
-        open_action = file_menu.addAction('Open...')
+        open_action = file_menu.addAction('Open Afbeelding...')
         open_action.setShortcut('Ctrl+O')
         open_action.triggered.connect(self.open_image)
+
+        file_menu.addSeparator()
+
+        save_project_action = file_menu.addAction('Opslaan Project...')
+        save_project_action.setShortcut('Ctrl+S')
+        save_project_action.triggered.connect(self.save_project)
+
+        load_project_action = file_menu.addAction('Open Project...')
+        load_project_action.setShortcut('Ctrl+Shift+O')
+        load_project_action.triggered.connect(self.load_project)
 
         file_menu.addSeparator()
 
         export_png_action = file_menu.addAction('Exporteer PNG...')
         export_png_action.setShortcut('Ctrl+E')
         export_png_action.triggered.connect(self.export_png)
+
+        batch_export_action = file_menu.addAction('Batch Export (Alle Modi)...')
+        batch_export_action.setShortcut('Ctrl+Shift+E')
+        batch_export_action.triggered.connect(self.batch_export)
 
         export_svg_action = file_menu.addAction('Exporteer SVG...')
         export_svg_action.triggered.connect(self.export_svg)
@@ -1231,6 +1246,198 @@ class JSPRBeamerSetup(QMainWindow):
             self.presentation_window.set_image(self.canvas.image)
 
         logger.info(f"Mode cycled to: {next_mode}")
+
+    def save_project(self):
+        """Save current project as .jspr file"""
+        if self.image_processor.original_image is None:
+            QMessageBox.warning(self, "Geen project", "Laad eerst een afbeelding")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Project Opslaan",
+            "",
+            "JSPR Project (*.jspr);;All Files (*)"
+        )
+
+        if file_path:
+            # Gather current parameters
+            parameters = {
+                'line_width': self.line_width_spin.value(),
+                'number_size': self.number_size_spin.value(),
+                'min_region_size': self.region_size_spin.value(),
+                'show_outlines': self.show_outlines_checkbox.isChecked()
+            }
+
+            # Save project
+            success = ProjectManager.save_project(
+                file_path,
+                self.image_processor.get_image_copy(),
+                self.color_manager,
+                parameters,
+                self.current_mode
+            )
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Project Opgeslagen",
+                    f"Project opgeslagen als:\n{file_path}"
+                )
+                self.statusBar().showMessage(f"Project opgeslagen: {file_path}")
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Fout",
+                    "Kon project niet opslaan"
+                )
+
+    def load_project(self):
+        """Load project from .jspr file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Project Openen",
+            "",
+            "JSPR Project (*.jspr);;All Files (*)"
+        )
+
+        if file_path:
+            # Load project data
+            project_data = ProjectManager.load_project(file_path)
+
+            if project_data is None:
+                QMessageBox.critical(
+                    self,
+                    "Fout",
+                    "Kon project niet laden"
+                )
+                return
+
+            # Restore image
+            image = project_data['image']
+            self.image_processor.set_image(image)
+            self.update_preview(image)
+            self.canvas.set_original_image(image)
+
+            # Restore colors
+            colors = project_data['colors']
+            self.color_manager.colors = colors
+            self.color_manager.next_number = len(colors) + 1
+            self.update_color_palette()
+
+            # Restore parameters
+            params = project_data['parameters']
+            self.line_width_spin.setValue(params.get('line_width', 0.5))
+            self.number_size_spin.setValue(params.get('number_size', 16))
+            self.region_size_spin.setValue(params.get('min_region_size', 50))
+            self.show_outlines_checkbox.setChecked(params.get('show_outlines', True))
+
+            # Restore mode
+            self.set_mode(project_data['current_mode'])
+
+            # Render
+            self.render()
+
+            self.statusBar().showMessage(f"Project geladen: {file_path}")
+            QMessageBox.information(
+                self,
+                "Project Geladen",
+                f"Project succesvol geladen:\n{file_path}"
+            )
+
+    def batch_export(self):
+        """Export all visualization modes at once"""
+        if self.image_processor.original_image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Laad eerst een afbeelding")
+            return
+
+        # Ask for base filename
+        base_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Batch Export - Kies Basisnaam",
+            "",
+            "PNG Image (*.png)"
+        )
+
+        if not base_path:
+            return
+
+        # Remove .png extension if present
+        if base_path.endswith('.png'):
+            base_path = base_path[:-4]
+
+        # Show progress dialog
+        progress = QProgressDialog("Batch export...", "Annuleren", 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.show()
+
+        def progress_callback(percent, message):
+            progress.setValue(int(percent))
+            progress.setLabelText(message)
+            if progress.wasCanceled():
+                return False
+            return True
+
+        try:
+            # Save current mode to restore later
+            original_mode = self.current_mode
+
+            # Export Original
+            if not progress_callback(10, "Exporteren: Origineel..."):
+                return
+            self.visualizer.set_mode('original')
+            original_img = self.visualizer.render()
+            if original_img is not None:
+                original_path = f"{base_path}_original.png"
+                cv2.imwrite(original_path, cv2.cvtColor(original_img, cv2.COLOR_RGB2BGR))
+                logger.info(f"Exported: {original_path}")
+
+            # Export Paint-by-Numbers
+            if not progress_callback(40, "Exporteren: Paint-by-Numbers..."):
+                return
+            self.visualizer.set_mode('paintByNumbers')
+            pbn_img = self.visualizer.render()
+            if pbn_img is not None:
+                pbn_path = f"{base_path}_paintbynumbers.png"
+                cv2.imwrite(pbn_path, cv2.cvtColor(pbn_img, cv2.COLOR_RGB2BGR))
+                logger.info(f"Exported: {pbn_path}")
+
+            # Export Line Drawing
+            if not progress_callback(70, "Exporteren: Lijntekening..."):
+                return
+            self.visualizer.set_mode('lineDrawing')
+            line_img = self.visualizer.render()
+            if line_img is not None:
+                line_path = f"{base_path}_linedrawing.png"
+                cv2.imwrite(line_path, cv2.cvtColor(line_img, cv2.COLOR_RGB2BGR))
+                logger.info(f"Exported: {line_path}")
+
+            # Restore original mode and update canvas
+            progress_callback(90, "Herstellen...")
+            self.visualizer.set_mode(original_mode)
+            self.current_mode = original_mode
+            restored_img = self.visualizer.render()
+            if restored_img is not None:
+                self.canvas.set_image(restored_img)
+
+            progress.setValue(100)
+            progress.close()
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Batch Export Voltooid",
+                f"3 bestanden geëxporteerd:\n\n"
+                f"• {base_path}_original.png\n"
+                f"• {base_path}_paintbynumbers.png\n"
+                f"• {base_path}_linedrawing.png"
+            )
+            self.statusBar().showMessage(f"Batch export voltooid: {base_path}_*.png")
+
+        except Exception as e:
+            progress.close()
+            logger.error(f"Batch export failed: {e}", exc_info=True)
+            QMessageBox.critical(self, "Fout", f"Batch export mislukt:\n{str(e)}")
 
     def export_png(self):
         """Export as PNG"""
