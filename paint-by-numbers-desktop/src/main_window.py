@@ -9,7 +9,8 @@ from typing import List, Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
-    QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog
+    QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog,
+    QLineEdit, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
@@ -159,7 +160,28 @@ class CanvasWidget(QWidget):
     def set_image(self, image: np.ndarray):
         """Set image to display (RGB numpy array)"""
         self.image = image
+        # Auto-fit to canvas when setting new image
+        if image is not None:
+            self.fit_to_canvas()
         self.update()  # Trigger repaint
+
+    def fit_to_canvas(self):
+        """Calculate zoom level to fit image in canvas"""
+        if self.image is not None:
+            height, width = self.image.shape[:2]
+            widget_width = self.width()
+            widget_height = self.height()
+
+            # Calculate scale to fit
+            scale = min(widget_width / width, widget_height / height)
+            self.zoom_level = max(0.1, min(5.0, scale))
+
+    def resizeEvent(self, event):
+        """Handle widget resize - refit image"""
+        super().resizeEvent(event)
+        # Re-fit image when canvas is resized
+        if self.image is not None:
+            self.fit_to_canvas()
 
     def paintEvent(self, event):
         """Paint the canvas"""
@@ -319,21 +341,29 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
 
         # Left panel: Controls
         left_panel = self.create_control_panel()
+        left_panel.setMinimumWidth(280)
+        left_panel.setMaximumWidth(450)
         splitter.addWidget(left_panel)
 
         # Center panel: Canvas
         center_panel = self.create_canvas_panel()
+        center_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         splitter.addWidget(center_panel)
 
         # Right panel: Legend
         right_panel = self.create_legend_panel()
+        right_panel.setMinimumWidth(250)
+        right_panel.setMaximumWidth(400)
         splitter.addWidget(right_panel)
 
         # Set splitter sizes (proportions)
-        splitter.setSizes([350, 900, 350])
+        # Use proportional sizing: left 20%, center 60%, right 20%
+        total_width = self.width()
+        splitter.setSizes([int(total_width * 0.20), int(total_width * 0.60), int(total_width * 0.20)])
 
         main_layout.addWidget(splitter)
 
@@ -451,15 +481,8 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Detect colors button
         self.detect_colors_btn = QPushButton("Detecteer Kleuren")
-        self.detect_colors_btn.clicked.connect(self.detect_colors)
+        self.detect_colors_btn.clicked.connect(self.show_color_selection_dialog)
         params_layout.addWidget(self.detect_colors_btn)
-
-        # Eyedropper button
-        self.eyedropper_btn = QPushButton("🎨 Pipet")
-        self.eyedropper_btn.setCheckable(True)
-        self.eyedropper_btn.setObjectName("primaryButton")
-        self.eyedropper_btn.clicked.connect(self.toggle_eyedropper)
-        params_layout.addWidget(self.eyedropper_btn)
 
         # Black/White selection button
         self.black_white_btn = QPushButton("⚫⚪ Zwart/Wit")
@@ -642,7 +665,7 @@ class JSPRBeamerSetup(QMainWindow):
                 if dialog.selection_mode == 'automatic':
                     logger.info("Starting automatic color detection")
                     # Auto-detect colors
-                    self.detect_colors()
+                    self.detect_colors_automatic()
                 elif dialog.selection_mode == 'manual':
                     logger.info("Starting manual color picker")
                     # Show manual color picker
@@ -739,8 +762,36 @@ class JSPRBeamerSetup(QMainWindow):
         pixmap = QPixmap.fromImage(q_image)
         self.image_preview.setPixmap(pixmap)
 
-    def detect_colors(self):
-        """Detect colors using K-means"""
+    def show_color_selection_dialog(self):
+        """Show dialog to choose between automatic and manual color detection"""
+        if self.image_processor.original_image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Laad eerst een afbeelding")
+            return
+
+        # Show color selection dialog
+        logger.info("Showing ColorSelectionDialog...")
+        dialog = ColorSelectionDialog(self)
+        result = dialog.exec_()
+
+        logger.info(f"Dialog result: {result}, selection_mode: {dialog.selection_mode}")
+
+        if result == QDialog.Accepted:
+            if dialog.selection_mode == 'automatic':
+                logger.info("Starting automatic color detection")
+                # Auto-detect colors
+                self.detect_colors_automatic()
+            elif dialog.selection_mode == 'manual':
+                logger.info("Starting manual color picker")
+                # Show manual color picker
+                img = self.image_processor.get_image_copy()
+                self.show_manual_color_picker(img)
+            else:
+                logger.warning(f"Unknown selection mode: {dialog.selection_mode}")
+        else:
+            logger.info("ColorSelectionDialog was cancelled")
+
+    def detect_colors_automatic(self):
+        """Detect colors using K-means (automatic mode)"""
         if self.image_processor.original_image is None:
             return
 
@@ -772,10 +823,16 @@ class JSPRBeamerSetup(QMainWindow):
         self.render()
 
     def update_color_palette(self):
-        """Update color palette display"""
-        # Clear existing
+        """Update color palette display (both left palette and right legend)"""
+        # Update left palette (compact view)
         while self.color_palette_layout.count():
             child = self.color_palette_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Update right legend (editable view)
+        while self.legend_layout.count():
+            child = self.legend_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
@@ -783,6 +840,7 @@ class JSPRBeamerSetup(QMainWindow):
         colors = self.color_manager.get_colors()
 
         for color in colors:
+            # Left palette - compact view
             item_widget = QWidget()
             item_layout = QHBoxLayout(item_widget)
             item_layout.setContentsMargins(2, 2, 2, 2)
@@ -808,7 +866,108 @@ class JSPRBeamerSetup(QMainWindow):
 
             self.color_palette_layout.addWidget(item_widget)
 
+            # Right legend - editable view
+            self.add_legend_item(color)
+
         self.color_palette_layout.addStretch()
+        self.legend_layout.addStretch()
+
+    def add_legend_item(self, color: Color):
+        """Add an editable color item to the legend"""
+        item_widget = QWidget()
+        item_layout = QHBoxLayout(item_widget)
+        item_layout.setContentsMargins(5, 3, 5, 3)
+        item_layout.setSpacing(8)
+
+        # Number label
+        num_label = QLabel(f"<b>{color.number}</b>")
+        num_label.setFixedWidth(30)
+        num_label.setStyleSheet("font-size: 13px;")
+        item_layout.addWidget(num_label)
+
+        # Color swatch
+        swatch = QLabel()
+        swatch.setFixedSize(40, 30)
+        swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 2px solid #999; border-radius: 3px;")
+        item_layout.addWidget(swatch)
+
+        # Editable color name
+        name_edit = QLineEdit(color.name)
+        name_edit.setStyleSheet("font-size: 12px; padding: 4px;")
+        name_edit.editingFinished.connect(lambda: self.on_color_name_changed(color, name_edit.text()))
+        item_layout.addWidget(name_edit, stretch=1)
+
+        # Delete button
+        delete_btn = QPushButton("🗑")
+        delete_btn.setFixedSize(30, 30)
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+        delete_btn.clicked.connect(lambda: self.delete_color(color))
+        item_layout.addWidget(delete_btn)
+
+        self.legend_layout.addWidget(item_widget)
+
+    def on_color_name_changed(self, color: Color, new_name: str):
+        """Handle color name change"""
+        if new_name and new_name != color.name:
+            old_name = color.name
+            color.name = new_name
+            logger.info(f"Color {color.number} renamed from '{old_name}' to '{new_name}'")
+
+            # Update palette display
+            self.update_color_palette()
+
+            # Auto-recompute if image exists
+            if self.image_processor.original_image is not None:
+                self.render()
+
+    def delete_color(self, color: Color):
+        """Delete a color from the palette"""
+        colors = self.color_manager.get_colors()
+
+        if len(colors) <= 2:
+            QMessageBox.warning(
+                self,
+                "Kan niet verwijderen",
+                "Je moet minimaal 2 kleuren behouden"
+            )
+            return
+
+        # Confirm deletion
+        result = QMessageBox.question(
+            self,
+            "Kleur verwijderen",
+            f"Weet je zeker dat je kleur '{color.name}' wilt verwijderen?\n\nDe afbeelding wordt automatisch opnieuw berekend.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if result == QMessageBox.Yes:
+            # Remove color
+            self.color_manager.remove_color(color.id)
+            logger.info(f"Deleted color {color.number}: {color.name}")
+
+            # Renumber remaining colors
+            for i, c in enumerate(self.color_manager.get_colors()):
+                c.number = i + 1
+
+            # Update palette
+            self.update_color_palette()
+
+            # Auto-recompute
+            if self.image_processor.original_image is not None:
+                # Need to re-detect/re-quantize with new color count
+                self.render()
 
     def set_mode(self, mode: str):
         """Set visualization mode"""
