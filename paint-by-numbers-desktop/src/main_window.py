@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
     QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog,
-    QLineEdit, QSizePolicy
+    QLineEdit, QSizePolicy, QComboBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
@@ -430,15 +430,55 @@ class JSPRBeamerSetup(QMainWindow):
     def create_control_panel(self) -> QWidget:
         """Create left control panel"""
         panel = QWidget()
+        panel.setStyleSheet("""
+            QWidget {
+                background-color: #fafafa;
+            }
+            QGroupBox {
+                font-weight: 500;
+                font-size: 13px;
+                color: #333;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding-top: 16px;
+                background-color: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 12px;
+                padding: 0 8px;
+                background-color: white;
+            }
+        """)
         layout = QVBoxLayout(panel)
+        layout.setSpacing(16)
+        layout.setContentsMargins(12, 12, 12, 12)
 
         # Image section
         image_group = QGroupBox("Afbeelding")
         image_layout = QVBoxLayout()
-        image_layout.setSpacing(5)
-        image_layout.setContentsMargins(5, 5, 5, 5)
+        image_layout.setSpacing(10)
 
         self.open_btn = QPushButton("Open Afbeelding...")
+        self.open_btn.setMinimumHeight(36)
+        self.open_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4A90E2;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #357ABD;
+            }
+            QPushButton:pressed {
+                background-color: #2868A8;
+            }
+        """)
         self.open_btn.clicked.connect(self.open_image)
         image_layout.addWidget(self.open_btn)
 
@@ -500,24 +540,30 @@ class JSPRBeamerSetup(QMainWindow):
         params_layout.addWidget(self.detect_colors_btn)
 
         # Black/White selection button
-        self.black_white_btn = QPushButton("⚫⚪ Zwart/Wit")
+        self.black_white_btn = QPushButton("Markeer Zwart/Wit...")
+        self.black_white_btn.setToolTip("Selecteer welke kleuren als zwart of wit behandeld moeten worden")
         self.black_white_btn.clicked.connect(self.open_black_white_dialog)
         params_layout.addWidget(self.black_white_btn)
 
         # Real-time updates checkbox
-        self.realtime_checkbox = QCheckBox("Real-time updates")
+        self.realtime_checkbox = QCheckBox("Live voorvertoning")
         self.realtime_checkbox.setChecked(True)  # Enable live preview by default
+        self.realtime_checkbox.setToolTip("Automatisch updaten bij parameter wijzigingen")
+        self.realtime_checkbox.stateChanged.connect(self.on_realtime_toggled)
         params_layout.addWidget(self.realtime_checkbox)
 
         # Show outlines checkbox
-        self.show_outlines_checkbox = QCheckBox("Toon outlines")
+        self.show_outlines_checkbox = QCheckBox("Toon contouren")
         self.show_outlines_checkbox.setChecked(True)  # Default: outlines visible
+        self.show_outlines_checkbox.setToolTip("Toon/verberg omtreklijnen")
         self.show_outlines_checkbox.stateChanged.connect(self.on_parameter_changed)
         params_layout.addWidget(self.show_outlines_checkbox)
 
-        # Herbereken button
-        self.recalc_btn = QPushButton("↻ Herbereken")
+        # Herbereken button (hidden when real-time is on)
+        self.recalc_btn = QPushButton("Herbereken")
+        self.recalc_btn.setToolTip("Handmatig updaten (Ctrl+R)")
         self.recalc_btn.clicked.connect(self.update_parameters)
+        self.recalc_btn.setVisible(False)  # Hidden by default since real-time is on
         params_layout.addWidget(self.recalc_btn)
 
         # Line width (with decimals)
@@ -558,25 +604,6 @@ class JSPRBeamerSetup(QMainWindow):
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
-        # Color palette (scrollable)
-        palette_group = QGroupBox("Kleuren")
-        palette_layout = QVBoxLayout()
-        palette_layout.setSpacing(3)
-        palette_layout.setContentsMargins(5, 5, 5, 5)
-
-        self.color_palette_widget = QWidget()
-        self.color_palette_layout = QVBoxLayout(self.color_palette_widget)
-        self.color_palette_layout.setSpacing(2)  # Compact color items
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(self.color_palette_widget)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setMaximumHeight(250)  # Smaller for compact UI
-
-        palette_layout.addWidget(scroll_area)
-        palette_group.setLayout(palette_layout)
-        layout.addWidget(palette_group)
-
         # Stretch to push everything to top
         layout.addStretch()
 
@@ -604,7 +631,24 @@ class JSPRBeamerSetup(QMainWindow):
         zoom_reset_btn.clicked.connect(self.reset_zoom)
         controls_layout.addWidget(zoom_reset_btn)
 
-        presentation_btn = QPushButton("🖥️ Presentatie Mode")
+        presentation_btn = QPushButton("Presentatie Mode")
+        presentation_btn.setToolTip("Open fullscreen beamer mode (F11)")
+        presentation_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4A90E2;
+                color: white;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 4px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #357ABD;
+            }
+            QPushButton:pressed {
+                background-color: #2868A8;
+            }
+        """)
         presentation_btn.clicked.connect(self.enter_presentation_mode)
         controls_layout.addWidget(presentation_btn)
 
@@ -626,54 +670,92 @@ class JSPRBeamerSetup(QMainWindow):
         """Create right legend panel"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
 
-        layout.addWidget(QLabel("<h2>Legenda</h2>"))
+        # Header
+        header = QLabel("<h2 style='margin: 0; padding-bottom: 8px;'>Kleuren</h2>")
+        layout.addWidget(header)
 
-        # Sorting buttons
-        sort_layout = QHBoxLayout()
-        sort_label = QLabel("Sorteer:")
-        sort_label.setStyleSheet("font-weight: bold; font-size: 11px;")
-        sort_layout.addWidget(sort_label)
-
-        sort_brightness_btn = QPushButton("🔆 Helderheid")
-        sort_brightness_btn.setMaximumHeight(25)
-        sort_brightness_btn.clicked.connect(lambda: self.sort_colors('brightness'))
-        sort_layout.addWidget(sort_brightness_btn)
-
-        sort_hue_btn = QPushButton("🌈 Tint")
-        sort_hue_btn.setMaximumHeight(25)
-        sort_hue_btn.clicked.connect(lambda: self.sort_colors('hue'))
-        sort_layout.addWidget(sort_hue_btn)
-
-        sort_usage_btn = QPushButton("📊 Gebruik")
-        sort_usage_btn.setMaximumHeight(25)
-        sort_usage_btn.clicked.connect(lambda: self.sort_colors('usage'))
-        sort_layout.addWidget(sort_usage_btn)
-
-        layout.addLayout(sort_layout)
-
-        # Project statistics
+        # Project statistics (moved to top for better visibility)
         self.stats_label = QLabel("")
         self.stats_label.setWordWrap(True)
         self.stats_label.setStyleSheet("""
-            background-color: #f0f0f0;
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 11px;
+            QLabel {
+                background-color: #f5f5f5;
+                padding: 12px;
+                border-radius: 6px;
+                font-size: 12px;
+                line-height: 1.6;
+            }
         """)
         layout.addWidget(self.stats_label)
 
+        # Sorting dropdown (cleaner than 3 buttons)
+        sort_layout = QHBoxLayout()
+        sort_layout.setSpacing(8)
+
+        sort_label = QLabel("Sorteer op:")
+        sort_label.setStyleSheet("font-weight: 500; font-size: 12px; color: #666;")
+        sort_layout.addWidget(sort_label)
+
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["Helderheid", "Tint", "Gebruik"])
+        self.sort_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+                font-size: 12px;
+            }
+            QComboBox:hover {
+                border-color: #999;
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 4px;
+            }
+        """)
+        self.sort_combo.currentIndexChanged.connect(self.on_sort_changed)
+        sort_layout.addWidget(self.sort_combo, stretch=1)
+
+        layout.addLayout(sort_layout)
+
+        # Separator
+        separator = QLabel()
+        separator.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
+        separator.setMaximumHeight(1)
+        layout.addWidget(separator)
+
         # Legend scroll area
+        legend_label = QLabel("<b style='font-size: 11px; color: #666;'>PALET</b>")
+        layout.addWidget(legend_label)
+
         self.legend_widget = QWidget()
         self.legend_layout = QVBoxLayout(self.legend_widget)
+        self.legend_layout.setSpacing(6)
+        self.legend_layout.setContentsMargins(0, 0, 0, 0)
 
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.legend_widget)
         scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
 
-        layout.addWidget(scroll_area)
+        layout.addWidget(scroll_area, stretch=1)
 
         return panel
+
+    def on_sort_changed(self, index: int):
+        """Handle sort dropdown selection"""
+        sort_modes = ['brightness', 'hue', 'usage']
+        if 0 <= index < len(sort_modes):
+            self.sort_colors(sort_modes[index])
 
     def open_image(self):
         """Open image file dialog"""
@@ -872,95 +954,98 @@ class JSPRBeamerSetup(QMainWindow):
         self.render()
 
     def update_color_palette(self):
-        """Update color palette display (both left palette and right legend)"""
-        # Update left palette (compact view)
-        while self.color_palette_layout.count():
-            child = self.color_palette_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Update right legend (editable view)
+        """Update color legend display"""
+        # Clear right legend (editable view)
         while self.legend_layout.count():
             child = self.legend_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
 
-        # Add color items
+        # Add color items to legend
         colors = self.color_manager.get_colors()
 
         for color in colors:
-            # Left palette - compact view
-            item_widget = QWidget()
-            item_layout = QHBoxLayout(item_widget)
-            item_layout.setContentsMargins(2, 2, 2, 2)
-            item_layout.setSpacing(5)
-
-            # Number label
-            num_label = QLabel(f"<b>{color.number}</b>")
-            num_label.setFixedWidth(25)
-            item_layout.addWidget(num_label)
-
-            # Color swatch - smaller
-            swatch = QLabel()
-            swatch.setFixedSize(30, 30)
-            swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 1px solid #ccc;")
-            item_layout.addWidget(swatch)
-
-            # Color name
-            name_label = QLabel(color.name)
-            name_label.setStyleSheet("font-size: 11px;")  # Smaller font
-            item_layout.addWidget(name_label)
-
-            item_layout.addStretch()
-
-            self.color_palette_layout.addWidget(item_widget)
-
-            # Right legend - editable view
             self.add_legend_item(color)
 
-        self.color_palette_layout.addStretch()
         self.legend_layout.addStretch()
 
     def add_legend_item(self, color: Color):
         """Add an editable color item to the legend"""
         item_widget = QWidget()
         item_layout = QHBoxLayout(item_widget)
-        item_layout.setContentsMargins(5, 3, 5, 3)
-        item_layout.setSpacing(8)
+        item_layout.setContentsMargins(8, 6, 8, 6)
+        item_layout.setSpacing(10)
+
+        # Add subtle background and border
+        item_widget.setStyleSheet("""
+            QWidget {
+                background-color: #fafafa;
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+            }
+            QWidget:hover {
+                background-color: #f5f5f5;
+                border-color: #ccc;
+            }
+        """)
 
         # Number label
         num_label = QLabel(f"<b>{color.number}</b>")
-        num_label.setFixedWidth(30)
-        num_label.setStyleSheet("font-size: 13px;")
+        num_label.setFixedWidth(28)
+        num_label.setStyleSheet("font-size: 14px; color: #333; background: transparent; border: none;")
+        num_label.setAlignment(Qt.AlignCenter)
         item_layout.addWidget(num_label)
 
         # Color swatch
         swatch = QLabel()
-        swatch.setFixedSize(40, 30)
-        swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 2px solid #999; border-radius: 3px;")
+        swatch.setFixedSize(36, 28)
+        swatch.setStyleSheet(f"""
+            background-color: {color.to_hex()};
+            border: 1px solid #bbb;
+            border-radius: 3px;
+        """)
         item_layout.addWidget(swatch)
 
         # Editable color name
         name_edit = QLineEdit(color.name)
-        name_edit.setStyleSheet("font-size: 12px; padding: 4px;")
+        name_edit.setStyleSheet("""
+            QLineEdit {
+                font-size: 12px;
+                padding: 5px 8px;
+                border: 1px solid transparent;
+                border-radius: 3px;
+                background-color: transparent;
+            }
+            QLineEdit:focus {
+                border: 1px solid #4A90E2;
+                background-color: white;
+            }
+            QLineEdit:hover {
+                background-color: rgba(255, 255, 255, 0.5);
+            }
+        """)
         name_edit.editingFinished.connect(lambda: self.on_color_name_changed(color, name_edit.text()))
         item_layout.addWidget(name_edit, stretch=1)
 
-        # Delete button
-        delete_btn = QPushButton("🗑")
-        delete_btn.setFixedSize(30, 30)
+        # Delete button (text-based, cleaner than emoji)
+        delete_btn = QPushButton("×")
+        delete_btn.setFixedSize(24, 24)
         delete_btn.setStyleSheet("""
             QPushButton {
-                background-color: #f44336;
-                color: white;
+                background-color: transparent;
+                color: #999;
                 border: none;
-                border-radius: 3px;
-                font-size: 14px;
+                border-radius: 12px;
+                font-size: 20px;
+                font-weight: bold;
+                padding: 0;
             }
             QPushButton:hover {
-                background-color: #d32f2f;
+                background-color: #f44336;
+                color: white;
             }
         """)
+        delete_btn.setToolTip("Verwijder kleur")
         delete_btn.clicked.connect(lambda: self.delete_color(color))
         item_layout.addWidget(delete_btn)
 
@@ -1096,42 +1181,51 @@ class JSPRBeamerSetup(QMainWindow):
 
     def update_statistics(self):
         """Update statistics label with color usage data"""
+        # Safety check: ensure stats_label exists
+        if not hasattr(self, 'stats_label') or self.stats_label is None:
+            return
+
         if self.visualizer.color_map is None:
             self.stats_label.setText("")
             return
 
-        stats = self.calculate_statistics()
+        try:
+            stats = self.calculate_statistics()
 
-        if not stats['color_stats']:
+            if not stats['color_stats']:
+                self.stats_label.setText("")
+                return
+
+            # Calculate difficulty rating
+            total_regions = sum(s['regions'] for s in stats['color_stats'])
+            num_colors = len(stats['color_stats'])
+            avg_regions_per_color = total_regions / num_colors if num_colors > 0 else 0
+
+            # Difficulty scale: Easy (1-2), Medium (3-4), Hard (5+)
+            if avg_regions_per_color < 15:
+                difficulty = "★ Makkelijk"
+            elif avg_regions_per_color < 35:
+                difficulty = "★★ Gemiddeld"
+            elif avg_regions_per_color < 60:
+                difficulty = "★★★ Uitdagend"
+            else:
+                difficulty = "★★★★ Moeilijk"
+
+            # Format statistics text
+            lines = [
+                f"<b>Project Statistieken</b>",
+                f"<hr style='border: none; border-top: 1px solid #ccc; margin: 8px 0;'>",
+                f"<b>{num_colors}</b> kleuren",
+                f"<b>{total_regions}</b> gebieden totaal",
+                f"<b>{avg_regions_per_color:.1f}</b> gem. per kleur",
+                f"<hr style='border: none; border-top: 1px solid #ccc; margin: 8px 0;'>",
+                f"<b>{difficulty}</b>",
+            ]
+
+            self.stats_label.setText("<br>".join(lines))
+        except Exception as e:
+            logger.error(f"Error updating statistics: {e}")
             self.stats_label.setText("")
-            return
-
-        # Calculate difficulty rating
-        total_regions = sum(s['regions'] for s in stats['color_stats'])
-        num_colors = len(stats['color_stats'])
-        avg_regions_per_color = total_regions / num_colors if num_colors > 0 else 0
-
-        # Difficulty scale: Easy (1-2), Medium (3-4), Hard (5+)
-        if avg_regions_per_color < 15:
-            difficulty = "⭐ Makkelijk"
-        elif avg_regions_per_color < 35:
-            difficulty = "⭐⭐ Gemiddeld"
-        elif avg_regions_per_color < 60:
-            difficulty = "⭐⭐⭐ Uitdagend"
-        else:
-            difficulty = "⭐⭐⭐⭐ Moeilijk"
-
-        # Format statistics text
-        lines = [
-            f"<b>Project Statistieken</b>",
-            f"━━━━━━━━━━━━━━━━━━━",
-            f"Kleuren: {num_colors}",
-            f"Totaal gebieden: {total_regions}",
-            f"Gem. per kleur: {avg_regions_per_color:.1f}",
-            f"Moeilijkheid: {difficulty}",
-        ]
-
-        self.stats_label.setText("<br>".join(lines))
 
     def set_mode(self, mode: str):
         """Set visualization mode"""
@@ -1149,6 +1243,15 @@ class JSPRBeamerSetup(QMainWindow):
     def on_parameter_changed(self):
         """Handle parameter change - only update if real-time is enabled"""
         if self.realtime_checkbox.isChecked():
+            self.update_parameters()
+
+    def on_realtime_toggled(self):
+        """Handle real-time checkbox toggle"""
+        is_realtime = self.realtime_checkbox.isChecked()
+        # Show/hide manual recalculate button
+        self.recalc_btn.setVisible(not is_realtime)
+        # If turning on real-time, trigger immediate update
+        if is_realtime:
             self.update_parameters()
 
     def update_parameters(self):
