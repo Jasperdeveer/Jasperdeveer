@@ -220,7 +220,9 @@ class PresentationMode(QWidget):
 
         # ESC or Q: Return to main interface
         if key in (Qt.Key_Escape, Qt.Key_Q):
-            self.close()
+            # Hide instead of close to return to main interface
+            self.hide()
+            self.closed.emit()
 
         # F11: Toggle fullscreen
         elif key == Qt.Key_F11:
@@ -249,6 +251,12 @@ class PresentationMode(QWidget):
         elif key == Qt.Key_H:
             self.toggle_shortcuts()
 
+        # [ and ]: Adjust grid size (primary method)
+        elif key == Qt.Key_BracketLeft:
+            self.decrease_grid_size()
+        elif key == Qt.Key_BracketRight:
+            self.increase_grid_size()
+
         # +/=: Zoom in (or increase grid size with Shift)
         elif key in (Qt.Key_Plus, Qt.Key_Equal):
             if event.modifiers() & Qt.ShiftModifier:
@@ -256,8 +264,8 @@ class PresentationMode(QWidget):
             else:
                 self.zoom_in()
 
-        # -: Zoom out (or decrease grid size with Shift)
-        elif key == Qt.Key_Minus:
+        # -/_: Zoom out (or decrease grid size with Shift)
+        elif key in (Qt.Key_Minus, Qt.Key_Underscore):
             if event.modifiers() & Qt.ShiftModifier:
                 self.decrease_grid_size()
             else:
@@ -393,7 +401,7 @@ class PresentationMode(QWidget):
             ("O", "Outlines aan/uit"),
             ("G", "Grid aan/uit"),
             ("C", "Grid kleur"),
-            ("Shift +/-", "Grid grootte"),
+            ("[ / ]", "Grid grootte"),
             ("H", "Deze hulp aan/uit"),
             ("+/-", "Zoom in/uit"),
             ("0", "Reset zoom"),

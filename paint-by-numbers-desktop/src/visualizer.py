@@ -128,7 +128,14 @@ class Visualizer:
 
         result = self.quantized_image.copy()
 
-        # Fill black regions completely (pure black, no outline needed)
+        if progress_callback:
+            progress_callback(40, "Tracing contours...")
+
+        # Draw contours (if enabled)
+        if self.parameters.get('show_outlines', True):
+            result = self.draw_contours(result)
+
+        # Fill black regions completely (ALWAYS, after contours so black stays on top)
         height, width = result.shape[:2]
         color_map_2d = self.color_map.reshape(height, width)
         for color in self.color_manager.get_colors():
@@ -136,13 +143,6 @@ class Visualizer:
                 # Fill all pixels of this color with pure black
                 mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
                 result[mask] = [0, 0, 0]
-
-        if progress_callback:
-            progress_callback(40, "Tracing contours...")
-
-        # Draw contours (if enabled)
-        if self.parameters.get('show_outlines', True):
-            result = self.draw_contours(result)
 
         if progress_callback:
             progress_callback(70, "Placing numbers...")
@@ -185,15 +185,6 @@ class Visualizer:
         height, width = self.quantized_image.shape[:2]
         result = np.ones((height, width, 3), dtype=np.uint8) * 255
 
-        # Fill black regions completely (before contours)
-        color_map_2d = self.color_map.reshape(height, width)
-        for color in self.color_manager.get_colors():
-            if hasattr(color, 'is_black') and color.is_black:
-                # Fill all pixels of this color with pure black
-                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
-                result[mask] = [0, 0, 0]
-                logger.info(f"Filled black regions: {np.sum(mask)} pixels")
-
         if progress_callback:
             progress_callback(40, "Tracing contours...")
 
@@ -201,6 +192,15 @@ class Visualizer:
         if self.parameters.get('show_outlines', True):
             # For black regions, only draw external boundary (not internal details)
             result = self.draw_contours(result, exclude_internal_for_black=True)
+
+        # Fill black regions completely (ALWAYS, after contours so black stays on top)
+        color_map_2d = self.color_map.reshape(height, width)
+        for color in self.color_manager.get_colors():
+            if hasattr(color, 'is_black') and color.is_black:
+                # Fill all pixels of this color with pure black
+                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                result[mask] = [0, 0, 0]
+                logger.info(f"Filled black regions: {np.sum(mask)} pixels")
 
         if progress_callback:
             progress_callback(70, "Placing numbers...")
@@ -415,7 +415,11 @@ class Visualizer:
         elif self.mode == 'paintByNumbers' and self.quantized_image is not None:
             result = self.quantized_image.copy()
 
-            # Fill black regions completely
+            # Draw contours if enabled
+            if self.parameters.get('show_outlines', True):
+                result = self.draw_contours(result)
+
+            # Fill black regions completely (ALWAYS, even if outlines are off)
             if self.color_map is not None and self.color_manager:
                 height, width = result.shape[:2]
                 color_map_2d = self.color_map.reshape(height, width)
@@ -423,10 +427,6 @@ class Visualizer:
                     if hasattr(color, 'is_black') and color.is_black:
                         mask = color_map_2d == (color.number - 1)
                         result[mask] = [0, 0, 0]
-
-            # Draw contours if enabled
-            if self.parameters.get('show_outlines', True):
-                result = self.draw_contours(result)
 
             if self.show_numbers:
                 result = self.draw_numbers(result)
@@ -436,17 +436,17 @@ class Visualizer:
             height, width = self.quantized_image.shape[:2]
             result = np.ones((height, width, 3), dtype=np.uint8) * 255
 
-            # Fill black regions completely (before contours)
+            # Draw contours if enabled (exclude internal black contours)
+            if self.parameters.get('show_outlines', True):
+                result = self.draw_contours(result, exclude_internal_for_black=True)
+
+            # Fill black regions completely (ALWAYS, after contours so black stays on top)
             if self.color_map is not None and self.color_manager:
                 color_map_2d = self.color_map.reshape(height, width)
                 for color in self.color_manager.get_colors():
                     if hasattr(color, 'is_black') and color.is_black:
                         mask = color_map_2d == (color.number - 1)
                         result[mask] = [0, 0, 0]
-
-            # Draw contours if enabled (exclude internal black contours)
-            if self.parameters.get('show_outlines', True):
-                result = self.draw_contours(result, exclude_internal_for_black=True)
 
             if self.show_numbers:
                 result = self.draw_numbers(result)
