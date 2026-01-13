@@ -5,7 +5,7 @@ Keyboard-controlled interface for beamer projection
 
 import numpy as np
 from typing import Optional
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QInputDialog
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QPen
 import logging
@@ -289,6 +289,10 @@ class PresentationMode(QWidget):
         elif key == Qt.Key_Space:
             self.cycle_mode_requested.emit()
 
+        # Z: Set zoom percentage manually
+        elif key == Qt.Key_Z:
+            self.prompt_zoom_input()
+
         else:
             super().keyPressEvent(event)
 
@@ -404,6 +408,7 @@ class PresentationMode(QWidget):
             ("[ / ]", "Grid grootte"),
             ("H", "Deze hulp aan/uit"),
             ("+/-", "Zoom in/uit"),
+            ("Z", "Zoom % invoeren"),
             ("0", "Reset zoom"),
             ("←↑↓→", "Pan beeld"),
             ("Space", "Wissel modus"),
@@ -439,6 +444,24 @@ class PresentationMode(QWidget):
         )
 
         painter.restore()
+
+    def prompt_zoom_input(self):
+        """Prompt user to enter zoom percentage"""
+        current_zoom = int(self.zoom_level * 100)
+        zoom_value, ok = QInputDialog.getInt(
+            self,
+            "Zoom Instellen",
+            "Voer zoom percentage in (10-500%):",
+            value=current_zoom,
+            min=10,
+            max=500,
+            step=10
+        )
+
+        if ok:
+            self.zoom_level = zoom_value / 100.0
+            logger.info(f"Zoom set to {zoom_value}%")
+            self.update()
 
     def closeEvent(self, event):
         """Handle window close"""

@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import (
     QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog,
     QLineEdit, QSizePolicy, QComboBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QEvent
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor, QKeyEvent
 import cv2
 import numpy as np
 import logging
@@ -148,6 +148,8 @@ class CanvasWidget(QWidget):
 
     # Signal emitted when color is picked (r, g, b)
     color_picked = pyqtSignal(int, int, int)
+    # Signal emitted when zoom level changes (float)
+    zoom_changed = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -176,6 +178,7 @@ class CanvasWidget(QWidget):
             # Calculate scale to fit
             scale = min(widget_width / width, widget_height / height)
             self.zoom_level = max(0.1, min(5.0, scale))
+            self.zoom_changed.emit(self.zoom_level)
 
     def resizeEvent(self, event):
         """Handle widget resize - refit image"""
@@ -226,6 +229,7 @@ class CanvasWidget(QWidget):
     def set_zoom(self, zoom: float):
         """Set zoom level"""
         self.zoom_level = max(0.1, min(5.0, zoom))
+        self.zoom_changed.emit(self.zoom_level)
         self.update()
 
     def set_eyedropper_mode(self, enabled: bool):
@@ -526,7 +530,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Show outlines checkbox
         self.show_outlines_checkbox = QCheckBox("Toon contouren")
-        self.show_outlines_checkbox.setChecked(True)  # Default: outlines visible
+        self.show_outlines_checkbox.setChecked(False)  # Default: outlines hidden (zwart is altijd zichtbaar)
         self.show_outlines_checkbox.setToolTip("Toon/verberg omtreklijnen")
         self.show_outlines_checkbox.stateChanged.connect(self.on_parameter_changed)
         params_layout.addWidget(self.show_outlines_checkbox)
@@ -555,7 +559,7 @@ class JSPRBeamerSetup(QMainWindow):
         number_size_layout = QHBoxLayout()
         number_size_layout.addWidget(QLabel("Cijfergrootte:"))
         self.number_size_spin = QSpinBox()
-        self.number_size_spin.setRange(6, 32)
+        self.number_size_spin.setRange(4, 32)
         self.number_size_spin.setValue(16)
         self.number_size_spin.setMaximumWidth(60)
         self.number_size_spin.valueChanged.connect(self.on_parameter_changed)
@@ -566,10 +570,13 @@ class JSPRBeamerSetup(QMainWindow):
         region_size_layout = QHBoxLayout()
         region_size_layout.addWidget(QLabel("Min. vlak:"))
         self.region_size_spin = QSpinBox()
-        self.region_size_spin.setRange(10, 500)
+        self.region_size_spin.setRange(10, 1000)
+        self.region_size_spin.setSingleStep(10)
         self.region_size_spin.setValue(20)
         self.region_size_spin.setMaximumWidth(60)
         self.region_size_spin.valueChanged.connect(self.on_parameter_changed)
+        # Install event filter for shift+click detection
+        self.region_size_spin.installEventFilter(self)
         region_size_layout.addWidget(self.region_size_spin)
         params_layout.addLayout(region_size_layout)
 
@@ -625,6 +632,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Canvas
         self.canvas = CanvasWidget()
         self.canvas.color_picked.connect(self.on_color_picked)
+        self.canvas.zoom_changed.connect(self.on_zoom_changed)
         layout.addWidget(self.canvas)
 
         return panel
@@ -1196,6 +1204,10 @@ class JSPRBeamerSetup(QMainWindow):
         self.canvas.set_zoom(1.0)
         self.zoom_label.setText("100%")
 
+    def on_zoom_changed(self, zoom_level: float):
+        """Handle zoom level changed from canvas"""
+        self.zoom_label.setText(f"{int(zoom_level * 100)}%")
+
     def toggle_eyedropper(self):
         """Toggle eyedropper mode"""
         is_checked = self.eyedropper_btn.isChecked()
@@ -1620,6 +1632,20 @@ class JSPRBeamerSetup(QMainWindow):
             "SVG Export",
             "SVG export komt binnenkort beschikbaar!"
         )
+
+    def eventFilter(self, obj, event):
+        """Event filter for shift+click on spinboxes"""
+        if obj == self.region_size_spin and event.type() == QEvent.Wheel:
+            # Check if shift is pressed
+            if event.modifiers() & Qt.ShiftModifier:
+                # Temporarily change step size to 100
+                self.region_size_spin.setSingleStep(100)
+                # Process the event
+                result = super().eventFilter(obj, event)
+                # Reset step size to 10
+                self.region_size_spin.setSingleStep(10)
+                return result
+        return super().eventFilter(obj, event)
 
     def show_about(self):
         """Show about dialog"""

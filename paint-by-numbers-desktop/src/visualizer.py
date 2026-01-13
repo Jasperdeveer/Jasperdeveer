@@ -358,21 +358,23 @@ class Visualizer:
             number_text = str(color.number)
 
             # Get text size for proper positioning
-            # OpenCV doesn't have FONT_HERSHEY_BOLD, use SIMPLEX with higher thickness
-            font = cv2.FONT_HERSHEY_SIMPLEX
+            # Use FONT_HERSHEY_DUPLEX for better quality than SIMPLEX
+            font = cv2.FONT_HERSHEY_DUPLEX
+            # Calculate thickness for sharper rendering
+            text_thickness = max(1, int(font_size * 3))
             (text_width, text_height), _ = cv2.getTextSize(
                 number_text,
                 font,
                 font_size,
-                thickness=2
+                thickness=text_thickness
             )
 
             # Center text
             text_x = int(center[0] - text_width / 2)
             text_y = int(center[1] + text_height / 2)
 
-            # Draw white outline for visibility
-            outline_thickness = max(3, int(font_size * 5))
+            # Draw white outline for visibility (thinner for sharper look)
+            outline_thickness = max(2, int(font_size * 4))
             cv2.putText(
                 result,
                 number_text,
@@ -392,7 +394,7 @@ class Visualizer:
                 font,
                 font_size,
                 (0, 0, 0),  # Black text
-                thickness=max(1, int(font_size * 2)),
+                thickness=text_thickness,
                 lineType=cv2.LINE_AA
             )
 

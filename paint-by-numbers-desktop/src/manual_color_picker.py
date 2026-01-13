@@ -639,6 +639,21 @@ class ManualColorPicker(QWidget):
 
         logger.info(f"Added color: {new_color.name} ({np.sum(mask)} pixels)")
 
+        # Auto-advance to next step after selecting a color
+        if not merge_with_existing:  # Only auto-advance for new colors
+            if self.current_step == 'SELECTING_BLACK':
+                # Auto-advance to white selection
+                logger.info("Auto-advancing to white selection step")
+                self.black_colors = [c for c in self.selected_colors if c.is_black]
+                self.current_step = 'SELECTING_WHITE'
+                self.update_ui_for_step()
+            elif self.current_step == 'SELECTING_WHITE':
+                # Auto-advance to color selection
+                logger.info("Auto-advancing to color selection step")
+                self.white_colors = [c for c in self.selected_colors if c.is_white]
+                self.current_step = 'SELECTING_COLORS'
+                self.update_ui_for_step()
+
     def flood_fill_similar_pixels(self, r: int, g: int, b: int) -> np.ndarray:
         """
         Find all similar pixels in the entire image using color tolerance
