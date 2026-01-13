@@ -506,7 +506,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Real-time updates checkbox
         self.realtime_checkbox = QCheckBox("Real-time updates")
-        self.realtime_checkbox.setChecked(False)
+        self.realtime_checkbox.setChecked(True)  # Enable live preview by default
         params_layout.addWidget(self.realtime_checkbox)
 
         # Show outlines checkbox
@@ -1018,6 +1018,121 @@ class JSPRBeamerSetup(QMainWindow):
                 # Need to re-detect/re-quantize with new color count
                 self.render()
 
+    def sort_colors(self, mode: str):
+        """Sort colors by brightness, hue, or usage"""
+        if not self.color_manager.get_colors():
+            return
+
+        if mode == 'brightness':
+            self.color_manager.sort_by_brightness()
+        elif mode == 'hue':
+            self.color_manager.sort_by_hue()
+        elif mode == 'usage':
+            # Need color_map for usage sorting
+            if self.visualizer.color_map is not None:
+                self.color_manager.sort_by_usage(self.visualizer.color_map)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Geen data",
+                    "Render eerst de afbeelding voordat je op gebruik kan sorteren"
+                )
+                return
+        else:
+            logger.warning(f"Unknown sort mode: {mode}")
+            return
+
+        # Update UI
+        self.update_color_palette()
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        self.render()
+
+        # Update statistics after sorting
+        self.update_statistics()
+
+        logger.info(f"Colors sorted by {mode}")
+
+    def calculate_statistics(self) -> dict:
+        """Calculate color usage statistics"""
+        stats = {
+            'total_pixels': 0,
+            'color_stats': []
+        }
+
+        if self.visualizer.color_map is None:
+            return stats
+
+        color_map_flat = self.visualizer.color_map.flatten()
+        stats['total_pixels'] = len(color_map_flat)
+
+        # Calculate stats for each color
+        for color in self.color_manager.get_colors():
+            color_index = color.number - 1
+            pixel_count = int(np.sum(color_map_flat == color_index))
+            coverage = (pixel_count / stats['total_pixels'] * 100) if stats['total_pixels'] > 0 else 0
+
+            # Count regions for this color
+            if self.visualizer.color_map is not None:
+                height, width = self.visualizer.color_map.shape[0], self.visualizer.color_map.shape[1]
+                color_map_2d = self.visualizer.color_map.reshape(height, width)
+                mask = (color_map_2d == color_index).astype(np.uint8)
+
+                # Find contours to count regions
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                region_count = len(contours)
+            else:
+                region_count = 0
+
+            stats['color_stats'].append({
+                'color': color,
+                'pixels': pixel_count,
+                'coverage': coverage,
+                'regions': region_count
+            })
+
+        return stats
+
+    def update_statistics(self):
+        """Update statistics label with color usage data"""
+        if self.visualizer.color_map is None:
+            self.stats_label.setText("")
+            return
+
+        stats = self.calculate_statistics()
+
+        if not stats['color_stats']:
+            self.stats_label.setText("")
+            return
+
+        # Calculate difficulty rating
+        total_regions = sum(s['regions'] for s in stats['color_stats'])
+        num_colors = len(stats['color_stats'])
+        avg_regions_per_color = total_regions / num_colors if num_colors > 0 else 0
+
+        # Difficulty scale: Easy (1-2), Medium (3-4), Hard (5+)
+        if avg_regions_per_color < 15:
+            difficulty = "⭐ Makkelijk"
+        elif avg_regions_per_color < 35:
+            difficulty = "⭐⭐ Gemiddeld"
+        elif avg_regions_per_color < 60:
+            difficulty = "⭐⭐⭐ Uitdagend"
+        else:
+            difficulty = "⭐⭐⭐⭐ Moeilijk"
+
+        # Format statistics text
+        lines = [
+            f"<b>Project Statistieken</b>",
+            f"━━━━━━━━━━━━━━━━━━━",
+            f"Kleuren: {num_colors}",
+            f"Totaal gebieden: {total_regions}",
+            f"Gem. per kleur: {avg_regions_per_color:.1f}",
+            f"Moeilijkheid: {difficulty}",
+        ]
+
+        self.stats_label.setText("<br>".join(lines))
+
     def set_mode(self, mode: str):
         """Set visualization mode"""
         self.current_mode = mode
@@ -1064,6 +1179,9 @@ class JSPRBeamerSetup(QMainWindow):
         if result is not None:
             self.canvas.set_image(result)
             self.statusBar().showMessage("Klaar")
+
+            # Update statistics after successful render
+            self.update_statistics()
         else:
             self.statusBar().showMessage("Fout bij renderen")
 

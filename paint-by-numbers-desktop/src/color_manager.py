@@ -249,3 +249,30 @@ class ColorManager:
             color.number = i + 1
 
         logger.info("Sorted colors by hue")
+
+    def sort_by_usage(self, color_map: Optional[np.ndarray] = None) -> None:
+        """Sort colors by usage (pixel count)"""
+        if color_map is None:
+            logger.warning("No color_map provided, cannot sort by usage")
+            return
+
+        self.history.append(self.colors.copy())
+
+        # Count pixels for each color
+        usage_counts = {}
+        color_map_flat = color_map.flatten()
+
+        for color in self.colors:
+            # color_map contains indices (0-based), color.number is 1-based
+            color_index = color.number - 1
+            count = np.sum(color_map_flat == color_index)
+            usage_counts[color.id] = count
+
+        # Sort by usage (descending - most used first)
+        self.colors.sort(key=lambda c: usage_counts.get(c.id, 0), reverse=True)
+
+        # Renumber after sorting
+        for i, color in enumerate(self.colors):
+            color.number = i + 1
+
+        logger.info("Sorted colors by usage")
