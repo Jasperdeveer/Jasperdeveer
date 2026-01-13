@@ -629,6 +629,40 @@ class JSPRBeamerSetup(QMainWindow):
 
         layout.addWidget(QLabel("<h2>Legenda</h2>"))
 
+        # Sorting buttons
+        sort_layout = QHBoxLayout()
+        sort_label = QLabel("Sorteer:")
+        sort_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        sort_layout.addWidget(sort_label)
+
+        sort_brightness_btn = QPushButton("🔆 Helderheid")
+        sort_brightness_btn.setMaximumHeight(25)
+        sort_brightness_btn.clicked.connect(lambda: self.sort_colors('brightness'))
+        sort_layout.addWidget(sort_brightness_btn)
+
+        sort_hue_btn = QPushButton("🌈 Tint")
+        sort_hue_btn.setMaximumHeight(25)
+        sort_hue_btn.clicked.connect(lambda: self.sort_colors('hue'))
+        sort_layout.addWidget(sort_hue_btn)
+
+        sort_usage_btn = QPushButton("📊 Gebruik")
+        sort_usage_btn.setMaximumHeight(25)
+        sort_usage_btn.clicked.connect(lambda: self.sort_colors('usage'))
+        sort_layout.addWidget(sort_usage_btn)
+
+        layout.addLayout(sort_layout)
+
+        # Project statistics
+        self.stats_label = QLabel("")
+        self.stats_label.setWordWrap(True)
+        self.stats_label.setStyleSheet("""
+            background-color: #f0f0f0;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        """)
+        layout.addWidget(self.stats_label)
+
         # Legend scroll area
         self.legend_widget = QWidget()
         self.legend_layout = QVBoxLayout(self.legend_widget)
