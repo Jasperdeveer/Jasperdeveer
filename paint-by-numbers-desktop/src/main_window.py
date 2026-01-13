@@ -430,62 +430,36 @@ class JSPRBeamerSetup(QMainWindow):
     def create_control_panel(self) -> QWidget:
         """Create left control panel"""
         panel = QWidget()
-        panel.setStyleSheet("""
-            QWidget {
-                background-color: #fafafa;
-            }
-            QGroupBox {
-                font-weight: 500;
-                font-size: 13px;
-                color: #333;
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
-                margin-top: 12px;
-                padding-top: 16px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 12px;
-                padding: 0 8px;
-                background-color: white;
-            }
-        """)
         layout = QVBoxLayout(panel)
-        layout.setSpacing(16)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # Image section
         image_group = QGroupBox("Afbeelding")
         image_layout = QVBoxLayout()
-        image_layout.setSpacing(10)
+        image_layout.setSpacing(8)
 
         self.open_btn = QPushButton("Open Afbeelding...")
-        self.open_btn.setMinimumHeight(36)
+        self.open_btn.setMinimumHeight(32)
         self.open_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4A90E2;
                 color: white;
                 border: none;
-                padding: 8px 16px;
+                padding: 6px 12px;
                 border-radius: 4px;
-                font-weight: 500;
             }
             QPushButton:hover {
                 background-color: #357ABD;
-            }
-            QPushButton:pressed {
-                background-color: #2868A8;
             }
         """)
         self.open_btn.clicked.connect(self.open_image)
         image_layout.addWidget(self.open_btn)
 
-        # Image preview - smaller for compact UI
+        # Image preview
         self.image_preview = QLabel()
-        self.image_preview.setFixedSize(280, 180)
-        self.image_preview.setStyleSheet("border: 1px solid #ccc; background: #2a2a2a;")
+        self.image_preview.setFixedSize(260, 160)
+        self.image_preview.setStyleSheet("border: 2px dashed #999; padding: 4px;")
         self.image_preview.setAlignment(Qt.AlignCenter)
         self.image_preview.setText("Geen afbeelding")
         image_layout.addWidget(self.image_preview)
@@ -496,8 +470,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Mode selection
         mode_group = QGroupBox("Visualisatie")
         mode_layout = QVBoxLayout()
-        mode_layout.setSpacing(3)
-        mode_layout.setContentsMargins(5, 5, 5, 5)
+        mode_layout.setSpacing(6)
 
         self.mode_original_btn = QPushButton("Origineel")
         self.mode_original_btn.setCheckable(True)
@@ -521,8 +494,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Parameters
         params_group = QGroupBox("Parameters")
         params_layout = QVBoxLayout()
-        params_layout.setSpacing(3)  # Compacter
-        params_layout.setContentsMargins(5, 5, 5, 5)
+        params_layout.setSpacing(6)
 
         # Color count
         color_count_layout = QHBoxLayout()
@@ -634,20 +606,11 @@ class JSPRBeamerSetup(QMainWindow):
         presentation_btn = QPushButton("Presentatie Mode")
         presentation_btn.setToolTip("Open fullscreen beamer mode (F11)")
         presentation_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4A90E2;
-                color: white;
-                border: none;
-                padding: 6px 16px;
-                border-radius: 4px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #357ABD;
-            }
-            QPushButton:pressed {
-                background-color: #2868A8;
-            }
+            background-color: #4A90E2;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 3px;
         """)
         presentation_btn.clicked.connect(self.enter_presentation_mode)
         controls_layout.addWidget(presentation_btn)
@@ -670,82 +633,48 @@ class JSPRBeamerSetup(QMainWindow):
         """Create right legend panel"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # Header
-        header = QLabel("<h2 style='margin: 0; padding-bottom: 8px;'>Kleuren</h2>")
+        header = QLabel("<h3>Kleuren</h3>")
         layout.addWidget(header)
 
-        # Project statistics (moved to top for better visibility)
+        # Project statistics
         self.stats_label = QLabel("")
         self.stats_label.setWordWrap(True)
         self.stats_label.setStyleSheet("""
-            QLabel {
-                background-color: #f5f5f5;
-                padding: 12px;
-                border-radius: 6px;
-                font-size: 12px;
-                line-height: 1.6;
-            }
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 11px;
         """)
         layout.addWidget(self.stats_label)
 
-        # Sorting dropdown (cleaner than 3 buttons)
+        # Sorting dropdown
         sort_layout = QHBoxLayout()
-        sort_layout.setSpacing(8)
+        sort_layout.setSpacing(6)
 
         sort_label = QLabel("Sorteer op:")
-        sort_label.setStyleSheet("font-weight: 500; font-size: 12px; color: #666;")
         sort_layout.addWidget(sort_label)
 
         self.sort_combo = QComboBox()
         self.sort_combo.addItems(["Helderheid", "Tint", "Gebruik"])
-        self.sort_combo.setStyleSheet("""
-            QComboBox {
-                padding: 4px 8px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                background-color: white;
-                font-size: 12px;
-            }
-            QComboBox:hover {
-                border-color: #999;
-            }
-            QComboBox::drop-down {
-                border: none;
-                padding-right: 4px;
-            }
-        """)
         self.sort_combo.currentIndexChanged.connect(self.on_sort_changed)
         sort_layout.addWidget(self.sort_combo, stretch=1)
 
         layout.addLayout(sort_layout)
 
-        # Separator
-        separator = QLabel()
-        separator.setStyleSheet("background-color: #e0e0e0; max-height: 1px;")
-        separator.setMaximumHeight(1)
-        layout.addWidget(separator)
-
         # Legend scroll area
-        legend_label = QLabel("<b style='font-size: 11px; color: #666;'>PALET</b>")
-        layout.addWidget(legend_label)
-
         self.legend_widget = QWidget()
         self.legend_layout = QVBoxLayout(self.legend_widget)
-        self.legend_layout.setSpacing(6)
-        self.legend_layout.setContentsMargins(0, 0, 0, 0)
+        self.legend_layout.setSpacing(4)
+        self.legend_layout.setContentsMargins(0, 4, 0, 0)
 
         scroll_area = QScrollArea()
         scroll_area.setWidget(self.legend_widget)
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-        """)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
 
         layout.addWidget(scroll_area, stretch=1)
 
@@ -973,70 +902,37 @@ class JSPRBeamerSetup(QMainWindow):
         """Add an editable color item to the legend"""
         item_widget = QWidget()
         item_layout = QHBoxLayout(item_widget)
-        item_layout.setContentsMargins(8, 6, 8, 6)
-        item_layout.setSpacing(10)
-
-        # Add subtle background and border
-        item_widget.setStyleSheet("""
-            QWidget {
-                background-color: #fafafa;
-                border: 1px solid #e0e0e0;
-                border-radius: 4px;
-            }
-            QWidget:hover {
-                background-color: #f5f5f5;
-                border-color: #ccc;
-            }
-        """)
+        item_layout.setContentsMargins(6, 4, 6, 4)
+        item_layout.setSpacing(8)
 
         # Number label
         num_label = QLabel(f"<b>{color.number}</b>")
-        num_label.setFixedWidth(28)
-        num_label.setStyleSheet("font-size: 14px; color: #333; background: transparent; border: none;")
+        num_label.setFixedWidth(25)
         num_label.setAlignment(Qt.AlignCenter)
         item_layout.addWidget(num_label)
 
         # Color swatch
         swatch = QLabel()
-        swatch.setFixedSize(36, 28)
+        swatch.setFixedSize(32, 24)
         swatch.setStyleSheet(f"""
             background-color: {color.to_hex()};
-            border: 1px solid #bbb;
-            border-radius: 3px;
+            border: 1px solid #888;
+            border-radius: 2px;
         """)
         item_layout.addWidget(swatch)
 
         # Editable color name
         name_edit = QLineEdit(color.name)
-        name_edit.setStyleSheet("""
-            QLineEdit {
-                font-size: 12px;
-                padding: 5px 8px;
-                border: 1px solid transparent;
-                border-radius: 3px;
-                background-color: transparent;
-            }
-            QLineEdit:focus {
-                border: 1px solid #4A90E2;
-                background-color: white;
-            }
-            QLineEdit:hover {
-                background-color: rgba(255, 255, 255, 0.5);
-            }
-        """)
+        name_edit.setStyleSheet("padding: 4px;")
         name_edit.editingFinished.connect(lambda: self.on_color_name_changed(color, name_edit.text()))
         item_layout.addWidget(name_edit, stretch=1)
 
-        # Delete button (text-based, cleaner than emoji)
+        # Delete button
         delete_btn = QPushButton("×")
-        delete_btn.setFixedSize(24, 24)
+        delete_btn.setFixedSize(22, 22)
         delete_btn.setStyleSheet("""
             QPushButton {
-                background-color: transparent;
-                color: #999;
-                border: none;
-                border-radius: 12px;
-                font-size: 20px;
+                font-size: 18px;
                 font-weight: bold;
                 padding: 0;
             }
@@ -1214,12 +1110,12 @@ class JSPRBeamerSetup(QMainWindow):
             # Format statistics text
             lines = [
                 f"<b>Project Statistieken</b>",
-                f"<hr style='border: none; border-top: 1px solid #ccc; margin: 8px 0;'>",
-                f"<b>{num_colors}</b> kleuren",
-                f"<b>{total_regions}</b> gebieden totaal",
-                f"<b>{avg_regions_per_color:.1f}</b> gem. per kleur",
-                f"<hr style='border: none; border-top: 1px solid #ccc; margin: 8px 0;'>",
-                f"<b>{difficulty}</b>",
+                f"",
+                f"Kleuren: <b>{num_colors}</b>",
+                f"Gebieden: <b>{total_regions}</b>",
+                f"Gemiddeld: <b>{avg_regions_per_color:.1f}</b>",
+                f"",
+                f"Moeilijkheid: <b>{difficulty}</b>",
             ]
 
             self.stats_label.setText("<br>".join(lines))
