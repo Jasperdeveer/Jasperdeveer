@@ -432,6 +432,10 @@ class Visualizer:
 
             if self.show_numbers:
                 result = self.draw_numbers(result)
+
+            # Apply preview highlight if active
+            result = self.apply_preview_highlight(result)
+
             return result
 
         elif self.mode == 'lineDrawing' and self.quantized_image is not None:
@@ -452,11 +456,53 @@ class Visualizer:
 
             if self.show_numbers:
                 result = self.draw_numbers(result)
+
+            # Apply preview highlight if active
+            result = self.apply_preview_highlight(result)
+
             return result
 
         else:
             # Fallback: full render
             return self.render(progress_callback)
+
+    def apply_preview_highlight(self, image: np.ndarray) -> np.ndarray:
+        """
+        Apply preview highlight overlay to regions matching preview color
+
+        Args:
+            image: RGB image to apply highlight to
+
+        Returns:
+            Image with highlight overlay
+        """
+        if not self.color_manager or not self.color_manager.is_preview_active():
+            return image
+
+        if self.color_map is None:
+            return image
+
+        preview_index = self.color_manager.get_preview_color_index()
+        if preview_index is None:
+            return image
+
+        # Create result image
+        result = image.copy()
+
+        # Create mask for preview color regions
+        height, width = image.shape[:2]
+        color_map_2d = self.color_map.reshape(height, width)
+        mask = color_map_2d == preview_index
+
+        # Apply semi-transparent yellow overlay to preview regions
+        overlay = result.copy()
+        overlay[mask] = [100, 200, 255]  # Light yellow/orange color
+
+        # Blend with alpha
+        alpha = 0.4
+        result = cv2.addWeighted(result, 1 - alpha, overlay, alpha, 0)
+
+        return result
 
     def clear_cache(self):
         """Clear cached rendering data"""
@@ -466,16 +512,141 @@ class Visualizer:
         self.regions = None
         logger.info("Cleared rendering cache")
 
-    def export_svg(self) -> Optional[str]:
+    def export_svg(self, mode: str = 'lineDrawing', include_numbers: bool = True) -> Optional[str]:
         """
         Export current visualization as SVG
-        TODO: Implement SVG export
+
+        Args:
+            mode: 'lineDrawing' or 'colored' (paint-by-numbers with colors)
+            include_numbers: Whether to include numbers in the SVG
 
         Returns:
             SVG string
         """
-        logger.warning("SVG export not yet implemented")
-        return None
+        if self.color_map is None or self.contours is None:
+            logger.error("Cannot export SVG: no color map or contours available")
+            return None
+
+        if not self.color_manager:
+            logger.error("Cannot export SVG: no color manager")
+            return None
+
+        try:
+            # Get image dimensions
+            height, width = self.quantized_image.shape[:2] if self.quantized_image is not None else (800, 800)
+            colors = self.color_manager.get_colors()
+
+            # Start SVG
+            svg_lines = []
+            svg_lines.append(f'<?xml version="1.0" encoding="UTF-8"?>')
+            svg_lines.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">')
+
+            # Add background
+            if mode == 'lineDrawing':
+                svg_lines.append(f'  <rect width="{width}" height="{height}" fill="white"/>')
+            else:
+                svg_lines.append(f'  <rect width="{width}" height="{height}" fill="#f0f0f0"/>')
+
+            # Group for regions
+            svg_lines.append('  <g id="regions">')
+
+            # Draw each color's regions
+            for color in colors:
+                color_index = color.number - 1
+                color_hex = color.to_hex()
+
+                # Get contours for this color
+                if color_index < len(self.contours):
+                    color_contours = self.contours[color_index]
+
+                    if color_contours:
+                        # Create path for all contours of this color
+                        for contour in color_contours:
+                            if len(contour) < 3:  # Need at least 3 points
+                                continue
+
+                            # Build SVG path
+                            path_data = []
+                            for i, point in enumerate(contour):
+                                x, y = int(point[0][0]), int(point[0][1])
+                                if i == 0:
+                                    path_data.append(f"M {x} {y}")
+                                else:
+                                    path_data.append(f"L {x} {y}")
+                            path_data.append("Z")  # Close path
+
+                            path_str = " ".join(path_data)
+
+                            # Style based on mode
+                            if mode == 'lineDrawing':
+                                # White fill with black outline
+                                if hasattr(color, 'is_black') and color.is_black:
+                                    fill = "black"
+                                else:
+                                    fill = "white"
+                                stroke = "black"
+                                stroke_width = self.parameters.get('line_width', 0.5)
+                            else:
+                                # Colored fill
+                                fill = color_hex
+                                stroke = "black"
+                                stroke_width = 1.0
+
+                            svg_lines.append(f'    <path d="{path_str}" fill="{fill}" stroke="{stroke}" stroke-width="{stroke_width}"/>')
+
+            svg_lines.append('  </g>')
+
+            # Add numbers if requested
+            if include_numbers and mode == 'lineDrawing':
+                svg_lines.append('  <g id="numbers">')
+
+                # Get region centers and sizes
+                if self.regions:
+                    for color in colors:
+                        color_index = color.number - 1
+
+                        # Skip white colors (no numbers)
+                        if hasattr(color, 'is_white') and color.is_white:
+                            continue
+
+                        # Skip black colors (no numbers)
+                        if hasattr(color, 'is_black') and color.is_black:
+                            continue
+
+                        if color_index < len(self.regions):
+                            for region in self.regions[color_index]:
+                                cx, cy, area = region['center_x'], region['center_y'], region['area']
+
+                                # Determine font size based on region area
+                                min_size = self.parameters.get('number_size', 16)
+                                if area < 50:
+                                    continue  # Too small for numbers
+
+                                font_size = max(min_size, int(np.sqrt(area) * 0.3))
+                                font_size = min(font_size, 100)  # Cap at 100
+
+                                # Add text
+                                svg_lines.append(
+                                    f'    <text x="{int(cx)}" y="{int(cy)}" '
+                                    f'font-family="Arial, sans-serif" font-size="{font_size}" '
+                                    f'font-weight="bold" text-anchor="middle" '
+                                    f'dominant-baseline="middle" '
+                                    f'fill="black" stroke="white" stroke-width="2" paint-order="stroke">'
+                                    f'{color.number}</text>'
+                                )
+
+                svg_lines.append('  </g>')
+
+            # Close SVG
+            svg_lines.append('</svg>')
+
+            svg_content = '\n'.join(svg_lines)
+            logger.info(f"SVG export successful: {len(svg_lines)} lines")
+            return svg_content
+
+        except Exception as e:
+            logger.error(f"SVG export failed: {e}", exc_info=True)
+            return None
 
     def get_region_stats(self) -> Optional[Dict]:
         """

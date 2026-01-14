@@ -5,12 +5,14 @@ Native desktop interface for paint-by-numbers generation
 
 import sys
 import os
+import json
+from pathlib import Path
 from typing import List, Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
     QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog,
-    QLineEdit, QSizePolicy, QComboBox
+    QLineEdit, QSizePolicy, QComboBox, QAction
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QEvent
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor, QKeyEvent
@@ -26,6 +28,26 @@ from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 from project_manager import ProjectManager
 
 logger = logging.getLogger(__name__)
+
+
+class HoverWidget(QWidget):
+    """Widget that detects mouse hover for color preview"""
+
+    def __init__(self, color_index: int, main_window, parent=None):
+        super().__init__(parent)
+        self.color_index = color_index
+        self.main_window = main_window
+        self.setMouseTracking(True)
+
+    def enterEvent(self, event):
+        """Mouse entered the widget"""
+        self.main_window.on_color_hover_enter(self.color_index)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Mouse left the widget"""
+        self.main_window.on_color_hover_leave()
+        super().leaveEvent(event)
 
 
 class BlackWhiteSelectionDialog(QDialog):
@@ -309,6 +331,10 @@ class CanvasWidget(QWidget):
 class JSPRBeamerSetup(QMainWindow):
     """Main application window"""
 
+    # Config file path
+    CONFIG_PATH = Path.home() / '.jspr_config.json'
+    MAX_RECENT_FILES = 10
+
     def __init__(self):
         super().__init__()
 
@@ -326,6 +352,14 @@ class JSPRBeamerSetup(QMainWindow):
         self.current_file_path = None
         self.presentation_window = None
         self.manual_picker = None
+
+        # Recent files
+        self.recent_files: List[str] = []
+        self.recent_files_menu = None
+        self.load_config()
+
+        # Enable drag and drop
+        self.setAcceptDrops(True)
 
         # Setup UI
         self.init_ui()
@@ -401,9 +435,22 @@ class JSPRBeamerSetup(QMainWindow):
 
         file_menu.addSeparator()
 
+        # Recent files submenu
+        self.recent_files_menu = file_menu.addMenu('Recente Projecten')
+        self.update_recent_files_menu()
+
+        clear_recent_action = file_menu.addAction('Wis Recente Projecten')
+        clear_recent_action.triggered.connect(self.clear_recent_files)
+
+        file_menu.addSeparator()
+
         export_png_action = file_menu.addAction('Exporteer PNG...')
         export_png_action.setShortcut('Ctrl+E')
         export_png_action.triggered.connect(self.export_png)
+
+        export_with_legend_action = file_menu.addAction('Exporteer met Legenda...')
+        export_with_legend_action.setShortcut('Ctrl+L')
+        export_with_legend_action.triggered.connect(self.export_with_legend)
 
         batch_export_action = file_menu.addAction('Batch Export (Alle Modi)...')
         batch_export_action.setShortcut('Ctrl+Shift+E')
@@ -417,6 +464,17 @@ class JSPRBeamerSetup(QMainWindow):
         quit_action = file_menu.addAction('Afsluiten')
         quit_action.setShortcut('Ctrl+Q')
         quit_action.triggered.connect(self.close)
+
+        # Edit menu
+        edit_menu = menubar.addMenu('Bewerken')
+
+        undo_action = edit_menu.addAction('Ongedaan maken')
+        undo_action.setShortcut('Ctrl+Z')
+        undo_action.triggered.connect(self.undo_color_change)
+
+        redo_action = edit_menu.addAction('Opnieuw')
+        redo_action.setShortcut('Ctrl+Y')
+        redo_action.triggered.connect(self.redo_color_change)
 
         # View menu
         view_menu = menubar.addMenu('Weergave')
@@ -714,6 +772,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         if success:
             self.current_file_path = file_path
+            self.add_to_recent_files(file_path)
 
             # Update preview
             img = self.image_processor.get_image_copy()
@@ -908,7 +967,8 @@ class JSPRBeamerSetup(QMainWindow):
 
     def add_legend_item(self, color: Color):
         """Add an editable color item to the legend"""
-        item_widget = QWidget()
+        # Use HoverWidget to detect mouse hover
+        item_widget = HoverWidget(color.number - 1, self)  # color.number is 1-based, need 0-based index
         item_layout = QHBoxLayout(item_widget)
         item_layout.setContentsMargins(6, 4, 6, 4)
         item_layout.setSpacing(8)
@@ -1656,6 +1716,10 @@ class JSPRBeamerSetup(QMainWindow):
             # Render
             self.render()
 
+            # Update current file path and recent files
+            self.current_file_path = file_path
+            self.add_to_recent_files(file_path)
+
             self.statusBar().showMessage(f"Project geladen: {file_path}")
             QMessageBox.information(
                 self,
@@ -1776,13 +1840,229 @@ class JSPRBeamerSetup(QMainWindow):
             cv2.imwrite(file_path, bgr)
             self.statusBar().showMessage(f"Geëxporteerd: {os.path.basename(file_path)}")
 
+    def export_with_legend(self):
+        """Export as PNG with color legend embedded"""
+        if self.canvas.image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
+            return
+
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(self, "Geen kleuren", "Er zijn geen kleuren om weer te geven")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exporteer met Legenda",
+            "",
+            "PNG Files (*.png)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Get current rendered image
+            main_image = self.canvas.image.copy()
+            img_height, img_width = main_image.shape[:2]
+
+            # Create legend image
+            colors = self.color_manager.get_colors()
+            legend_width = 400
+            row_height = 50
+            legend_height = max(img_height, len(colors) * row_height + 100)
+
+            # Create white background for legend
+            legend_image = np.ones((legend_height, legend_width, 3), dtype=np.uint8) * 255
+
+            # Add title
+            title = "Kleuren Legenda"
+            cv2.putText(
+                legend_image, title,
+                (20, 40),
+                cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 0), 2
+            )
+
+            # Draw each color in the legend
+            y_offset = 80
+            for color in colors:
+                # Draw color swatch
+                swatch_x = 20
+                swatch_y = y_offset
+                swatch_w = 60
+                swatch_h = 40
+
+                # Fill swatch with color (BGR format for OpenCV)
+                cv2.rectangle(
+                    legend_image,
+                    (swatch_x, swatch_y),
+                    (swatch_x + swatch_w, swatch_y + swatch_h),
+                    (color.b, color.g, color.r),  # BGR
+                    -1  # Filled
+                )
+
+                # Draw swatch border
+                cv2.rectangle(
+                    legend_image,
+                    (swatch_x, swatch_y),
+                    (swatch_x + swatch_w, swatch_y + swatch_h),
+                    (100, 100, 100),  # Gray border
+                    2
+                )
+
+                # Draw color number
+                number_text = f"{color.number}"
+                cv2.putText(
+                    legend_image, number_text,
+                    (swatch_x + swatch_w + 15, swatch_y + 28),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 0, 0), 2
+                )
+
+                # Draw color name
+                name_text = color.name
+                if len(name_text) > 25:
+                    name_text = name_text[:22] + "..."
+                cv2.putText(
+                    legend_image, name_text,
+                    (swatch_x + swatch_w + 60, swatch_y + 28),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 0), 1
+                )
+
+                y_offset += row_height
+
+            # Combine images side by side
+            # Resize if heights don't match
+            if img_height != legend_height:
+                if img_height > legend_height:
+                    # Expand legend
+                    legend_image = cv2.resize(legend_image, (legend_width, img_height))
+                else:
+                    # Expand main image proportionally
+                    scale = legend_height / img_height
+                    new_width = int(img_width * scale)
+                    main_image = cv2.resize(main_image, (new_width, legend_height))
+
+            # Concatenate horizontally
+            combined = np.hstack([main_image, legend_image])
+
+            # Convert RGB to BGR for OpenCV
+            bgr = cv2.cvtColor(combined, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(file_path, bgr)
+            self.statusBar().showMessage(f"Geëxporteerd met legenda: {os.path.basename(file_path)}")
+
+        except Exception as e:
+            logger.error(f"Error exporting with legend: {e}")
+            QMessageBox.critical(
+                self,
+                "Export Fout",
+                f"Kon niet exporteren met legenda:\n{str(e)}"
+            )
+
     def export_svg(self):
         """Export as SVG"""
-        QMessageBox.information(
+        if self.visualizer.color_map is None or self.visualizer.contours is None:
+            QMessageBox.warning(
+                self,
+                "Geen data",
+                "Render eerst een paint-by-numbers afbeelding"
+            )
+            return
+
+        # Ask for mode
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QButtonGroup, QPushButton, QCheckBox, QLabel
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("SVG Export Instellingen")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(350)
+
+        layout = QVBoxLayout()
+
+        # Mode selection
+        mode_label = QLabel("<b>Export modus:</b>")
+        layout.addWidget(mode_label)
+
+        mode_group = QButtonGroup()
+        line_radio = QRadioButton("Lijntekening (zwart/wit met cijfers)")
+        line_radio.setChecked(True)
+        colored_radio = QRadioButton("Gekleurd (met vulkleuren)")
+
+        mode_group.addButton(line_radio)
+        mode_group.addButton(colored_radio)
+
+        layout.addWidget(line_radio)
+        layout.addWidget(colored_radio)
+
+        layout.addSpacing(10)
+
+        # Numbers checkbox
+        numbers_checkbox = QCheckBox("Inclusief cijfers")
+        numbers_checkbox.setChecked(True)
+        layout.addWidget(numbers_checkbox)
+
+        layout.addSpacing(20)
+
+        # Buttons
+        from PyQt5.QtWidgets import QHBoxLayout
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("Exporteer")
+        cancel_button = QPushButton("Annuleer")
+
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        # Get settings
+        mode = 'lineDrawing' if line_radio.isChecked() else 'colored'
+        include_numbers = numbers_checkbox.isChecked()
+
+        # Ask for file path
+        file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "SVG Export",
-            "SVG export komt binnenkort beschikbaar!"
+            "Exporteer SVG",
+            "",
+            "SVG Files (*.svg)"
         )
+
+        if not file_path:
+            return
+
+        try:
+            # Generate SVG
+            svg_content = self.visualizer.export_svg(mode=mode, include_numbers=include_numbers)
+
+            if svg_content:
+                # Save to file
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(svg_content)
+
+                self.statusBar().showMessage(f"SVG geëxporteerd: {os.path.basename(file_path)}")
+                QMessageBox.information(
+                    self,
+                    "SVG Export Succesvol",
+                    f"SVG bestand opgeslagen:\n{file_path}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Export Mislukt",
+                    "Kon SVG niet genereren. Controleer de logs voor details."
+                )
+
+        except Exception as e:
+            logger.error(f"SVG export error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Export Fout",
+                f"Fout bij SVG export:\n{str(e)}"
+            )
 
     def eventFilter(self, obj, event):
         """Event filter for shift+click on spinboxes"""
@@ -1797,6 +2077,168 @@ class JSPRBeamerSetup(QMainWindow):
                 self.region_size_spin.setSingleStep(10)
                 return result
         return super().eventFilter(obj, event)
+
+    def undo_color_change(self):
+        """Undo last color operation"""
+        if self.color_manager.can_undo():
+            self.color_manager.undo()
+            self.update_color_palette()
+            self.visualizer.clear_cache()
+            self.render()
+            self.statusBar().showMessage("Ongedaan gemaakt")
+        else:
+            self.statusBar().showMessage("Niets om ongedaan te maken")
+
+    def redo_color_change(self):
+        """Redo last undone operation"""
+        # TODO: Implement redo functionality in color_manager
+        self.statusBar().showMessage("Opnieuw functie komt binnenkort")
+
+    def load_config(self):
+        """Load configuration from file"""
+        try:
+            if self.CONFIG_PATH.exists():
+                with open(self.CONFIG_PATH, 'r') as f:
+                    config = json.load(f)
+                    self.recent_files = config.get('recent_files', [])
+                    # Validate that files still exist
+                    self.recent_files = [f for f in self.recent_files if Path(f).exists()]
+                    logger.info(f"Loaded {len(self.recent_files)} recent files")
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
+            self.recent_files = []
+
+    def save_config(self):
+        """Save configuration to file"""
+        try:
+            config = {
+                'recent_files': self.recent_files
+            }
+            with open(self.CONFIG_PATH, 'w') as f:
+                json.dump(config, f, indent=2)
+            logger.info("Config saved")
+        except Exception as e:
+            logger.error(f"Error saving config: {e}")
+
+    def add_to_recent_files(self, file_path: str):
+        """Add file to recent files list"""
+        # Convert to absolute path
+        file_path = str(Path(file_path).resolve())
+
+        # Remove if already in list
+        if file_path in self.recent_files:
+            self.recent_files.remove(file_path)
+
+        # Add to beginning
+        self.recent_files.insert(0, file_path)
+
+        # Limit to MAX_RECENT_FILES
+        self.recent_files = self.recent_files[:self.MAX_RECENT_FILES]
+
+        # Save and update menu
+        self.save_config()
+        self.update_recent_files_menu()
+        logger.info(f"Added to recent files: {file_path}")
+
+    def update_recent_files_menu(self):
+        """Update the recent files menu"""
+        if self.recent_files_menu is None:
+            return
+
+        # Clear existing actions
+        self.recent_files_menu.clear()
+
+        if not self.recent_files:
+            # Show "No recent files" if empty
+            no_files_action = self.recent_files_menu.addAction("Geen recente projecten")
+            no_files_action.setEnabled(False)
+        else:
+            # Add action for each recent file
+            for file_path in self.recent_files:
+                # Show just the filename, not the full path
+                filename = Path(file_path).name
+                action = self.recent_files_menu.addAction(filename)
+                action.setToolTip(file_path)  # Show full path in tooltip
+                # Use lambda with default argument to capture file_path
+                action.triggered.connect(lambda checked=False, fp=file_path: self.open_recent_file(fp))
+
+    def clear_recent_files(self):
+        """Clear recent files list"""
+        self.recent_files = []
+        self.save_config()
+        self.update_recent_files_menu()
+        self.statusBar().showMessage("Recente projecten gewist")
+        logger.info("Recent files cleared")
+
+    def open_recent_file(self, file_path: str):
+        """Open a file from recent files list"""
+        if not Path(file_path).exists():
+            QMessageBox.warning(
+                self,
+                "Bestand niet gevonden",
+                f"Het bestand bestaat niet meer:\n{file_path}"
+            )
+            # Remove from recent files
+            self.recent_files.remove(file_path)
+            self.save_config()
+            self.update_recent_files_menu()
+            return
+
+        # Load the file based on extension
+        if file_path.lower().endswith('.jspr'):
+            project_data = ProjectManager.load_project(file_path)
+            if project_data:
+                self.apply_loaded_project(project_data)
+                self.current_file_path = file_path
+                self.statusBar().showMessage(f"Project geladen: {Path(file_path).name}")
+        elif file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+            self.load_image(file_path)
+
+    def on_color_hover_enter(self, color_index: int):
+        """Handle mouse hover over a color in the legend"""
+        if self.visualizer.color_map is None:
+            return
+
+        # Set preview color in color manager
+        self.color_manager.set_preview_color(color_index)
+
+        # Re-render with preview
+        self.render()
+
+    def on_color_hover_leave(self):
+        """Handle mouse leaving a color in the legend"""
+        if self.visualizer.color_map is None:
+            return
+
+        # Clear preview
+        self.color_manager.clear_preview()
+
+        # Re-render without preview
+        self.render()
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event"""
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        """Handle drop event"""
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        if files:
+            file_path = files[0]
+            # Check if it's an image file
+            if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                self.load_image(file_path)
+            elif file_path.lower().endswith('.jspr'):
+                # Load project file
+                project_data = ProjectManager.load_project(file_path)
+                if project_data:
+                    self.apply_loaded_project(project_data)
+                    self.current_file_path = file_path
+                    self.add_to_recent_files(file_path)
+                    self.statusBar().showMessage(f"Project geladen: {file_path}")
 
     def show_about(self):
         """Show about dialog"""
