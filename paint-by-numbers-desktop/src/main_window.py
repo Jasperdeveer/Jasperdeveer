@@ -6,6 +6,7 @@ Native desktop interface for paint-by-numbers generation
 import sys
 import os
 import json
+import time
 from pathlib import Path
 from typing import List, Optional
 from PyQt5.QtWidgets import (
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import (
     QGroupBox, QSplitter, QMessageBox, QProgressDialog, QCheckBox, QDialog,
     QLineEdit, QSizePolicy, QComboBox, QAction
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QEvent
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QEvent, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor, QKeyEvent
 import cv2
 import numpy as np
@@ -542,6 +543,12 @@ class JSPRBeamerSetup(QMainWindow):
         self.presentation_window = None
         self.manual_picker = None
 
+        # Auto-save state
+        self.has_unsaved_changes = False
+        self.auto_save_enabled = True
+        self.auto_save_interval = 60000  # 60 seconds in milliseconds
+        self.auto_save_timer = None
+
         # Recent files
         self.recent_files: List[str] = []
         self.recent_files_menu = None
@@ -552,6 +559,12 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Setup UI
         self.init_ui()
+
+        # Setup auto-save
+        self.setup_auto_save()
+
+        # Check for auto-save file after UI is ready
+        QTimer.singleShot(500, self.load_auto_save_if_exists)
 
         logger.info("JSPR Beamer Setup initialized")
 
@@ -600,6 +613,114 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Create status bar
         self.statusBar().showMessage('Klaar')
+
+    def setup_auto_save(self):
+        """Setup automatic saving"""
+        # Create timer
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.timeout.connect(self.perform_auto_save)
+        self.auto_save_timer.start(self.auto_save_interval)
+        logger.info(f"Auto-save enabled with {self.auto_save_interval/1000:.0f}s interval")
+
+    def perform_auto_save(self):
+        """Perform automatic save if there are unsaved changes"""
+        if not self.auto_save_enabled or not self.has_unsaved_changes:
+            return
+
+        if self.image_processor.original_image is None:
+            return
+
+        # Create auto-save directory
+        auto_save_dir = Path.home() / '.jspr_autosave'
+        auto_save_dir.mkdir(exist_ok=True)
+
+        # Generate auto-save file path
+        auto_save_path = auto_save_dir / 'autosave.jspr'
+
+        try:
+            # Save project data
+            project_data = {
+                'original_image': self.image_processor.original_image,
+                'colors': self.color_manager.get_colors(),
+                'parameters': {
+                    'color_count': self.color_count_spin.value(),
+                    'line_width': self.line_width_spin.value(),
+                    'number_size': self.number_size_spin.value(),
+                    'region_size': self.region_size_spin.value(),
+                },
+                'timestamp': time.time()
+            }
+
+            success = ProjectManager.save_project(str(auto_save_path), project_data)
+
+            if success:
+                logger.info(f"Auto-saved to {auto_save_path}")
+                # Update status bar briefly
+                current_status = self.statusBar().currentMessage()
+                self.statusBar().showMessage("💾 Auto-opgeslagen", 2000)
+                QTimer.singleShot(2000, lambda: self.statusBar().showMessage(current_status))
+            else:
+                logger.warning("Auto-save failed")
+
+        except Exception as e:
+            logger.error(f"Auto-save error: {e}", exc_info=True)
+
+    def mark_unsaved_changes(self):
+        """Mark that there are unsaved changes"""
+        self.has_unsaved_changes = True
+        if self.current_file_path:
+            self.setWindowTitle(f'JSPR Beamer Setup v1.0 - {Path(self.current_file_path).name}*')
+        else:
+            self.setWindowTitle('JSPR Beamer Setup v1.0*')
+
+    def mark_saved(self):
+        """Mark that all changes are saved"""
+        self.has_unsaved_changes = False
+        if self.current_file_path:
+            self.setWindowTitle(f'JSPR Beamer Setup v1.0 - {Path(self.current_file_path).name}')
+        else:
+            self.setWindowTitle('JSPR Beamer Setup v1.0')
+
+    def load_auto_save_if_exists(self):
+        """Check for and load auto-save file if it exists"""
+        auto_save_path = Path.home() / '.jspr_autosave' / 'autosave.jspr'
+
+        if not auto_save_path.exists():
+            return
+
+        try:
+            # Check file age
+            import time
+            file_age = time.time() - auto_save_path.stat().st_mtime
+
+            # If auto-save is less than 1 hour old, offer to restore
+            if file_age < 3600:
+                result = QMessageBox.question(
+                    self,
+                    "Auto-opgeslagen bestand gevonden",
+                    f"Er is een auto-opgeslagen bestand gevonden van {int(file_age/60)} minuten geleden.\n\n"
+                    "Wil je dit herstellen?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+
+                if result == QMessageBox.Yes:
+                    project_data = ProjectManager.load_project(str(auto_save_path))
+                    if project_data:
+                        self.apply_loaded_project(project_data)
+                        self.statusBar().showMessage("Auto-opgeslagen bestand hersteld")
+                        logger.info("Restored from auto-save")
+                else:
+                    # Delete auto-save if user declines
+                    auto_save_path.unlink()
+                    logger.info("Auto-save declined and removed")
+            else:
+                # Delete old auto-save
+                auto_save_path.unlink()
+                logger.info("Old auto-save file removed")
+
+        except Exception as e:
+            logger.error(f"Error loading auto-save: {e}", exc_info=True)
 
     def create_menu_bar(self):
         """Create application menu bar"""
@@ -668,6 +789,12 @@ class JSPRBeamerSetup(QMainWindow):
         redo_action.setShortcut('Ctrl+Y')
         redo_action.triggered.connect(self.redo_color_change)
 
+        edit_menu.addSeparator()
+
+        smart_merge_action = edit_menu.addAction('🤖 Slimme Samenvoeg Suggesties...')
+        smart_merge_action.setShortcut('Ctrl+M')
+        smart_merge_action.triggered.connect(self.suggest_smart_merges)
+
         # View menu
         view_menu = menubar.addMenu('Weergave')
 
@@ -688,56 +815,74 @@ class JSPRBeamerSetup(QMainWindow):
         layout.setSpacing(8)
         layout.setContentsMargins(8, 8, 8, 8)
 
-        # Image section
-        image_group = QGroupBox("Afbeelding")
-        image_layout = QVBoxLayout()
-        image_layout.setSpacing(8)
+        # === BESTAND SECTION ===
+        file_group = QGroupBox("📁 Bestand")
+        file_layout = QVBoxLayout()
+        file_layout.setSpacing(6)
 
-        self.open_btn = QPushButton("Open Afbeelding...")
+        # Open button
+        self.open_btn = QPushButton("📂 Open Afbeelding...")
         self.open_btn.setMinimumHeight(32)
-        self.open_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4A90E2;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #357ABD;
-            }
-        """)
         self.open_btn.clicked.connect(self.open_image)
-        image_layout.addWidget(self.open_btn)
+        file_layout.addWidget(self.open_btn)
 
         # Image preview
         self.image_preview = QLabel()
-        self.image_preview.setFixedSize(260, 160)
-        self.image_preview.setStyleSheet("border: 2px dashed #999; padding: 4px;")
+        self.image_preview.setFixedSize(260, 120)
+        self.image_preview.setStyleSheet("border: 2px dashed rgba(255,255,255,0.3); padding: 4px; border-radius: 8px;")
         self.image_preview.setAlignment(Qt.AlignCenter)
         self.image_preview.setText("Geen afbeelding")
-        image_layout.addWidget(self.image_preview)
+        file_layout.addWidget(self.image_preview)
 
-        image_group.setLayout(image_layout)
-        layout.addWidget(image_group)
+        file_group.setLayout(file_layout)
+        layout.addWidget(file_group)
 
-        # Mode selection
-        mode_group = QGroupBox("Visualisatie")
+        # === KLEUREN SECTION ===
+        colors_group = QGroupBox("🎨 Kleuren")
+        colors_layout = QVBoxLayout()
+        colors_layout.setSpacing(6)
+
+        # Color count
+        color_count_layout = QHBoxLayout()
+        color_count_layout.addWidget(QLabel("Aantal:"))
+        self.color_count_spin = QSpinBox()
+        self.color_count_spin.setRange(2, 32)
+        self.color_count_spin.setValue(8)
+        self.color_count_spin.setMaximumWidth(60)
+        color_count_layout.addWidget(self.color_count_spin)
+        colors_layout.addLayout(color_count_layout)
+
+        # Detect colors button
+        self.detect_colors_btn = QPushButton("🔍 Detecteer Kleuren")
+        self.detect_colors_btn.clicked.connect(self.show_color_selection_dialog)
+        colors_layout.addWidget(self.detect_colors_btn)
+
+        # Black/White selection button
+        self.black_white_btn = QPushButton("⚫⚪ Markeer Zwart/Wit...")
+        self.black_white_btn.setToolTip("Selecteer welke kleuren als zwart of wit behandeld moeten worden")
+        self.black_white_btn.clicked.connect(self.open_black_white_dialog)
+        colors_layout.addWidget(self.black_white_btn)
+
+        colors_group.setLayout(colors_layout)
+        layout.addWidget(colors_group)
+
+        # === VISUALISATIE SECTION ===
+        mode_group = QGroupBox("👁 Visualisatie")
         mode_layout = QVBoxLayout()
         mode_layout.setSpacing(6)
 
-        self.mode_original_btn = QPushButton("Origineel")
+        self.mode_original_btn = QPushButton("📷 Origineel")
         self.mode_original_btn.setCheckable(True)
         self.mode_original_btn.setChecked(True)
         self.mode_original_btn.clicked.connect(lambda: self.set_mode('original'))
         mode_layout.addWidget(self.mode_original_btn)
 
-        self.mode_pbn_btn = QPushButton("Paint-by-Numbers")
+        self.mode_pbn_btn = QPushButton("🎨 Paint-by-Numbers")
         self.mode_pbn_btn.setCheckable(True)
         self.mode_pbn_btn.clicked.connect(lambda: self.set_mode('paintByNumbers'))
         mode_layout.addWidget(self.mode_pbn_btn)
 
-        self.mode_line_btn = QPushButton("Lijntekening")
+        self.mode_line_btn = QPushButton("✏️ Lijntekening")
         self.mode_line_btn.setCheckable(True)
         self.mode_line_btn.clicked.connect(lambda: self.set_mode('lineDrawing'))
         mode_layout.addWidget(self.mode_line_btn)
@@ -745,54 +890,41 @@ class JSPRBeamerSetup(QMainWindow):
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
-        # Parameters
-        params_group = QGroupBox("Parameters")
-        params_layout = QVBoxLayout()
-        params_layout.setSpacing(6)
-
-        # Color count
-        color_count_layout = QHBoxLayout()
-        color_count_layout.addWidget(QLabel("Kleuren:"))
-        self.color_count_spin = QSpinBox()
-        self.color_count_spin.setRange(2, 32)
-        self.color_count_spin.setValue(8)
-        self.color_count_spin.setMaximumWidth(60)
-        color_count_layout.addWidget(self.color_count_spin)
-        params_layout.addLayout(color_count_layout)
-
-        # Detect colors button
-        self.detect_colors_btn = QPushButton("Detecteer Kleuren")
-        self.detect_colors_btn.clicked.connect(self.show_color_selection_dialog)
-        params_layout.addWidget(self.detect_colors_btn)
-
-        # Black/White selection button
-        self.black_white_btn = QPushButton("Markeer Zwart/Wit...")
-        self.black_white_btn.setToolTip("Selecteer welke kleuren als zwart of wit behandeld moeten worden")
-        self.black_white_btn.clicked.connect(self.open_black_white_dialog)
-        params_layout.addWidget(self.black_white_btn)
+        # === WEERGAVE SECTION ===
+        display_group = QGroupBox("⚙️ Weergave")
+        display_layout = QVBoxLayout()
+        display_layout.setSpacing(6)
 
         # Real-time updates checkbox
         self.realtime_checkbox = QCheckBox("Live voorvertoning")
-        self.realtime_checkbox.setChecked(True)  # Enable live preview by default
+        self.realtime_checkbox.setChecked(True)
         self.realtime_checkbox.setToolTip("Automatisch updaten bij parameter wijzigingen")
         self.realtime_checkbox.stateChanged.connect(self.on_realtime_toggled)
-        params_layout.addWidget(self.realtime_checkbox)
+        display_layout.addWidget(self.realtime_checkbox)
 
         # Show outlines checkbox
         self.show_outlines_checkbox = QCheckBox("Toon contouren")
-        self.show_outlines_checkbox.setChecked(False)  # Default: outlines hidden (zwart is altijd zichtbaar)
+        self.show_outlines_checkbox.setChecked(False)
         self.show_outlines_checkbox.setToolTip("Toon/verberg omtreklijnen")
         self.show_outlines_checkbox.stateChanged.connect(self.on_parameter_changed)
-        params_layout.addWidget(self.show_outlines_checkbox)
+        display_layout.addWidget(self.show_outlines_checkbox)
 
         # Herbereken button (hidden when real-time is on)
-        self.recalc_btn = QPushButton("Herbereken")
+        self.recalc_btn = QPushButton("🔄 Herbereken")
         self.recalc_btn.setToolTip("Handmatig updaten (Ctrl+R)")
         self.recalc_btn.clicked.connect(self.update_parameters)
-        self.recalc_btn.setVisible(False)  # Hidden by default since real-time is on
-        params_layout.addWidget(self.recalc_btn)
+        self.recalc_btn.setVisible(False)
+        display_layout.addWidget(self.recalc_btn)
 
-        # Line width (with decimals)
+        display_group.setLayout(display_layout)
+        layout.addWidget(display_group)
+
+        # === TEKENING PARAMETERS SECTION ===
+        drawing_group = QGroupBox("✏️ Tekening")
+        drawing_layout = QVBoxLayout()
+        drawing_layout.setSpacing(6)
+
+        # Line width
         line_width_layout = QHBoxLayout()
         line_width_layout.addWidget(QLabel("Lijndikte:"))
         self.line_width_spin = QDoubleSpinBox()
@@ -803,7 +935,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.line_width_spin.setMaximumWidth(60)
         self.line_width_spin.valueChanged.connect(self.on_parameter_changed)
         line_width_layout.addWidget(self.line_width_spin)
-        params_layout.addLayout(line_width_layout)
+        drawing_layout.addLayout(line_width_layout)
 
         # Number size
         number_size_layout = QHBoxLayout()
@@ -814,7 +946,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.number_size_spin.setMaximumWidth(60)
         self.number_size_spin.valueChanged.connect(self.on_parameter_changed)
         number_size_layout.addWidget(self.number_size_spin)
-        params_layout.addLayout(number_size_layout)
+        drawing_layout.addLayout(number_size_layout)
 
         # Min region size
         region_size_layout = QHBoxLayout()
@@ -825,13 +957,34 @@ class JSPRBeamerSetup(QMainWindow):
         self.region_size_spin.setValue(20)
         self.region_size_spin.setMaximumWidth(60)
         self.region_size_spin.valueChanged.connect(self.on_parameter_changed)
-        # Install event filter for shift+click detection
         self.region_size_spin.installEventFilter(self)
         region_size_layout.addWidget(self.region_size_spin)
-        params_layout.addLayout(region_size_layout)
+        drawing_layout.addLayout(region_size_layout)
 
-        params_group.setLayout(params_layout)
-        layout.addWidget(params_group)
+        drawing_group.setLayout(drawing_layout)
+        layout.addWidget(drawing_group)
+
+        # === TOOLS SECTION ===
+        tools_group = QGroupBox("🔧 Tools")
+        tools_layout = QVBoxLayout()
+        tools_layout.setSpacing(6)
+
+        # Presentation mode button
+        self.presentation_btn = QPushButton("🖥 Presentatiemodus")
+        self.presentation_btn.setToolTip("Open in fullscreen presentatiemodus")
+        self.presentation_btn.clicked.connect(self.enter_presentation_mode)
+        tools_layout.addWidget(self.presentation_btn)
+
+        # Magnifier toggle button
+        self.magnifier_toggle_btn = QPushButton("🔍 Vergrootglas (M)")
+        self.magnifier_toggle_btn.setCheckable(True)
+        self.magnifier_toggle_btn.setChecked(True)
+        self.magnifier_toggle_btn.setToolTip("Toggle vergrootglas bij cursor (sneltoets: M)")
+        self.magnifier_toggle_btn.clicked.connect(self.toggle_magnifier)
+        tools_layout.addWidget(self.magnifier_toggle_btn)
+
+        tools_group.setLayout(tools_layout)
+        layout.addWidget(tools_group)
 
         # Selection Tools section
         selection_group = QGroupBox("Selectie Tools")
@@ -1469,6 +1622,202 @@ class JSPRBeamerSetup(QMainWindow):
 
         self.statusBar().showMessage(f"'{source_color.name}' samengevoegd met '{target_color.name}'")
         logger.info(f"Merge complete. Remaining colors: {len(self.color_manager.get_colors())}")
+
+    def suggest_smart_merges(self):
+        """Analyze colors and suggest smart merges based on similarity and region fragmentation"""
+        if self.visualizer.color_map is None or not self.color_manager.get_colors():
+            QMessageBox.warning(
+                self,
+                "Geen data",
+                "Render eerst de afbeelding om merge suggesties te krijgen"
+            )
+            return
+
+        colors = self.color_manager.get_colors()
+        if len(colors) <= 2:
+            QMessageBox.information(
+                self,
+                "Geen suggesties",
+                "Er zijn te weinig kleuren om samen te voegen"
+            )
+            return
+
+        # Analyze color similarity and region fragmentation
+        suggestions = []
+
+        for i, color1 in enumerate(colors):
+            for j, color2 in enumerate(colors):
+                if i >= j:
+                    continue
+
+                # Calculate color distance (Euclidean distance in RGB space)
+                dr = color1.r - color2.r
+                dg = color1.g - color2.g
+                db = color1.b - color2.b
+                distance = (dr*dr + dg*dg + db*db) ** 0.5
+
+                # Count regions for each color
+                idx1 = color1.number - 1
+                idx2 = color2.number - 1
+
+                if self.visualizer.color_map is not None:
+                    mask1 = self.visualizer.color_map == idx1
+                    mask2 = self.visualizer.color_map == idx2
+
+                    # Count pixels
+                    pixels1 = np.sum(mask1)
+                    pixels2 = np.sum(mask2)
+
+                    # Calculate fragmentation (number of separate regions)
+                    import cv2
+                    num_regions1 = cv2.connectedComponents(mask1.astype(np.uint8).reshape(
+                        self.image_processor.original_image.shape[:2]))[0] - 1
+                    num_regions2 = cv2.connectedComponents(mask2.astype(np.uint8).reshape(
+                        self.image_processor.original_image.shape[:2]))[0] - 1
+
+                    # Calculate score (lower is better for merging)
+                    # Factors: color similarity (low distance), high fragmentation, small pixel count
+                    similarity_score = distance / 255.0  # Normalize to 0-1
+                    fragmentation_score = (num_regions1 + num_regions2) / 100.0  # Higher fragmentation = better candidate
+                    size_penalty = min(pixels1, pixels2) / (pixels1 + pixels2)  # Favor merging smaller colors
+
+                    # Combined score: low distance + high fragmentation = good merge candidate
+                    merge_score = similarity_score - fragmentation_score * 0.3 - size_penalty * 0.2
+
+                    if distance < 80 or (num_regions1 > 20 or num_regions2 > 20):  # Similar colors or very fragmented
+                        suggestions.append({
+                            'color1': color1,
+                            'color2': color2,
+                            'distance': distance,
+                            'regions1': num_regions1,
+                            'regions2': num_regions2,
+                            'score': merge_score,
+                            'pixels1': pixels1,
+                            'pixels2': pixels2
+                        })
+
+        if not suggestions:
+            QMessageBox.information(
+                self,
+                "Geen suggesties",
+                "Er zijn geen duidelijke merge kandidaten gevonden.\n\n" +
+                "Alle kleuren zijn voldoende verschillend en hebben geen extreem veel kleine vlakken."
+            )
+            return
+
+        # Sort by score (best suggestions first)
+        suggestions.sort(key=lambda x: x['score'])
+
+        # Show dialog with suggestions
+        self.show_merge_suggestions_dialog(suggestions[:10])  # Top 10 suggestions
+
+    def show_merge_suggestions_dialog(self, suggestions):
+        """Show dialog with merge suggestions"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🤖 Slimme Samenvoeg Suggesties")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Info label
+        info = QLabel(
+            f"Gevonden: {len(suggestions)} suggesties\n\n" +
+            "Deze kleuren lijken op elkaar of hebben veel kleine vlakken:"
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        # Scroll area for suggestions
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        for i, sug in enumerate(suggestions):
+            # Create suggestion card
+            card = QWidget()
+            card.setStyleSheet("""
+                QWidget {
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 8px;
+                    padding: 12px;
+                    margin: 4px;
+                }
+            """)
+            card_layout = QHBoxLayout(card)
+
+            # Color swatches
+            swatch1 = QLabel()
+            swatch1.setFixedSize(40, 40)
+            swatch1.setStyleSheet(f"""
+                background-color: rgb({sug['color1'].r}, {sug['color1'].g}, {sug['color1'].b});
+                border: 2px solid white;
+                border-radius: 4px;
+            """)
+            card_layout.addWidget(swatch1)
+
+            arrow = QLabel("→")
+            arrow.setStyleSheet("font-size: 20px; font-weight: bold;")
+            card_layout.addWidget(arrow)
+
+            swatch2 = QLabel()
+            swatch2.setFixedSize(40, 40)
+            swatch2.setStyleSheet(f"""
+                background-color: rgb({sug['color2'].r}, {sug['color2'].g}, {sug['color2'].b});
+                border: 2px solid white;
+                border-radius: 4px;
+            """)
+            card_layout.addWidget(swatch2)
+
+            # Info text
+            info_text = QLabel(
+                f"<b>{sug['color1'].name}</b> → <b>{sug['color2'].name}</b><br>" +
+                f"<small>Kleurverschil: {sug['distance']:.1f} | " +
+                f"Vlakken: {sug['regions1']}+{sug['regions2']} | " +
+                f"Pixels: {sug['pixels1']:.0f}+{sug['pixels2']:.0f}</small>"
+            )
+            info_text.setWordWrap(True)
+            card_layout.addWidget(info_text, 1)
+
+            # Merge button
+            merge_btn = QPushButton("✓ Samenvoegen")
+            merge_btn.setMaximumWidth(120)
+            merge_btn.clicked.connect(lambda checked, s=sug, d=dialog: self.apply_suggested_merge(s, d))
+            card_layout.addWidget(merge_btn)
+
+            scroll_layout.addWidget(card)
+
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+
+        # Close button
+        close_btn = QPushButton("Sluiten")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec_()
+
+    def apply_suggested_merge(self, suggestion, dialog):
+        """Apply a suggested merge"""
+        self.perform_color_merge(suggestion['color1'], suggestion['color2'])
+        dialog.accept()
+
+        # Ask if user wants more suggestions
+        result = QMessageBox.question(
+            self,
+            "Meer suggesties?",
+            "Wil je nog meer samenvoeg suggesties zien?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if result == QMessageBox.Yes:
+            self.suggest_smart_merges()
 
     def delete_color(self, color: Color):
         """Delete a color from the palette"""
@@ -2713,6 +3062,15 @@ class JSPRBeamerSetup(QMainWindow):
         # Re-render without preview
         self.render()
 
+    def toggle_magnifier(self):
+        """Toggle magnifier on/off"""
+        self.canvas.show_magnifier = not self.canvas.show_magnifier
+        self.magnifier_toggle_btn.setChecked(self.canvas.show_magnifier)
+        status = "aan" if self.canvas.show_magnifier else "uit"
+        self.statusBar().showMessage(f"Vergrootglas: {status}")
+        logger.info(f"Magnifier toggled: {self.canvas.show_magnifier}")
+        self.canvas.update()
+
     def dragEnterEvent(self, event):
         """Handle drag enter event"""
         if event.mimeData().hasUrls():
@@ -2926,11 +3284,7 @@ class JSPRBeamerSetup(QMainWindow):
         """Handle keyboard shortcuts for selection tools and magnifier"""
         # Toggle magnifier with M key
         if event.key() == Qt.Key_M:
-            self.canvas.show_magnifier = not self.canvas.show_magnifier
-            status = "aan" if self.canvas.show_magnifier else "uit"
-            self.statusBar().showMessage(f"Vergrootglas: {status}")
-            logger.info(f"Magnifier toggled: {self.canvas.show_magnifier}")
-            self.canvas.update()
+            self.toggle_magnifier()
             return
 
         # Handle polygon completion/cancellation
