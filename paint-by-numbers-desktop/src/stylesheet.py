@@ -100,7 +100,7 @@ QPushButton[checkable="true"]:checked {
 }
 
 /* Spin boxes and input fields */
-QSpinBox {
+QSpinBox, QDoubleSpinBox {
     background: rgba(255, 255, 255, 20);
     border: 1px solid rgba(255, 255, 255, 40);
     border-radius: 6px;
@@ -109,19 +109,93 @@ QSpinBox {
     font-size: 13px;
 }
 
-QSpinBox:focus {
+QSpinBox:focus, QDoubleSpinBox:focus {
     border: 1px solid rgba(255, 255, 255, 100);
     background: rgba(255, 255, 255, 30);
 }
 
-QSpinBox::up-button, QSpinBox::down-button {
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
     background: rgba(255, 255, 255, 20);
     border: none;
     width: 20px;
 }
 
-QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
     background: rgba(255, 255, 255, 40);
+}
+
+/* Line edits */
+QLineEdit {
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+QLineEdit:focus {
+    border: 1px solid rgba(255, 255, 255, 100);
+    background: rgba(255, 255, 255, 30);
+}
+
+/* Checkboxes */
+QCheckBox {
+    color: white;
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 4px;
+}
+
+QCheckBox::indicator:checked {
+    background: rgba(102, 126, 234, 200);
+    border: 1px solid rgba(255, 255, 255, 60);
+}
+
+QCheckBox::indicator:hover {
+    border: 1px solid rgba(255, 255, 255, 100);
+}
+
+/* Combo boxes */
+QComboBox {
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 13px;
+    min-width: 100px;
+}
+
+QComboBox:focus {
+    border: 1px solid rgba(255, 255, 255, 100);
+    background: rgba(255, 255, 255, 30);
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox::down-arrow {
+    width: 12px;
+    height: 12px;
+}
+
+QComboBox QAbstractItemView {
+    background: rgba(20, 20, 20, 250);
+    border: 1px solid rgba(255, 255, 255, 40);
+    color: white;
+    selection-background-color: rgba(102, 126, 234, 200);
+    selection-color: white;
 }
 
 /* Sliders */
@@ -297,6 +371,144 @@ QMessageBox QLabel {
 
 QMessageBox QPushButton {
     min-width: 80px;
+}
+
+/* Dialogs */
+QDialog {
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:1,
+        stop:0 #0f0f0f,
+        stop:0.5 #1a1a1a,
+        stop:1 #0f0f0f
+    );
+    color: white;
+}
+
+QDialog QLabel {
+    color: white;
+}
+
+QDialog QPushButton {
+    min-width: 80px;
+}
+
+/* Input dialogs */
+QInputDialog {
+    background: rgba(20, 20, 20, 250);
+    color: white;
+}
+
+QInputDialog QLabel {
+    color: white;
+}
+
+/* Line edits in dialogs */
+QDialog QLineEdit,
+QInputDialog QLineEdit {
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+QDialog QLineEdit:focus,
+QInputDialog QLineEdit:focus {
+    border: 1px solid rgba(255, 255, 255, 100);
+    background: rgba(255, 255, 255, 30);
+}
+
+/* Double spin boxes in dialogs */
+QDialog QDoubleSpinBox,
+QInputDialog QDoubleSpinBox,
+QInputDialog QSpinBox,
+QDialog QSpinBox {
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+QDialog QDoubleSpinBox:focus,
+QInputDialog QDoubleSpinBox:focus,
+QInputDialog QSpinBox:focus,
+QDialog QSpinBox:focus {
+    border: 1px solid rgba(255, 255, 255, 100);
+    background: rgba(255, 255, 255, 30);
+}
+
+/* Combo boxes in dialogs */
+QDialog QComboBox,
+QInputDialog QComboBox {
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+QDialog QComboBox:focus,
+QInputDialog QComboBox:focus {
+    border: 1px solid rgba(255, 255, 255, 100);
+    background: rgba(255, 255, 255, 30);
+}
+
+/* Checkboxes in dialogs */
+QDialog QCheckBox,
+QInputDialog QCheckBox {
+    color: white;
+    spacing: 8px;
+}
+
+QDialog QCheckBox::indicator,
+QInputDialog QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 4px;
+}
+
+QDialog QCheckBox::indicator:checked,
+QInputDialog QCheckBox::indicator:checked {
+    background: rgba(102, 126, 234, 200);
+    border: 1px solid rgba(255, 255, 255, 60);
+}
+
+QDialog QCheckBox::indicator:hover,
+QInputDialog QCheckBox::indicator:hover {
+    border: 1px solid rgba(255, 255, 255, 100);
+}
+
+/* Radio buttons in dialogs */
+QDialog QRadioButton,
+QInputDialog QRadioButton {
+    color: white;
+    spacing: 8px;
+}
+
+QDialog QRadioButton::indicator,
+QInputDialog QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 20);
+    border: 1px solid rgba(255, 255, 255, 40);
+    border-radius: 9px;
+}
+
+QDialog QRadioButton::indicator:checked,
+QInputDialog QRadioButton::indicator:checked {
+    background: rgba(102, 126, 234, 200);
+    border: 1px solid rgba(255, 255, 255, 60);
+}
+
+QDialog QRadioButton::indicator:hover,
+QInputDialog QRadioButton::indicator:hover {
+    border: 1px solid rgba(255, 255, 255, 100);
 }
 """
 

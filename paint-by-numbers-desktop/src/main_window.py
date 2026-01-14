@@ -925,6 +925,9 @@ class JSPRBeamerSetup(QMainWindow):
         selection_group.setLayout(selection_layout)
         layout.addWidget(selection_group)
 
+        # Hide selection tools for now
+        selection_group.setVisible(False)
+
         # Stretch to push everything to top
         layout.addStretch()
 
