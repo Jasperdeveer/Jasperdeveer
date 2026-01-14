@@ -459,6 +459,9 @@ class JSPRBeamerSetup(QMainWindow):
         export_svg_action = file_menu.addAction('Exporteer SVG...')
         export_svg_action.triggered.connect(self.export_svg)
 
+        export_pdf_action = file_menu.addAction('Exporteer PDF met Grid...')
+        export_pdf_action.triggered.connect(self.export_pdf_with_grid)
+
         file_menu.addSeparator()
 
         quit_action = file_menu.addAction('Afsluiten')
@@ -2062,6 +2065,213 @@ class JSPRBeamerSetup(QMainWindow):
                 self,
                 "Export Fout",
                 f"Fout bij SVG export:\n{str(e)}"
+            )
+
+    def export_pdf_with_grid(self):
+        """Export as PDF with optional grid overlay"""
+        if self.canvas.image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
+            return
+
+        # Ask for settings
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QCheckBox, QSpinBox, QLabel, QHBoxLayout, QPushButton, QComboBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("PDF Export Instellingen")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout()
+
+        # Grid checkbox
+        grid_checkbox = QCheckBox("Voeg grid toe")
+        grid_checkbox.setChecked(True)
+        layout.addWidget(grid_checkbox)
+
+        # Grid size
+        grid_layout = QHBoxLayout()
+        grid_label = QLabel("Grid grootte (cm):")
+        grid_spin = QDoubleSpinBox()
+        grid_spin.setRange(0.5, 10.0)
+        grid_spin.setSingleStep(0.5)
+        grid_spin.setValue(2.0)
+        grid_spin.setDecimals(1)
+        grid_layout.addWidget(grid_label)
+        grid_layout.addWidget(grid_spin)
+        layout.addLayout(grid_layout)
+
+        # Page size
+        page_layout = QHBoxLayout()
+        page_label = QLabel("Papierformaat:")
+        page_combo = QComboBox()
+        page_combo.addItems(["A4", "A3", "A2", "Letter"])
+        page_layout.addWidget(page_label)
+        page_layout.addWidget(page_combo)
+        layout.addLayout(page_layout)
+
+        # Include legend checkbox
+        legend_checkbox = QCheckBox("Inclusief legenda (aparte pagina)")
+        legend_checkbox.setChecked(True)
+        layout.addWidget(legend_checkbox)
+
+        layout.addSpacing(20)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_button = QPushButton("Exporteer")
+        cancel_button = QPushButton("Annuleer")
+        ok_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        # Get settings
+        include_grid = grid_checkbox.isChecked()
+        grid_size_cm = grid_spin.value()
+        page_size = page_combo.currentText()
+        include_legend = legend_checkbox.isChecked()
+
+        # Ask for file path
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exporteer PDF",
+            "",
+            "PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            from reportlab.lib.pagesizes import A4, A3, A2, LETTER
+            from reportlab.lib.units import cm
+            from reportlab.pdfgen import canvas as pdf_canvas
+            from PIL import Image
+            import io
+
+            # Get page size
+            page_sizes = {
+                'A4': A4,
+                'A3': A3,
+                'A2': A2,
+                'Letter': LETTER
+            }
+            page_size_tuple = page_sizes.get(page_size, A4)
+            page_width, page_height = page_size_tuple
+
+            # Create PDF
+            c = pdf_canvas.Canvas(file_path, pagesize=page_size_tuple)
+
+            # Prepare image
+            image_rgb = self.canvas.image.copy()
+
+            # Add grid overlay if requested
+            if include_grid:
+                img_height, img_width = image_rgb.shape[:2]
+
+                # Calculate grid spacing in pixels
+                # Assume we want to map image to fit on page with margins
+                margin = 2 * cm
+                usable_width = page_width - 2 * margin
+                usable_height = page_height - 2 * margin
+
+                # Scale factor to fit image on page
+                scale_x = usable_width / img_width
+                scale_y = usable_height / img_height
+                scale = min(scale_x, scale_y)
+
+                # Grid size in pixels on original image
+                grid_size_pixels = int((grid_size_cm * cm) / scale)
+
+                # Draw grid on image
+                grid_color = (200, 200, 200)  # Light gray
+                for x in range(0, img_width, grid_size_pixels):
+                    cv2.line(image_rgb, (x, 0), (x, img_height), grid_color, 1)
+                for y in range(0, img_height, grid_size_pixels):
+                    cv2.line(image_rgb, (0, y), (img_width, y), grid_color, 1)
+
+            # Convert to PIL Image
+            pil_image = Image.fromarray(image_rgb)
+
+            # Calculate dimensions to fit on page with margins
+            margin = 2 * cm
+            usable_width = page_width - 2 * margin
+            usable_height = page_height - 2 * margin
+
+            img_width, img_height = pil_image.size
+            scale_x = usable_width / img_width
+            scale_y = usable_height / img_height
+            scale = min(scale_x, scale_y)
+
+            new_width = img_width * scale
+            new_height = img_height * scale
+
+            # Center image on page
+            x_offset = margin + (usable_width - new_width) / 2
+            y_offset = margin + (usable_height - new_height) / 2
+
+            # Draw image on PDF
+            c.drawInlineImage(pil_image, x_offset, y_offset, width=new_width, height=new_height)
+
+            # Add title
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(margin, page_height - margin / 2, "Paint by Numbers - JSPR Beamer Setup")
+
+            # Add page with legend if requested
+            if include_legend and self.color_manager.get_colors():
+                c.showPage()  # New page
+
+                # Title
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(margin, page_height - margin, "Kleuren Legenda")
+
+                # Draw colors
+                y = page_height - margin - 40
+                colors = self.color_manager.get_colors()
+
+                for color in colors:
+                    if y < margin + 40:  # Check if we need a new page
+                        c.showPage()
+                        c.setFont("Helvetica-Bold", 16)
+                        c.drawString(margin, page_height - margin, "Kleuren Legenda (vervolg)")
+                        y = page_height - margin - 40
+
+                    # Draw color swatch
+                    c.setFillColorRGB(color.r / 255.0, color.g / 255.0, color.b / 255.0)
+                    c.rect(margin, y, 1.5 * cm, 0.8 * cm, fill=1, stroke=1)
+
+                    # Draw color number and name
+                    c.setFillColorRGB(0, 0, 0)
+                    c.setFont("Helvetica-Bold", 12)
+                    c.drawString(margin + 2 * cm, y + 0.3 * cm, f"{color.number}.")
+
+                    c.setFont("Helvetica", 11)
+                    c.drawString(margin + 3 * cm, y + 0.3 * cm, color.name)
+
+                    y -= 1.2 * cm
+
+            # Save PDF
+            c.save()
+
+            self.statusBar().showMessage(f"PDF geëxporteerd: {os.path.basename(file_path)}")
+            QMessageBox.information(
+                self,
+                "PDF Export Succesvol",
+                f"PDF bestand opgeslagen:\n{file_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"PDF export error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Export Fout",
+                f"Fout bij PDF export:\n{str(e)}"
             )
 
     def eventFilter(self, obj, event):
