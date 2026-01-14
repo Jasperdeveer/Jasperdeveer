@@ -41,7 +41,7 @@ class Visualizer:
             'simplify_epsilon': 1.0,
             'smoothing_iterations': 2,
             'corner_angle_threshold': 120,
-            'show_outlines': True  # Toggle to show/hide contour outlines
+            'show_outlines': False  # Default: outlines hidden (black is always visible)
         }
 
     def set_image_processor(self, processor: ImageProcessor):
@@ -132,7 +132,7 @@ class Visualizer:
             progress_callback(40, "Tracing contours...")
 
         # Draw contours (if enabled)
-        if self.parameters.get('show_outlines', True):
+        if self.parameters.get('show_outlines'):
             result = self.draw_contours(result)
 
         # Fill black regions completely (ALWAYS, after contours so black stays on top)
@@ -189,7 +189,7 @@ class Visualizer:
             progress_callback(40, "Tracing contours...")
 
         # Draw contours (if enabled)
-        if self.parameters.get('show_outlines', True):
+        if self.parameters.get('show_outlines'):
             # For black regions, only draw external boundary (not internal details)
             result = self.draw_contours(result, exclude_internal_for_black=True)
 
@@ -418,7 +418,7 @@ class Visualizer:
             result = self.quantized_image.copy()
 
             # Draw contours if enabled
-            if self.parameters.get('show_outlines', True):
+            if self.parameters.get('show_outlines'):
                 result = self.draw_contours(result)
 
             # Fill black regions completely (ALWAYS, even if outlines are off)
@@ -439,7 +439,7 @@ class Visualizer:
             result = np.ones((height, width, 3), dtype=np.uint8) * 255
 
             # Draw contours if enabled (exclude internal black contours)
-            if self.parameters.get('show_outlines', True):
+            if self.parameters.get('show_outlines'):
                 result = self.draw_contours(result, exclude_internal_for_black=True)
 
             # Fill black regions completely (ALWAYS, after contours so black stays on top)
