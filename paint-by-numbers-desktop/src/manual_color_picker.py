@@ -135,9 +135,23 @@ class ImageCanvas(QWidget):
         self.last_offset_x = 0
         self.last_offset_y = 0
 
+        # Magnifier settings
+        self.show_magnifier = True
+        self.magnifier_size = 100
+        self.magnifier_grid_size = 5
+        self.current_mouse_pos = None
+
+        # Enable mouse tracking for magnifier
+        self.setMouseTracking(True)
+
     def set_image(self, image: np.ndarray):
         """Set the image to display"""
         self.display_image = image
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for magnifier"""
+        self.current_mouse_pos = event.pos()
         self.update()
 
     def mousePressEvent(self, event):
@@ -206,12 +220,105 @@ class ImageCanvas(QWidget):
                 target_rect = QRect(x_offset, y_offset, scaled_width, scaled_height)
                 painter.drawImage(target_rect, q_image)
 
+                # Draw magnifier on top
+                if self.show_magnifier and self.current_mouse_pos:
+                    self.draw_magnifier(painter)
+
                 logger.debug(f"Canvas painted image: {width}x{height} at ({x_offset}, {y_offset}), scale: {scale:.2f}")
             except Exception as e:
                 logger.error(f"Error painting image: {e}", exc_info=True)
                 # Draw error message
                 painter.setPen(QColor(255, 255, 255))
                 painter.drawText(self.rect(), Qt.AlignCenter, f"Error: {str(e)}")
+
+    def draw_magnifier(self, painter: QPainter):
+        """Draw circular magnifier showing 5x5 pixel grid at cursor position"""
+        from PyQt5.QtCore import QRectF, QPointF
+        from PyQt5.QtGui import QPainterPath
+
+        if self.display_image is None:
+            return
+
+        # Get original image from parent
+        parent = self.parent()
+        if not hasattr(parent, 'original_image'):
+            return
+
+        original_image = parent.original_image
+
+        # Get cursor position in image coordinates
+        cursor_x = self.current_mouse_pos.x()
+        cursor_y = self.current_mouse_pos.y()
+
+        # Convert to image coordinates
+        img_x = int((cursor_x - self.last_offset_x) / self.last_scale)
+        img_y = int((cursor_y - self.last_offset_y) / self.last_scale)
+
+        # Check bounds
+        height, width = original_image.shape[:2]
+        if not (0 <= img_x < width and 0 <= img_y < height):
+            return
+
+        # Sample 5x5 grid around cursor
+        grid_half = self.magnifier_grid_size // 2
+        sample_x_start = max(0, img_x - grid_half)
+        sample_y_start = max(0, img_y - grid_half)
+        sample_x_end = min(width, img_x + grid_half + 1)
+        sample_y_end = min(height, img_y + grid_half + 1)
+
+        # Extract sample region
+        sample_region = original_image[sample_y_start:sample_y_end, sample_x_start:sample_x_end]
+        if sample_region.size == 0:
+            return
+
+        # Make contiguous
+        sample_region = np.ascontiguousarray(sample_region)
+
+        # Convert to QImage
+        sample_height, sample_width = sample_region.shape[:2]
+        bytes_per_line = 3 * sample_width
+        sample_qimage = QImage(
+            sample_region.data,
+            sample_width,
+            sample_height,
+            bytes_per_line,
+            QImage.Format_RGB888
+        )
+
+        # Position magnifier
+        mag_offset_x = 20
+        mag_offset_y = -120
+        mag_x = cursor_x + mag_offset_x
+        mag_y = cursor_y + mag_offset_y
+
+        # Keep within bounds
+        if mag_x + self.magnifier_size > self.width():
+            mag_x = cursor_x - self.magnifier_size - mag_offset_x
+        if mag_y < 0:
+            mag_y = cursor_y + mag_offset_x
+
+        # Save painter state
+        painter.save()
+
+        # Create circular clip
+        circle_path = QPainterPath()
+        circle_center = QPointF(mag_x + self.magnifier_size / 2, mag_y + self.magnifier_size / 2)
+        circle_path.addEllipse(circle_center, self.magnifier_size / 2, self.magnifier_size / 2)
+        painter.setClipPath(circle_path)
+
+        # Draw magnified sample
+        mag_rect = QRectF(mag_x, mag_y, self.magnifier_size, self.magnifier_size)
+        painter.drawImage(mag_rect, sample_qimage)
+
+        # Remove clip for border
+        painter.setClipping(False)
+
+        # Draw black border
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(circle_center, self.magnifier_size / 2, self.magnifier_size / 2)
+
+        painter.restore()
 
 
 class ManualColorPicker(QWidget):
@@ -1077,5 +1184,11 @@ class ManualColorPicker(QWidget):
             self.next_step()  # Use next_step instead of finish_selection
         elif event.key() == Qt.Key_Z and event.modifiers() == Qt.ControlModifier:
             self.undo_last_color()
+        elif event.key() == Qt.Key_M:
+            # Toggle magnifier
+            self.canvas.show_magnifier = not self.canvas.show_magnifier
+            status = "aan" if self.canvas.show_magnifier else "uit"
+            logger.info(f"Magnifier toggled in manual picker: {self.canvas.show_magnifier}")
+            self.canvas.update()
         else:
             super().keyPressEvent(event)

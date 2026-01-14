@@ -322,6 +322,9 @@ class CanvasWidget(QWidget):
         if sample_region.size == 0:
             return
 
+        # Make sure the array is contiguous for QImage
+        sample_region = np.ascontiguousarray(sample_region)
+
         # Convert to QImage
         sample_height, sample_width = sample_region.shape[:2]
         bytes_per_line = 3 * sample_width
