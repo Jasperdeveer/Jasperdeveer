@@ -47,6 +47,9 @@ class PresentationMode(QWidget):
         self.drag_start_pan_x = 0
         self.drag_start_pan_y = 0
 
+        # Clickable areas
+        self.zoom_rect = None  # QRect for zoom text clickable area
+
         # Keyboard shortcuts overlay
         self.show_shortcuts = True
         self.shortcuts_opacity = 1.0
@@ -59,6 +62,9 @@ class PresentationMode(QWidget):
         """Initialize UI"""
         self.setWindowTitle("Presentatie Mode - JSPR Beamer Setup")
         self.setStyleSheet("background-color: black;")
+
+        # Enable mouse tracking for hover effects
+        self.setMouseTracking(True)
 
         # Start fade timer (fade out after 3 seconds)
         self.fade_timer.start(3000)
@@ -155,8 +161,14 @@ class PresentationMode(QWidget):
         self.update()
 
     def mousePressEvent(self, event):
-        """Handle mouse press for drag start"""
+        """Handle mouse press for drag start or zoom click"""
         if event.button() == Qt.LeftButton:
+            # Check if click is on zoom percentage
+            if self.zoom_rect and self.zoom_rect.contains(event.pos()):
+                self.prompt_zoom_input()
+                return
+
+            # Otherwise start dragging
             self.is_dragging = True
             self.drag_start_x = event.x()
             self.drag_start_y = event.y()
@@ -166,7 +178,7 @@ class PresentationMode(QWidget):
             logger.debug("Started dragging")
 
     def mouseMoveEvent(self, event):
-        """Handle mouse move for dragging"""
+        """Handle mouse move for dragging and hover effects"""
         if self.is_dragging:
             # Calculate delta from drag start
             dx = event.x() - self.drag_start_x
@@ -176,7 +188,8 @@ class PresentationMode(QWidget):
             self.pan_x = self.drag_start_pan_x + dx
             self.pan_y = self.drag_start_pan_y + dy
 
-            self.update()
+        # Always update to show hover effects
+        self.update()
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release for drag end"""
@@ -423,25 +436,54 @@ class PresentationMode(QWidget):
 
     def draw_status(self, painter: QPainter):
         """Draw status information"""
+        from PyQt5.QtCore import QRect
+
         painter.save()
 
-        # Bottom right corner
-        painter.setPen(QColor(255, 255, 255, 180))
+        # Bottom right corner - draw zoom separately to make it clickable
         font = QFont("Arial", 10)
         painter.setFont(font)
 
-        status_text = f"Zoom: {int(self.zoom_level * 100)}%"
+        x_start = self.width() - 400
+        y_pos = self.height() - 20
+
+        # Draw zoom with clickable indicator
+        zoom_text = f"Zoom: {int(self.zoom_level * 100)}%"
+
+        # Calculate text width for zoom
+        metrics = painter.fontMetrics()
+        zoom_width = metrics.horizontalAdvance(zoom_text)
+
+        # Store clickable rect for zoom
+        self.zoom_rect = QRect(x_start, y_pos - 15, zoom_width, 18)
+
+        # Draw hover background if mouse is over zoom area
+        from PyQt5.QtGui import QCursor
+        mouse_pos = self.mapFromGlobal(QCursor.pos())
+        is_hovering = self.zoom_rect.contains(mouse_pos)
+
+        if is_hovering:
+            # Highlight background
+            painter.fillRect(self.zoom_rect, QColor(255, 255, 255, 40))
+            painter.setPen(QColor(100, 200, 255, 220))  # Light blue when hovering
+        else:
+            painter.setPen(QColor(255, 255, 255, 180))
+
+        painter.drawText(x_start, y_pos, zoom_text)
+
+        # Draw rest of status text
+        x_offset = x_start + zoom_width
+        painter.setPen(QColor(255, 255, 255, 180))
+
         if self.show_numbers:
-            status_text += " | Nummers: ON"
+            status_text = " | Nummers: ON"
+            painter.drawText(x_offset, y_pos, status_text)
+            x_offset += metrics.horizontalAdvance(status_text)
+
         if self.show_grid:
             color_names = ["Gifgroen", "Magenta", "Cyaan", "Geel"]
-            status_text += f" | Grid: {self.grid_size}x{self.grid_size} ({color_names[self.grid_color_index]})"
-
-        painter.drawText(
-            self.width() - 400,
-            self.height() - 20,
-            status_text
-        )
+            status_text = f" | Grid: {self.grid_size}x{self.grid_size} ({color_names[self.grid_color_index]})"
+            painter.drawText(x_offset, y_pos, status_text)
 
         painter.restore()
 

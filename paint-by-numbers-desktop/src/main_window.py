@@ -26,6 +26,7 @@ from visualizer import Visualizer
 from presentation_mode import PresentationMode
 from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 from project_manager import ProjectManager
+from selection_tools import SelectionTools, SelectionMode
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,9 @@ class CanvasWidget(QWidget):
         self.original_image: Optional[np.ndarray] = None  # For eyedropper
         self.zoom_level = 1.0
         self.eyedropper_mode = False
+        self.selection_tools: Optional[SelectionTools] = None
+        self.selection_active = False
+        self.is_brushing = False
         self.setMinimumSize(800, 600)
         self.setMouseTracking(True)  # Track mouse for cursor changes
 
@@ -214,12 +218,17 @@ class CanvasWidget(QWidget):
         painter = QPainter(self)
 
         if self.image is not None:
+            # Get image with selection overlay if active
+            display_image = self.image
+            if self.selection_active and self.selection_tools and self.selection_tools.is_selection_active():
+                display_image = self.selection_tools.get_visualization_overlay(self.image)
+
             # Convert numpy array to QImage
-            height, width, channel = self.image.shape
+            height, width, channel = display_image.shape
             bytes_per_line = 3 * width
 
             q_image = QImage(
-                self.image.data,
+                display_image.data,
                 width,
                 height,
                 bytes_per_line,
@@ -238,6 +247,31 @@ class CanvasWidget(QWidget):
             from PyQt5.QtCore import QRect
             target_rect = QRect(x, y, scaled_width, scaled_height)
             painter.drawImage(target_rect, q_image)
+
+            # Draw polygon points if in polygon mode
+            if (self.selection_active and self.selection_tools and
+                self.selection_tools.mode == SelectionMode.POLYGON and
+                len(self.selection_tools.polygon_points) > 0):
+                painter.setPen(QPen(QColor(0, 255, 255), 2))  # Cyan
+
+                # Draw lines between points
+                points = self.selection_tools.polygon_points
+                for i in range(len(points)):
+                    p1 = points[i]
+                    p2 = points[(i + 1) % len(points)] if i < len(points) - 1 else points[0]
+
+                    # Convert image coords to widget coords
+                    x1 = x + int(p1[0] * self.zoom_level)
+                    y1 = y + int(p1[1] * self.zoom_level)
+                    x2 = x + int(p2[0] * self.zoom_level)
+                    y2 = y + int(p2[1] * self.zoom_level)
+
+                    if i < len(points) - 1:
+                        painter.drawLine(x1, y1, x2, y2)
+
+                    # Draw point circles
+                    painter.setBrush(QColor(0, 255, 255))
+                    painter.drawEllipse(x1 - 4, y1 - 4, 8, 8)
         else:
             # Draw placeholder
             painter.fillRect(self.rect(), QColor(50, 50, 50))
@@ -296,36 +330,94 @@ class CanvasWidget(QWidget):
         if parent and hasattr(parent, 'zoom_label'):
             parent.zoom_label.setText(f"{int(self.zoom_level * 100)}%")
 
+    def widget_to_image_coords(self, widget_x, widget_y):
+        """Convert widget coordinates to image coordinates"""
+        if self.image is None:
+            return None, None
+
+        height, width = self.image.shape[:2]
+        scaled_width = int(width * self.zoom_level)
+        scaled_height = int(height * self.zoom_level)
+
+        # Calculate image position in widget
+        x_offset = (self.width() - scaled_width) // 2
+        y_offset = (self.height() - scaled_height) // 2
+
+        # Convert to image coordinates
+        img_x = int((widget_x - x_offset) / self.zoom_level)
+        img_y = int((widget_y - y_offset) / self.zoom_level)
+
+        # Check bounds
+        if 0 <= img_x < width and 0 <= img_y < height:
+            return img_x, img_y
+        return None, None
+
     def mousePressEvent(self, event):
-        """Handle mouse clicks for eyedropper"""
-        if self.eyedropper_mode and self.original_image is not None and event.button() == Qt.LeftButton:
-            # Get click position
-            click_pos = event.pos()
-
-            # Convert widget coordinates to image coordinates
-            if self.image is not None:
-                height, width = self.image.shape[:2]
-                scaled_width = int(width * self.zoom_level)
-                scaled_height = int(height * self.zoom_level)
-
-                # Calculate image position in widget
-                x_offset = (self.width() - scaled_width) // 2
-                y_offset = (self.height() - scaled_height) // 2
-
-                # Convert to image coordinates
-                img_x = int((click_pos.x() - x_offset) / self.zoom_level)
-                img_y = int((click_pos.y() - y_offset) / self.zoom_level)
-
-                # Check bounds
-                if 0 <= img_x < width and 0 <= img_y < height:
-                    # Sample color from original image
-                    color = self.original_image[img_y, img_x]
-                    r, g, b = int(color[0]), int(color[1]), int(color[2])
-
-                    # Emit signal
-                    self.color_picked.emit(r, g, b)
-        else:
+        """Handle mouse clicks for eyedropper and selection tools"""
+        if event.button() != Qt.LeftButton:
             super().mousePressEvent(event)
+            return
+
+        # Get image coordinates
+        img_x, img_y = self.widget_to_image_coords(event.x(), event.y())
+        if img_x is None:
+            super().mousePressEvent(event)
+            return
+
+        # Handle eyedropper mode
+        if self.eyedropper_mode and self.original_image is not None:
+            color = self.original_image[img_y, img_x]
+            r, g, b = int(color[0]), int(color[1]), int(color[2])
+            self.color_picked.emit(r, g, b)
+            return
+
+        # Handle selection tools
+        if self.selection_active and self.selection_tools:
+            if self.selection_tools.mode == SelectionMode.MAGIC_WAND:
+                # Check if shift is pressed for additive selection
+                add_to_selection = event.modifiers() & Qt.ShiftModifier
+                self.selection_tools.magic_wand_select(self.original_image, img_x, img_y, add_to_selection)
+                self.update()
+                # Update stats in parent window
+                parent = self.parent()
+                if parent and hasattr(parent, 'update_selection_stats'):
+                    parent.update_selection_stats()
+
+            elif self.selection_tools.mode == SelectionMode.BRUSH:
+                self.is_brushing = True
+                # Check if Ctrl is pressed for erasing
+                add = not (event.modifiers() & Qt.ControlModifier)
+                self.selection_tools.brush_select(img_x, img_y, add)
+                self.update()
+
+            elif self.selection_tools.mode == SelectionMode.POLYGON:
+                self.selection_tools.add_polygon_point(img_x, img_y)
+                self.update()
+
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for brush tool"""
+        if self.is_brushing and self.selection_tools:
+            img_x, img_y = self.widget_to_image_coords(event.x(), event.y())
+            if img_x is not None:
+                add = not (event.modifiers() & Qt.ControlModifier)
+                self.selection_tools.brush_select(img_x, img_y, add)
+                self.update()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release"""
+        if event.button() == Qt.LeftButton:
+            self.is_brushing = False
+            # Update stats after brushing
+            if self.selection_tools:
+                parent = self.parent()
+                if parent and hasattr(parent, 'update_selection_stats'):
+                    parent.update_selection_stats()
+        super().mouseReleaseEvent(event)
 
 
 class JSPRBeamerSetup(QMainWindow):
@@ -644,6 +736,98 @@ class JSPRBeamerSetup(QMainWindow):
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
+        # Selection Tools section
+        selection_group = QGroupBox("Selectie Tools")
+        selection_layout = QVBoxLayout()
+        selection_layout.setSpacing(6)
+
+        # Info label
+        info_label = QLabel("Selecteer gebieden om kleur toe te passen")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("font-size: 10px; color: #666;")
+        selection_layout.addWidget(info_label)
+
+        # Tool buttons
+        tools_layout = QHBoxLayout()
+
+        self.magic_wand_btn = QPushButton("🪄")
+        self.magic_wand_btn.setCheckable(True)
+        self.magic_wand_btn.setToolTip("Magic Wand - Klik om vergelijkbare kleuren te selecteren\nShift+Klik: voeg toe aan selectie")
+        self.magic_wand_btn.setMaximumWidth(40)
+        self.magic_wand_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.MAGIC_WAND))
+        tools_layout.addWidget(self.magic_wand_btn)
+
+        self.brush_btn = QPushButton("🖌")
+        self.brush_btn.setCheckable(True)
+        self.brush_btn.setToolTip("Brush - Verf over gebieden\nCtrl: wis selectie")
+        self.brush_btn.setMaximumWidth(40)
+        self.brush_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.BRUSH))
+        tools_layout.addWidget(self.brush_btn)
+
+        self.polygon_btn = QPushButton("📐")
+        self.polygon_btn.setCheckable(True)
+        self.polygon_btn.setToolTip("Polygon - Klik punten om vorm te maken\nEnter: voltooi, Esc: annuleer")
+        self.polygon_btn.setMaximumWidth(40)
+        self.polygon_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.POLYGON))
+        tools_layout.addWidget(self.polygon_btn)
+
+        selection_layout.addLayout(tools_layout)
+
+        # Brush size (for brush tool)
+        brush_size_layout = QHBoxLayout()
+        brush_size_layout.addWidget(QLabel("Kwast:"))
+        self.brush_size_spin = QSpinBox()
+        self.brush_size_spin.setRange(5, 100)
+        self.brush_size_spin.setValue(20)
+        self.brush_size_spin.setMaximumWidth(60)
+        self.brush_size_spin.valueChanged.connect(self.on_brush_size_changed)
+        brush_size_layout.addWidget(self.brush_size_spin)
+        selection_layout.addLayout(brush_size_layout)
+
+        # Tolerance (for magic wand)
+        tolerance_layout = QHBoxLayout()
+        tolerance_layout.addWidget(QLabel("Tolerantie:"))
+        self.tolerance_spin = QSpinBox()
+        self.tolerance_spin.setRange(5, 100)
+        self.tolerance_spin.setValue(30)
+        self.tolerance_spin.setMaximumWidth(60)
+        self.tolerance_spin.valueChanged.connect(self.on_tolerance_changed)
+        tolerance_layout.addWidget(self.tolerance_spin)
+        selection_layout.addLayout(tolerance_layout)
+
+        # Selection stats
+        self.selection_stats_label = QLabel("Geen selectie")
+        self.selection_stats_label.setStyleSheet("font-size: 10px; color: #666;")
+        selection_layout.addWidget(self.selection_stats_label)
+
+        # Action buttons
+        self.clear_selection_btn = QPushButton("Wis Selectie")
+        self.clear_selection_btn.clicked.connect(self.clear_selection)
+        self.clear_selection_btn.setEnabled(False)
+        selection_layout.addWidget(self.clear_selection_btn)
+
+        self.apply_selection_btn = QPushButton("Pas Selectie Toe")
+        self.apply_selection_btn.clicked.connect(self.apply_selection)
+        self.apply_selection_btn.setEnabled(False)
+        self.apply_selection_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                padding: 6px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        selection_layout.addWidget(self.apply_selection_btn)
+
+        selection_group.setLayout(selection_layout)
+        layout.addWidget(selection_group)
+
         # Stretch to push everything to top
         layout.addStretch()
 
@@ -783,6 +967,9 @@ class JSPRBeamerSetup(QMainWindow):
 
             # Set original image for eyedropper
             self.canvas.set_original_image(img)
+
+            # Initialize selection tools
+            self.init_selection_tools()
 
             # Show color selection dialog
             logger.info("Showing ColorSelectionDialog...")
@@ -2460,3 +2647,199 @@ class JSPRBeamerSetup(QMainWindow):
             "<p>High-performance Python + OpenCV + PyQt5 desktop applicatie</p>"
             "<p>© 2026 JSPR</p>"
         )
+
+    # Selection Tools Methods
+
+    def init_selection_tools(self):
+        """Initialize selection tools when image is loaded"""
+        if self.canvas.image is not None:
+            height, width = self.canvas.image.shape[:2]
+            self.canvas.selection_tools = SelectionTools((height, width))
+            logger.info(f"Selection tools initialized for {width}x{height} image")
+
+    def set_selection_mode(self, mode: SelectionMode):
+        """Set the active selection tool mode"""
+        if not self.canvas.selection_tools:
+            QMessageBox.warning(
+                self,
+                "Geen afbeelding",
+                "Laad eerst een afbeelding voordat je selectie tools gebruikt"
+            )
+            # Uncheck all buttons
+            self.magic_wand_btn.setChecked(False)
+            self.brush_btn.setChecked(False)
+            self.polygon_btn.setChecked(False)
+            return
+
+        # Update button states
+        self.magic_wand_btn.setChecked(mode == SelectionMode.MAGIC_WAND)
+        self.brush_btn.setChecked(mode == SelectionMode.BRUSH)
+        self.polygon_btn.setChecked(mode == SelectionMode.POLYGON)
+
+        # Set mode
+        self.canvas.selection_tools.mode = mode
+        self.canvas.selection_active = True
+
+        logger.info(f"Selection mode set to: {mode.value}")
+
+    def on_brush_size_changed(self, value: int):
+        """Handle brush size change"""
+        if self.canvas.selection_tools:
+            self.canvas.selection_tools.brush_size = value
+
+    def on_tolerance_changed(self, value: int):
+        """Handle tolerance change"""
+        if self.canvas.selection_tools:
+            self.canvas.selection_tools.tolerance = value
+
+    def update_selection_stats(self):
+        """Update selection statistics label"""
+        if not self.canvas.selection_tools:
+            self.selection_stats_label.setText("Geen selectie")
+            self.clear_selection_btn.setEnabled(False)
+            self.apply_selection_btn.setEnabled(False)
+            return
+
+        count = self.canvas.selection_tools.get_selection_count()
+        if count > 0:
+            self.selection_stats_label.setText(f"{count:,} pixels geselecteerd")
+            self.clear_selection_btn.setEnabled(True)
+            self.apply_selection_btn.setEnabled(True)
+        else:
+            self.selection_stats_label.setText("Geen selectie")
+            self.clear_selection_btn.setEnabled(False)
+            self.apply_selection_btn.setEnabled(False)
+
+    def clear_selection(self):
+        """Clear the current selection"""
+        if self.canvas.selection_tools:
+            self.canvas.selection_tools.clear_selection()
+            self.canvas.selection_tools.cancel_polygon()
+            self.update_selection_stats()
+            self.canvas.update()
+            logger.info("Selection cleared")
+
+    def apply_selection(self):
+        """Apply the selection to the color map"""
+        if not self.canvas.selection_tools or not self.canvas.selection_tools.is_selection_active():
+            QMessageBox.warning(
+                self,
+                "Geen selectie",
+                "Maak eerst een selectie voordat je deze toepast"
+            )
+            return
+
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(
+                self,
+                "Geen kleuren",
+                "Detecteer eerst kleuren voordat je een selectie toepast"
+            )
+            return
+
+        # Show dialog to select target color
+        colors = self.color_manager.get_colors()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Selecteer Doelkleur")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(350)
+
+        layout = QVBoxLayout()
+
+        # Instructions
+        instructions = QLabel(
+            f"Selecteer de kleur om toe te passen op {self.canvas.selection_tools.get_selection_count():,} pixels:"
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+
+        # Color selection
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        color_group = QButtonGroup()
+        for color in colors:
+            radio = QRadioButton(f"{color.number}. {color.name}")
+            color_group.addButton(radio)
+            scroll_layout.addWidget(radio)
+
+            # Select first by default
+            if color == colors[0]:
+                radio.setChecked(True)
+
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        ok_btn = QPushButton("Toepassen")
+        cancel_btn = QPushButton("Annuleren")
+
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+
+        button_layout.addWidget(ok_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        # Get selected color
+        selected_radio = color_group.checkedButton()
+        if not selected_radio:
+            return
+
+        selected_index = None
+        for i, color in enumerate(colors):
+            if color_group.button(i) == selected_radio:
+                selected_index = color.number - 1  # Convert to 0-based
+                break
+
+        if selected_index is None:
+            return
+
+        # Apply selection to color map
+        if self.visualizer.color_map is not None:
+            self.visualizer.color_map = self.canvas.selection_tools.apply_selection_to_color_map(
+                self.visualizer.color_map,
+                selected_index
+            )
+
+            # Clear cache and re-render
+            self.visualizer.clear_cache()
+            self.render()
+
+            # Clear selection after applying
+            self.canvas.selection_tools.clear_selection()
+            self.update_selection_stats()
+
+            self.statusBar().showMessage(f"Selectie toegepast op kleur {colors[selected_index].name}")
+            logger.info(f"Selection applied to color index {selected_index}")
+
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts for selection tools"""
+        # Handle polygon completion/cancellation
+        if self.canvas.selection_active and self.canvas.selection_tools:
+            if self.canvas.selection_tools.mode == SelectionMode.POLYGON:
+                if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                    # Complete polygon
+                    add_to_selection = event.modifiers() & Qt.ShiftModifier
+                    self.canvas.selection_tools.complete_polygon_selection(add_to_selection)
+                    self.update_selection_stats()
+                    self.canvas.update()
+                    logger.info("Polygon selection completed")
+                    return
+                elif event.key() == Qt.Key_Escape:
+                    # Cancel polygon
+                    self.canvas.selection_tools.cancel_polygon()
+                    self.canvas.update()
+                    logger.info("Polygon cancelled")
+                    return
+
+        super().keyPressEvent(event)
