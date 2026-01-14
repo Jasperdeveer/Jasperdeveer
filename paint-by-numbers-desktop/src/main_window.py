@@ -935,6 +935,24 @@ class JSPRBeamerSetup(QMainWindow):
         name_edit.editingFinished.connect(lambda: self.on_color_name_changed(color, name_edit.text()))
         item_layout.addWidget(name_edit, stretch=1)
 
+        # Merge button
+        merge_btn = QPushButton("↔")
+        merge_btn.setFixedSize(22, 22)
+        merge_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background-color: #4CAF50;
+                color: white;
+            }
+        """)
+        merge_btn.setToolTip("Samenvoegen met andere kleur")
+        merge_btn.clicked.connect(lambda: self.merge_color(color))
+        item_layout.addWidget(merge_btn)
+
         # Delete button
         delete_btn = QPushButton("×")
         delete_btn.setFixedSize(22, 22)
@@ -968,6 +986,139 @@ class JSPRBeamerSetup(QMainWindow):
             # Auto-recompute if image exists
             if self.image_processor.original_image is not None:
                 self.render()
+
+    def merge_color(self, source_color: Color):
+        """Merge a color with another color"""
+        colors = self.color_manager.get_colors()
+
+        if len(colors) <= 2:
+            QMessageBox.warning(
+                self,
+                "Kan niet samenvoegen",
+                "Je moet minimaal 3 kleuren hebben om samen te voegen"
+            )
+            return
+
+        # Create dialog to select target color
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup, QRadioButton, QScrollArea
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Samenvoegen: {source_color.name}")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(400)
+        dialog.setMinimumHeight(500)
+
+        layout = QVBoxLayout()
+
+        # Instructions
+        instruction = QLabel(f"<h3>Selecteer de doelkleur</h3><p>Alle pixels van <b>{source_color.name}</b> worden samengevoegd met de geselecteerde kleur.</p>")
+        instruction.setWordWrap(True)
+        layout.addWidget(instruction)
+
+        # Color selection area
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        button_group = QButtonGroup(dialog)
+        target_color = [None]  # Use list to store reference
+
+        for color in colors:
+            if color.id == source_color.id:
+                continue  # Skip the source color itself
+
+            color_widget = QWidget()
+            color_layout = QHBoxLayout(color_widget)
+            color_layout.setContentsMargins(8, 4, 8, 4)
+
+            # Radio button
+            radio = QRadioButton()
+            button_group.addButton(radio)
+            color_layout.addWidget(radio)
+
+            # Color swatch
+            swatch = QLabel()
+            swatch.setFixedSize(40, 30)
+            swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 2px solid #888; border-radius: 3px;")
+            color_layout.addWidget(swatch)
+
+            # Color info
+            info = QLabel(f"<b>#{color.number}</b> - {color.name}")
+            color_layout.addWidget(info, stretch=1)
+
+            # Store reference when selected
+            radio.toggled.connect(lambda checked, c=color: target_color.__setitem__(0, c) if checked else None)
+
+            scroll_layout.addWidget(color_widget)
+
+        scroll_layout.addStretch()
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        layout.addWidget(scroll_area)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Annuleren")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        merge_btn = QPushButton("Samenvoegen")
+        merge_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        merge_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(merge_btn)
+
+        layout.addLayout(button_layout)
+        dialog.setLayout(layout)
+
+        # Show dialog
+        if dialog.exec_() == QDialog.Accepted and target_color[0] is not None:
+            # Perform merge
+            self.perform_color_merge(source_color, target_color[0])
+
+    def perform_color_merge(self, source_color: Color, target_color: Color):
+        """Perform the actual color merge operation"""
+        logger.info(f"Merging '{source_color.name}' into '{target_color.name}'")
+
+        # Get the image processor to remap colors
+        if self.visualizer.color_map is None:
+            QMessageBox.warning(
+                self,
+                "Geen data",
+                "Render eerst de afbeelding voordat je kleuren kan samenvoegen"
+            )
+            return
+
+        # Find which color index to replace
+        source_index = source_color.number - 1
+        target_index = target_color.number - 1
+
+        # Remap all source_index pixels to target_index in color_map
+        self.visualizer.color_map[self.visualizer.color_map == source_index] = target_index
+
+        # Remove source color from color manager
+        self.color_manager.remove_color(source_color.id)
+
+        # Renumber remaining colors
+        for i, c in enumerate(self.color_manager.get_colors()):
+            c.number = i + 1
+
+        # Update color map indices (shift down all colors after source)
+        # This is needed because we removed a color and renumbered
+        for old_num in range(source_color.number, len(self.color_manager.get_colors()) + 2):
+            old_idx = old_num - 1
+            new_idx = old_idx - 1
+            if old_idx > source_index:
+                self.visualizer.color_map[self.visualizer.color_map == old_idx] = new_idx
+
+        # Update palette display
+        self.update_color_palette()
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        self.render()
+
+        self.statusBar().showMessage(f"'{source_color.name}' samengevoegd met '{target_color.name}'")
+        logger.info(f"Merge complete. Remaining colors: {len(self.color_manager.get_colors())}")
 
     def delete_color(self, color: Color):
         """Delete a color from the palette"""
