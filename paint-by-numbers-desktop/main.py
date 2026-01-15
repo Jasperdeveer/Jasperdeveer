@@ -62,24 +62,42 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("Starting JSPR Beamer Setup")
 
-    # Enable High DPI scaling
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    try:
+        # Enable High DPI scaling
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
-    # Create application
-    app = QApplication(sys.argv)
-    app.setApplicationName("JSPR Beamer Setup")
-    app.setOrganizationName("JSPR")
+        # Create application
+        app = QApplication(sys.argv)
+        app.setApplicationName("JSPR Beamer Setup")
+        app.setOrganizationName("JSPR")
 
-    # Setup glassmorphism dark theme
-    setup_dark_theme(app)
+        # Setup glassmorphism dark theme
+        setup_dark_theme(app)
 
-    # Create and show main window
-    window = JSPRBeamerSetup()
-    window.show()
+        # Create and show main window
+        logger.info("Creating main window...")
+        window = JSPRBeamerSetup()
 
-    # Run application
-    sys.exit(app.exec_())
+        # Force window to front (especially important on macOS)
+        window.show()
+        window.raise_()  # Bring window to front
+        window.activateWindow()  # Activate window
+
+        # On macOS, sometimes need to force focus after a delay
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(100, lambda: window.raise_())
+        QTimer.singleShot(100, lambda: window.activateWindow())
+
+        logger.info("Main window created and shown")
+
+        # Run application
+        sys.exit(app.exec_())
+
+    except Exception as e:
+        logger.error(f"Failed to start application: {e}", exc_info=True)
+        print(f"ERROR: {e}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':
