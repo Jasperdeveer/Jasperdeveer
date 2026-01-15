@@ -191,6 +191,11 @@ class CanvasWidget(QWidget):
         self.magnifier_grid_size = 5  # 5x5 pixel grid
         self.current_mouse_pos = None
 
+        # Grid overlay settings
+        self.show_grid = False
+        self.grid_size = 50  # pixels
+        self.grid_color = QColor(255, 255, 255, 80)  # Semi-transparent white
+
         self.setMinimumSize(800, 600)
         self.setMouseTracking(True)  # Track mouse for cursor changes
 
@@ -280,6 +285,10 @@ class CanvasWidget(QWidget):
                     # Draw point circles
                     painter.setBrush(QColor(0, 255, 255))
                     painter.drawEllipse(x1 - 4, y1 - 4, 8, 8)
+
+            # Draw grid overlay if enabled
+            if self.show_grid:
+                self.draw_grid_overlay(painter, x, y, scaled_width, scaled_height)
 
             # Draw magnifier last (on top of everything)
             if self.show_magnifier and self.current_mouse_pos and self.original_image is not None:
@@ -373,6 +382,31 @@ class CanvasWidget(QWidget):
         painter.drawEllipse(circle_center, self.magnifier_size / 2, self.magnifier_size / 2)
 
         # Restore painter state
+        painter.restore()
+
+    def draw_grid_overlay(self, painter: QPainter, img_x_offset: int, img_y_offset: int,
+                         img_scaled_width: int, img_scaled_height: int):
+        """Draw grid overlay over the image"""
+        painter.save()
+
+        # Set grid pen
+        painter.setPen(QPen(self.grid_color, 1, Qt.SolidLine))
+
+        # Draw vertical lines
+        scaled_grid_size = int(self.grid_size * self.zoom_level)
+        for x in range(0, img_scaled_width, scaled_grid_size):
+            painter.drawLine(
+                img_x_offset + x, img_y_offset,
+                img_x_offset + x, img_y_offset + img_scaled_height
+            )
+
+        # Draw horizontal lines
+        for y in range(0, img_scaled_height, scaled_grid_size):
+            painter.drawLine(
+                img_x_offset, img_y_offset + y,
+                img_x_offset + img_scaled_width, img_y_offset + y
+            )
+
         painter.restore()
 
     def set_zoom(self, zoom: float):
