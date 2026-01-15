@@ -203,6 +203,7 @@ class CanvasWidget(QWidget):
         self.current_image_hash = None  # Track when image changes
 
         self.setMinimumSize(800, 600)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)  # Track mouse for cursor changes
 
     def set_image(self, image: np.ndarray):
@@ -234,9 +235,15 @@ class CanvasWidget(QWidget):
     def resizeEvent(self, event):
         """Handle widget resize - refit image"""
         super().resizeEvent(event)
-        # Re-fit image when canvas is resized
+        # Re-fit image when canvas is resized (only if significant size change)
         if self.image is not None:
-            self.fit_to_canvas()
+            # Only refit if size changed by more than 10 pixels
+            old_size = event.oldSize()
+            new_size = event.size()
+            if abs(old_size.width() - new_size.width()) > 10 or abs(old_size.height() - new_size.height()) > 10:
+                self.fit_to_canvas()
+            else:
+                self.update()
 
     def paintEvent(self, event):
         """Paint the canvas"""
@@ -668,10 +675,13 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Main layout
         main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
+        self.splitter.setHandleWidth(2)  # Slim splitter handle
 
         logger.info(f"UI: Basic setup ({time.time() - start:.2f}s)")
 
@@ -679,28 +689,29 @@ class JSPRBeamerSetup(QMainWindow):
         left_panel = self.create_control_panel()
         left_panel.setMinimumWidth(280)
         left_panel.setMaximumWidth(450)
-        splitter.addWidget(left_panel)
+        self.splitter.addWidget(left_panel)
         logger.info(f"UI: Control panel created ({time.time() - start:.2f}s)")
 
         # Center panel: Canvas
         center_panel = self.create_canvas_panel()
         center_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        splitter.addWidget(center_panel)
+        self.splitter.addWidget(center_panel)
+        self.splitter.setStretchFactor(1, 1)  # Canvas should stretch
         logger.info(f"UI: Canvas panel created ({time.time() - start:.2f}s)")
 
         # Right panel: Legend
         right_panel = self.create_legend_panel()
         right_panel.setMinimumWidth(250)
         right_panel.setMaximumWidth(400)
-        splitter.addWidget(right_panel)
+        self.splitter.addWidget(right_panel)
         logger.info(f"UI: Legend panel created ({time.time() - start:.2f}s)")
 
         # Set splitter sizes (proportions)
         # Use proportional sizing: left 20%, center 60%, right 20%
         total_width = self.width()
-        splitter.setSizes([int(total_width * 0.20), int(total_width * 0.60), int(total_width * 0.20)])
+        self.splitter.setSizes([int(total_width * 0.20), int(total_width * 0.60), int(total_width * 0.20)])
 
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.splitter)
 
         # Create menu bar
         self.create_menu_bar()
@@ -1231,7 +1242,10 @@ class JSPRBeamerSetup(QMainWindow):
     def create_canvas_panel(self) -> QWidget:
         """Create center canvas panel"""
         panel = QWidget()
+        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         # Canvas controls
         controls_layout = QHBoxLayout()
@@ -1269,11 +1283,11 @@ class JSPRBeamerSetup(QMainWindow):
 
         layout.addLayout(controls_layout)
 
-        # Canvas
+        # Canvas (add with stretch to fill available space)
         self.canvas = CanvasWidget()
         self.canvas.color_picked.connect(self.on_color_picked)
         self.canvas.zoom_changed.connect(self.on_zoom_changed)
-        layout.addWidget(self.canvas)
+        layout.addWidget(self.canvas, stretch=1)
 
         return panel
 
