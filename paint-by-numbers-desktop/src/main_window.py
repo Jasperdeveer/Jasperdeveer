@@ -734,7 +734,11 @@ class JSPRBeamerSetup(QMainWindow):
 
     def create_menu_bar(self):
         """Create application menu bar"""
+        import time
+        start = time.time()
+
         menubar = self.menuBar()
+        logger.info(f"Menu: menuBar() took {time.time() - start:.2f}s")
 
         # File menu
         file_menu = menubar.addMenu('Bestand')
@@ -764,6 +768,8 @@ class JSPRBeamerSetup(QMainWindow):
 
         file_menu.addSeparator()
 
+        logger.info(f"Menu: File menu created {time.time() - start:.2f}s")
+
         export_png_action = file_menu.addAction('Exporteer PNG...')
         export_png_action.setShortcut('Ctrl+E')
         export_png_action.triggered.connect(self.export_png)
@@ -788,6 +794,8 @@ class JSPRBeamerSetup(QMainWindow):
         quit_action.setShortcut('Ctrl+Q')
         quit_action.triggered.connect(self.close)
 
+        logger.info(f"Menu: File menu complete {time.time() - start:.2f}s")
+
         # Edit menu
         edit_menu = menubar.addMenu('Bewerken')
 
@@ -805,12 +813,16 @@ class JSPRBeamerSetup(QMainWindow):
         smart_merge_action.setShortcut('Ctrl+M')
         smart_merge_action.triggered.connect(self.suggest_smart_merges)
 
+        logger.info(f"Menu: Edit menu complete {time.time() - start:.2f}s")
+
         # View menu
         view_menu = menubar.addMenu('Weergave')
 
         presentation_action = view_menu.addAction('Presentatie Mode')
         presentation_action.setShortcut('F11')
         presentation_action.triggered.connect(self.enter_presentation_mode)
+
+        logger.info(f"Menu: View menu complete {time.time() - start:.2f}s")
 
         # Help menu
         help_menu = menubar.addMenu('Help')
@@ -823,6 +835,8 @@ class JSPRBeamerSetup(QMainWindow):
 
         about_action = help_menu.addAction('Over JSPR Beamer Setup')
         about_action.triggered.connect(self.show_about)
+
+        logger.info(f"Menu: Help menu complete {time.time() - start:.2f}s")
 
     def create_control_panel(self) -> QWidget:
         """Create left control panel"""
