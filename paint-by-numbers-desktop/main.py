@@ -63,33 +63,40 @@ def main():
     logger.info("Starting JSPR Beamer Setup")
 
     try:
+        import time
+        start_time = time.time()
+
         # Enable High DPI scaling
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+        logger.info(f"Qt attributes set ({time.time() - start_time:.2f}s)")
 
         # Create application
         app = QApplication(sys.argv)
         app.setApplicationName("JSPR Beamer Setup")
         app.setOrganizationName("JSPR")
+        logger.info(f"QApplication created ({time.time() - start_time:.2f}s)")
 
         # Setup glassmorphism dark theme
         setup_dark_theme(app)
+        logger.info(f"Theme applied ({time.time() - start_time:.2f}s)")
 
         # Create and show main window
         logger.info("Creating main window...")
         window = JSPRBeamerSetup()
+        logger.info(f"Main window created ({time.time() - start_time:.2f}s)")
 
         # Force window to front (especially important on macOS)
         window.show()
         window.raise_()  # Bring window to front
         window.activateWindow()  # Activate window
 
-        # On macOS, sometimes need to force focus after a delay
+        # On macOS, sometimes need to force focus after a short delay
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(100, lambda: window.raise_())
-        QTimer.singleShot(100, lambda: window.activateWindow())
+        QTimer.singleShot(50, lambda: window.raise_())
+        QTimer.singleShot(50, lambda: window.activateWindow())
 
-        logger.info("Main window created and shown")
+        logger.info(f"Window shown ({time.time() - start_time:.2f}s)")
 
         # Run application
         sys.exit(app.exec_())

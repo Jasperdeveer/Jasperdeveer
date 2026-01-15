@@ -546,7 +546,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Auto-save state
         self.has_unsaved_changes = False
         self.auto_save_enabled = True
-        self.auto_save_interval = 60000  # 60 seconds in milliseconds
+        self.auto_save_interval = 120000  # 120 seconds (2 minutes) in milliseconds
         self.auto_save_timer = None
 
         # Recent files
@@ -563,8 +563,8 @@ class JSPRBeamerSetup(QMainWindow):
         # Setup auto-save
         self.setup_auto_save()
 
-        # Check for auto-save file after UI is ready
-        QTimer.singleShot(500, self.load_auto_save_if_exists)
+        # Check for auto-save file after window is fully shown (delayed more for faster startup)
+        # QTimer.singleShot(2000, self.load_auto_save_if_exists)  # Disabled for faster startup
 
         logger.info("JSPR Beamer Setup initialized")
 
