@@ -9,6 +9,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Lazy import of smart color namer to avoid circular dependencies
+_smart_namer = None
+
+def get_smart_namer():
+    """Get smart color namer instance (lazy loaded)"""
+    global _smart_namer
+    if _smart_namer is None:
+        from smart_color_namer import get_smart_namer as create_namer
+        _smart_namer = create_namer()
+    return _smart_namer
+
 
 class Color:
     """Represents a single color with metadata"""
@@ -50,18 +61,20 @@ class Color:
 class ColorManager:
     """Manages color palette for paint-by-numbers"""
 
-    def __init__(self):
+    def __init__(self, use_smart_naming: bool = True):
         self.colors: List[Color] = []
         self.history: List[List[Color]] = []
         self.preview_color_index: Optional[int] = None
         self.next_number = 1
+        self.use_smart_naming = use_smart_naming
 
-    def set_colors(self, rgb_colors: np.ndarray) -> None:
+    def set_colors(self, rgb_colors: np.ndarray, use_smart_names: Optional[bool] = None) -> None:
         """
         Set colors from numpy array of RGB values
 
         Args:
             rgb_colors: Array of shape (n, 3) with RGB values
+            use_smart_names: Override smart naming setting for this call
         """
         # Save current state for undo
         if self.colors:
@@ -70,12 +83,32 @@ class ColorManager:
         self.colors = []
         self.next_number = 1
 
-        for rgb in rgb_colors:
+        # Determine if we should use smart naming
+        smart_naming_enabled = use_smart_names if use_smart_names is not None else self.use_smart_naming
+
+        # Get smart names for entire palette if enabled
+        smart_names = []
+        if smart_naming_enabled:
+            try:
+                namer = get_smart_namer()
+                color_tuples = [(int(rgb[0]), int(rgb[1]), int(rgb[2])) for rgb in rgb_colors]
+                suggestions = namer.suggest_names_for_palette(color_tuples)
+                smart_names = [s['name'] for s in suggestions]
+                logger.info(f"Generated smart names for {len(smart_names)} colors")
+            except Exception as e:
+                logger.warning(f"Smart naming failed, using default names: {e}")
+                smart_names = []
+
+        for i, rgb in enumerate(rgb_colors):
+            # Use smart name if available, otherwise default
+            name = smart_names[i] if i < len(smart_names) else f"Kleur {self.next_number}"
+
             color = Color(
                 r=int(rgb[0]),
                 g=int(rgb[1]),
                 b=int(rgb[2]),
-                number=self.next_number
+                number=self.next_number,
+                name=name
             )
             self.colors.append(color)
             self.next_number += 1
@@ -86,6 +119,20 @@ class ColorManager:
         """Add a new color to the palette"""
         # Save for undo
         self.history.append(self.colors.copy())
+
+        # Use smart naming if no name provided and smart naming is enabled
+        if not name and self.use_smart_naming:
+            try:
+                namer = get_smart_namer()
+                suggestion = namer.get_color_name((r, g, b), suggest_alternatives=False)
+                name = suggestion['name']
+                logger.debug(f"Smart name for ({r},{g},{b}): {name}")
+            except Exception as e:
+                logger.warning(f"Smart naming failed for add_color: {e}")
+                name = f"Kleur {self.next_number}"
+
+        if not name:
+            name = f"Kleur {self.next_number}"
 
         color = Color(r, g, b, self.next_number, name)
         self.colors.append(color)

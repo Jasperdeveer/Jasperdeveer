@@ -28,6 +28,7 @@ from presentation_mode import PresentationMode
 from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 from project_manager import ProjectManager
 from selection_tools import SelectionTools, SelectionMode
+from memory_manager import GlobalMemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -196,12 +197,23 @@ class CanvasWidget(QWidget):
         self.grid_size = 50  # pixels
         self.grid_color = QColor(255, 255, 255, 80)  # Semi-transparent white
 
+        # Rendering cache for faster zoom/pan
+        self.render_cache = {}  # {zoom_level: QImage}
+        self.cache_max_size = 10  # Max cached zoom levels
+        self.current_image_hash = None  # Track when image changes
+
         self.setMinimumSize(800, 600)
         self.setMouseTracking(True)  # Track mouse for cursor changes
 
     def set_image(self, image: np.ndarray):
         """Set image to display (RGB numpy array)"""
         self.image = image
+        # Clear cache when image changes
+        self.clear_render_cache()
+        # Update image hash for cache management
+        if image is not None:
+            import hashlib
+            self.current_image_hash = hashlib.md5(image.tobytes()).hexdigest()
         # Auto-fit to canvas when setting new image
         if image is not None:
             self.fit_to_canvas()
@@ -233,22 +245,34 @@ class CanvasWidget(QWidget):
         if self.image is not None:
             # Get image with selection overlay if active
             display_image = self.image
-            if self.selection_active and self.selection_tools and self.selection_tools.is_selection_active():
+            has_overlay = self.selection_active and self.selection_tools and self.selection_tools.is_selection_active()
+            if has_overlay:
                 display_image = self.selection_tools.get_visualization_overlay(self.image)
 
-            # Convert numpy array to QImage
-            height, width, channel = display_image.shape
-            bytes_per_line = 3 * width
+            # Try to use cached QImage if no overlay active
+            q_image = None
+            if not has_overlay:
+                q_image = self.get_cached_qimage(self.zoom_level)
 
-            q_image = QImage(
-                display_image.data,
-                width,
-                height,
-                bytes_per_line,
-                QImage.Format_RGB888
-            )
+            # Create QImage if not cached
+            if q_image is None:
+                height, width, channel = display_image.shape
+                bytes_per_line = 3 * width
+
+                q_image = QImage(
+                    display_image.data,
+                    width,
+                    height,
+                    bytes_per_line,
+                    QImage.Format_RGB888
+                )
+
+                # Cache if no overlay (overlays change dynamically)
+                if not has_overlay:
+                    self.cache_qimage(self.zoom_level, q_image)
 
             # Calculate scaled size
+            height, width = display_image.shape[:2]
             scaled_width = int(width * self.zoom_level)
             scaled_height = int(height * self.zoom_level)
 
@@ -409,6 +433,33 @@ class CanvasWidget(QWidget):
 
         painter.restore()
 
+    def clear_render_cache(self):
+        """Clear all cached rendered images"""
+        self.render_cache.clear()
+        logger.debug("Render cache cleared")
+
+    def get_cached_qimage(self, zoom_level: float) -> Optional[QImage]:
+        """Get cached QImage for this zoom level"""
+        # Round zoom to 2 decimals for cache key
+        cache_key = round(zoom_level, 2)
+        return self.render_cache.get(cache_key)
+
+    def cache_qimage(self, zoom_level: float, q_image: QImage):
+        """Cache a QImage for this zoom level"""
+        # Round zoom to 2 decimals for cache key
+        cache_key = round(zoom_level, 2)
+
+        # Limit cache size
+        if len(self.render_cache) >= self.cache_max_size:
+            # Remove oldest entry (first key)
+            oldest_key = next(iter(self.render_cache))
+            del self.render_cache[oldest_key]
+            logger.debug(f"Cache full, removed zoom level {oldest_key}")
+
+        # Cache a copy to avoid data changes
+        self.render_cache[cache_key] = q_image.copy()
+        logger.debug(f"Cached QImage at zoom {cache_key} (cache size: {len(self.render_cache)})")
+
     def set_zoom(self, zoom: float):
         """Set zoom level"""
         self.zoom_level = max(0.1, min(5.0, zoom))
@@ -566,6 +617,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.image_processor = ImageProcessor()
         self.color_manager = ColorManager()
         self.visualizer = Visualizer()
+        self.memory_manager = GlobalMemoryManager.get_instance(max_versions=20, max_cache_mb=500)
 
         # Connect components
         self.visualizer.set_image_processor(self.image_processor)
@@ -852,22 +904,48 @@ class JSPRBeamerSetup(QMainWindow):
         # View menu
         view_menu = menubar.addMenu('Weergave')
 
-        presentation_action = view_menu.addAction('Presentatie Mode')
+        presentation_action = view_menu.addAction('🖥 Presentatie Mode')
         presentation_action.setShortcut('F11')
         presentation_action.triggered.connect(self.enter_presentation_mode)
+
+        view_menu.addSeparator()
+
+        # Grid overlay toggle (checkable)
+        self.grid_toggle_action = view_menu.addAction('📐 Grid Overlay')
+        self.grid_toggle_action.setCheckable(True)
+        self.grid_toggle_action.setChecked(False)
+        self.grid_toggle_action.setShortcut('Ctrl+G')
+        self.grid_toggle_action.triggered.connect(self.toggle_grid_overlay)
+
+        magnifier_toggle_action = view_menu.addAction('🔍 Vergrootglas')
+        magnifier_toggle_action.setCheckable(True)
+        magnifier_toggle_action.setChecked(True)
+        magnifier_toggle_action.setShortcut('M')
+        magnifier_toggle_action.triggered.connect(self.toggle_magnifier)
 
         logger.info(f"Menu: View menu complete {time.time() - start:.2f}s")
 
         # Help menu
-        help_menu = menubar.addMenu('Help')
+        help_menu = menubar.addMenu('❓ Help')
 
-        shortcuts_action = help_menu.addAction('⌨️ Sneltoetsen...')
+        shortcuts_action = help_menu.addAction('⌨️ Sneltoetsen Overzicht')
         shortcuts_action.setShortcut('F1')
+        shortcuts_action.setToolTip("Bekijk alle beschikbare sneltoetsen")
         shortcuts_action.triggered.connect(self.show_shortcuts)
 
         help_menu.addSeparator()
 
-        about_action = help_menu.addAction('Over JSPR Beamer Setup')
+        documentation_action = help_menu.addAction('📚 Documentatie')
+        documentation_action.setToolTip("Open online documentatie")
+        documentation_action.triggered.connect(self.open_documentation)
+
+        tips_action = help_menu.addAction('💡 Tips & Tricks')
+        tips_action.setToolTip("Leer handige tips")
+        tips_action.triggered.connect(self.show_tips)
+
+        help_menu.addSeparator()
+
+        about_action = help_menu.addAction('ℹ️ Over JSPR Beamer Setup')
         about_action.triggered.connect(self.show_about)
 
         logger.info(f"Menu: Help menu complete {time.time() - start:.2f}s")
@@ -1284,6 +1362,13 @@ class JSPRBeamerSetup(QMainWindow):
 
             # Set original image for eyedropper
             self.canvas.set_original_image(img)
+
+            # Track original image in memory manager
+            self.memory_manager.add_image_version(
+                key=f"original_{os.path.basename(file_path)}",
+                image=img,
+                metadata={'type': 'original', 'file_path': file_path}
+            )
 
             # Initialize selection tools
             self.init_selection_tools()
@@ -2120,6 +2205,14 @@ class JSPRBeamerSetup(QMainWindow):
         if result is not None:
             self.canvas.set_image(result)
             self.statusBar().showMessage("Klaar")
+
+            # Track rendered image in memory manager
+            import time
+            self.memory_manager.add_image_version(
+                key=f"rendered_{self.current_mode}_{int(time.time())}",
+                image=result,
+                metadata={'type': 'rendered', 'mode': self.current_mode}
+            )
 
             # Update statistics after successful render
             self.update_statistics()
@@ -3154,6 +3247,105 @@ class JSPRBeamerSetup(QMainWindow):
         self.statusBar().showMessage(f"Vergrootglas: {status}")
         logger.info(f"Magnifier toggled: {self.canvas.show_magnifier}")
         self.canvas.update()
+
+    def toggle_grid_overlay(self):
+        """Toggle grid overlay on/off"""
+        self.canvas.show_grid = not self.canvas.show_grid
+        self.grid_toggle_action.setChecked(self.canvas.show_grid)
+        status = "aan" if self.canvas.show_grid else "uit"
+        self.statusBar().showMessage(f"Grid overlay: {status}")
+        logger.info(f"Grid overlay toggled: {self.canvas.show_grid}")
+        self.canvas.update()
+
+    def open_documentation(self):
+        """Open online documentation"""
+        import webbrowser
+        webbrowser.open("https://github.com/Jasperdeveer/Jasperdeveer")
+        self.statusBar().showMessage("Documentatie geopend in browser")
+
+    def show_tips(self):
+        """Show tips and tricks dialog"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💡 Tips & Tricks")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+
+        layout = QVBoxLayout(dialog)
+
+        # Title
+        title = QLabel("<h2>💡 Handige Tips & Tricks</h2>")
+        layout.addWidget(title)
+
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        # Tips list
+        tips = [
+            ("🎨 Kleurdetectie", [
+                "• Gebruik <b>Automatic mode</b> voor snelle kleurdetectie",
+                "• Gebruik <b>Manual mode</b> voor volledige controle over je kleuren",
+                "• Zwart/wit vlakken krijgen altijd cijfers, andere kleuren alleen bij grote vlakken"
+            ]),
+            ("🔍 Vergrootglas", [
+                "• Druk <b>M</b> om het vergrootglas aan/uit te zetten",
+                "• Het vergrootglas toont een 5x5 pixel grid voor detail work",
+                "• Werkt in alle modes en tools"
+            ]),
+            ("📐 Grid Overlay", [
+                "• Druk <b>Ctrl+G</b> voor een hulp-grid over je afbeelding",
+                "• Perfect voor het meten van afstanden en proporties",
+                "• Grid past zich aan bij zoomen"
+            ]),
+            ("🤖 Smart Merge", [
+                "• <b>Ctrl+M</b> voor intelligente samenvoeg-suggesties",
+                "• Systeem detecteert vergelijkbare kleuren automatisch",
+                "• Ook handig voor gefragmenteerde kleuren met veel kleine vlakken"
+            ]),
+            ("⚡ Performance", [
+                "• Auto-save werkt elke 2 minuten op de achtergrond",
+                "• Grote afbeeldingen? Verlaag eerst het aantal kleuren",
+                "• Live voorvertoning kan uitgezet worden voor snellere parameter tuning"
+            ]),
+            ("🖱 Sneltoetsen", [
+                "• Druk <b>F1</b> voor een compleet overzicht van alle sneltoetsen",
+                "• <b>F11</b> voor presentatiemodus",
+                "• <b>Ctrl+Z/Y</b> voor undo/redo"
+            ]),
+            ("💾 Export", [
+                "• <b>Ctrl+L</b> exporteert met legenda erbij",
+                "• <b>Ctrl+Shift+E</b> voor batch export (alle modes tegelijk)",
+                "• PDF export heeft opties voor grid en page size"
+            ])
+        ]
+
+        for category, tip_list in tips:
+            # Category header
+            cat_label = QLabel(f"<h3>{category}</h3>")
+            cat_label.setStyleSheet("margin-top: 15px;")
+            scroll_layout.addWidget(cat_label)
+
+            # Tips
+            for tip in tip_list:
+                tip_label = QLabel(tip)
+                tip_label.setWordWrap(True)
+                tip_label.setStyleSheet("margin-left: 20px; padding: 2px;")
+                scroll_layout.addWidget(tip_label)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+
+        # Close button
+        close_btn = QPushButton("Sluiten")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec_()
 
     def dragEnterEvent(self, event):
         """Handle drag enter event"""
