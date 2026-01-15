@@ -98,7 +98,10 @@ class Visualizer:
 
     def render_original(self) -> np.ndarray:
         """Render original image"""
-        return self.image_processor.get_image_copy()
+        result = self.image_processor.get_image_copy()
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
+        return result
 
     def render_paint_by_numbers(self, progress_callback=None) -> Optional[np.ndarray]:
         """
@@ -153,6 +156,9 @@ class Visualizer:
 
         if progress_callback:
             progress_callback(100, "Complete!")
+
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
 
         return result
 
@@ -211,6 +217,9 @@ class Visualizer:
 
         if progress_callback:
             progress_callback(100, "Complete!")
+
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
 
         return result
 
