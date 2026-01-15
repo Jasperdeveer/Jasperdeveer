@@ -805,6 +805,12 @@ class JSPRBeamerSetup(QMainWindow):
         # Help menu
         help_menu = menubar.addMenu('Help')
 
+        shortcuts_action = help_menu.addAction('⌨️ Sneltoetsen...')
+        shortcuts_action.setShortcut('F1')
+        shortcuts_action.triggered.connect(self.show_shortcuts)
+
+        help_menu.addSeparator()
+
         about_action = help_menu.addAction('Over JSPR Beamer Setup')
         about_action.triggered.connect(self.show_about)
 
@@ -1903,33 +1909,53 @@ class JSPRBeamerSetup(QMainWindow):
         if self.visualizer.color_map is None:
             return stats
 
-        color_map_flat = self.visualizer.color_map.flatten()
-        stats['total_pixels'] = len(color_map_flat)
+        try:
+            color_map_flat = self.visualizer.color_map.flatten()
+            stats['total_pixels'] = len(color_map_flat)
 
-        # Calculate stats for each color
-        for color in self.color_manager.get_colors():
-            color_index = color.number - 1
-            pixel_count = int(np.sum(color_map_flat == color_index))
-            coverage = (pixel_count / stats['total_pixels'] * 100) if stats['total_pixels'] > 0 else 0
+            # Calculate stats for each color
+            for color in self.color_manager.get_colors():
+                color_index = color.number - 1
+                pixel_count = int(np.sum(color_map_flat == color_index))
+                coverage = (pixel_count / stats['total_pixels'] * 100) if stats['total_pixels'] > 0 else 0
 
-            # Count regions for this color
-            if self.visualizer.color_map is not None:
-                height, width = self.visualizer.color_map.shape[0], self.visualizer.color_map.shape[1]
-                color_map_2d = self.visualizer.color_map.reshape(height, width)
-                mask = (color_map_2d == color_index).astype(np.uint8)
+                # Count regions for this color
+                if self.visualizer.color_map is not None:
+                    # Ensure we have the right shape
+                    if len(self.visualizer.color_map.shape) == 1:
+                        # Need to reshape - get shape from original image
+                        if self.image_processor.original_image is not None:
+                            height, width = self.image_processor.original_image.shape[:2]
+                            color_map_2d = self.visualizer.color_map.reshape(height, width)
+                        else:
+                            region_count = 0
+                            stats['color_stats'].append({
+                                'color': color,
+                                'pixels': pixel_count,
+                                'coverage': coverage,
+                                'regions': region_count
+                            })
+                            continue
+                    else:
+                        color_map_2d = self.visualizer.color_map
 
-                # Find contours to count regions
-                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                region_count = len(contours)
-            else:
-                region_count = 0
+                    mask = (color_map_2d == color_index).astype(np.uint8)
 
-            stats['color_stats'].append({
-                'color': color,
-                'pixels': pixel_count,
-                'coverage': coverage,
-                'regions': region_count
-            })
+                    # Find contours to count regions
+                    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    region_count = len(contours)
+                else:
+                    region_count = 0
+
+                stats['color_stats'].append({
+                    'color': color,
+                    'pixels': pixel_count,
+                    'coverage': coverage,
+                    'regions': region_count
+                })
+
+        except Exception as e:
+            logger.error(f"Error calculating statistics: {e}", exc_info=True)
 
         return stats
 
@@ -2535,7 +2561,7 @@ class JSPRBeamerSetup(QMainWindow):
                     legend_image,
                     (swatch_x, swatch_y),
                     (swatch_x + swatch_w, swatch_y + swatch_h),
-                    (color.b, color.g, color.r),  # BGR
+                    (int(color.b), int(color.g), int(color.r)),  # BGR - ensure integers
                     -1  # Filled
                 )
 
@@ -3094,6 +3120,113 @@ class JSPRBeamerSetup(QMainWindow):
                     self.current_file_path = file_path
                     self.add_to_recent_files(file_path)
                     self.statusBar().showMessage(f"Project geladen: {file_path}")
+
+    def show_shortcuts(self):
+        """Show keyboard shortcuts dialog"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⌨️ Sneltoetsen")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+
+        layout = QVBoxLayout(dialog)
+
+        # Title
+        title = QLabel("<h2>⌨️ Sneltoetsen Overzicht</h2>")
+        layout.addWidget(title)
+
+        # Scroll area for shortcuts
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        # Define shortcuts by category
+        shortcuts = [
+            ("📁 Bestand", [
+                ("Ctrl+O", "Open afbeelding"),
+                ("Ctrl+S", "Opslaan project"),
+                ("Ctrl+Shift+O", "Open project"),
+                ("Ctrl+E", "Exporteer PNG"),
+                ("Ctrl+L", "Exporteer met legenda"),
+                ("Ctrl+Shift+E", "Batch export (alle modi)"),
+                ("Ctrl+Q", "Afsluiten"),
+            ]),
+            ("✏️ Bewerken", [
+                ("Ctrl+Z", "Ongedaan maken"),
+                ("Ctrl+Y", "Opnieuw"),
+                ("Ctrl+M", "Slimme samenvoeg suggesties"),
+                ("Ctrl+R", "Herbereken (als live preview uit staat)"),
+            ]),
+            ("👁 Weergave", [
+                ("F11", "Presentatiemodus"),
+                ("M", "Toggle vergrootglas"),
+                ("Esc", "Sluit presentatiemodus / Annuleer polygon"),
+            ]),
+            ("🎨 Kleuren", [
+                ("Klik op kleur", "Selecteer kleur"),
+                ("Shift+Klik", "Samenvoegen naar andere kleur"),
+                ("Ctrl+Klik", "Verwijder kleur"),
+                ("Alt+Klik", "Wijzig kleurnaam"),
+                ("Scroll in legenda", "Scroll door kleuren"),
+            ]),
+            ("🔧 Tools & Selectie", [
+                ("Shift+Klik", "Magic Wand: voeg toe aan selectie"),
+                ("Ctrl+Sleep", "Brush: wis selectie"),
+                ("Klik punten", "Polygon: plaats punten"),
+                ("Enter", "Polygon: voltooi selectie"),
+                ("Esc", "Polygon: annuleer"),
+            ]),
+            ("🖱 Algemeen", [
+                ("Scroll", "Zoom in/uit (in canvas)"),
+                ("Sleep afbeelding", "Sleep bestand om te openen"),
+                ("F1", "Toon dit venster"),
+            ]),
+        ]
+
+        # Add each category
+        for category, items in shortcuts:
+            # Category header
+            category_label = QLabel(f"<h3>{category}</h3>")
+            category_label.setStyleSheet("margin-top: 15px; margin-bottom: 5px;")
+            scroll_layout.addWidget(category_label)
+
+            # Add shortcuts in this category
+            for shortcut, description in items:
+                shortcut_row = QWidget()
+                shortcut_layout = QHBoxLayout(shortcut_row)
+                shortcut_layout.setContentsMargins(20, 4, 10, 4)
+
+                # Shortcut key(s)
+                key_label = QLabel(f"<b>{shortcut}</b>")
+                key_label.setMinimumWidth(150)
+                key_label.setStyleSheet("""
+                    background: rgba(102, 126, 234, 100);
+                    color: white;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                """)
+                shortcut_layout.addWidget(key_label)
+
+                # Description
+                desc_label = QLabel(description)
+                desc_label.setWordWrap(True)
+                shortcut_layout.addWidget(desc_label, 1)
+
+                scroll_layout.addWidget(shortcut_row)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll)
+
+        # Close button
+        close_btn = QPushButton("Sluiten")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec_()
 
     def show_about(self):
         """Show about dialog"""
