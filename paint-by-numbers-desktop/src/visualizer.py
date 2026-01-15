@@ -494,13 +494,27 @@ class Visualizer:
         color_map_2d = self.color_map.reshape(height, width)
         mask = color_map_2d == preview_index
 
-        # Apply semi-transparent yellow overlay to preview regions
-        overlay = result.copy()
-        overlay[mask] = [100, 200, 255]  # Light yellow/orange color
+        # Convert all NON-preview colors to grayscale
+        grayscale = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
+        grayscale_rgb = cv2.cvtColor(grayscale, cv2.COLOR_GRAY2RGB)
 
-        # Blend with alpha
-        alpha = 0.4
-        result = cv2.addWeighted(result, 1 - alpha, overlay, alpha, 0)
+        # Keep only preview color in color, make rest grayscale
+        result[~mask] = grayscale_rgb[~mask]
+
+        # Get preview color for contrast calculation
+        preview_color = self.color_manager.get_color_by_index(preview_index)
+        if preview_color:
+            # Calculate brightness to determine contour color
+            brightness = 0.299 * preview_color.r + 0.587 * preview_color.g + 0.114 * preview_color.b
+            # Use white contour for dark colors, black for light colors
+            contour_color = (255, 255, 255) if brightness < 128 else (0, 0, 0)
+
+            # Find contours of the mask
+            mask_uint8 = mask.astype(np.uint8) * 255
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Draw contrasting contours (thicker for better visibility)
+            cv2.drawContours(result, contours, -1, contour_color, thickness=3)
 
         return result
 
