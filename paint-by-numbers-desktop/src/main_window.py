@@ -570,6 +570,9 @@ class JSPRBeamerSetup(QMainWindow):
 
     def init_ui(self):
         """Initialize user interface"""
+        import time
+        start = time.time()
+
         self.setWindowTitle('JSPR Beamer Setup v1.0')
         self.setGeometry(100, 100, 1600, 900)
 
@@ -584,22 +587,27 @@ class JSPRBeamerSetup(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
 
+        logger.info(f"UI: Basic setup ({time.time() - start:.2f}s)")
+
         # Left panel: Controls
         left_panel = self.create_control_panel()
         left_panel.setMinimumWidth(280)
         left_panel.setMaximumWidth(450)
         splitter.addWidget(left_panel)
+        logger.info(f"UI: Control panel created ({time.time() - start:.2f}s)")
 
         # Center panel: Canvas
         center_panel = self.create_canvas_panel()
         center_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         splitter.addWidget(center_panel)
+        logger.info(f"UI: Canvas panel created ({time.time() - start:.2f}s)")
 
         # Right panel: Legend
         right_panel = self.create_legend_panel()
         right_panel.setMinimumWidth(250)
         right_panel.setMaximumWidth(400)
         splitter.addWidget(right_panel)
+        logger.info(f"UI: Legend panel created ({time.time() - start:.2f}s)")
 
         # Set splitter sizes (proportions)
         # Use proportional sizing: left 20%, center 60%, right 20%
@@ -610,9 +618,11 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Create menu bar
         self.create_menu_bar()
+        logger.info(f"UI: Menu bar created ({time.time() - start:.2f}s)")
 
         # Create status bar
         self.statusBar().showMessage('Klaar')
+        logger.info(f"UI: Complete ({time.time() - start:.2f}s)")
 
     def setup_auto_save(self):
         """Setup automatic saving"""
