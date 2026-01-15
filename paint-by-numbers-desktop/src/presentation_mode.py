@@ -395,42 +395,73 @@ class PresentationMode(QWidget):
         """Draw keyboard shortcuts overlay"""
         painter.save()
 
-        # Semi-transparent background - larger for more shortcuts
-        bg_color = QColor(0, 0, 0, int(150 * self.shortcuts_opacity))
-        painter.fillRect(10, 10, 320, 450, bg_color)
-
-        # White text
-        painter.setPen(QColor(255, 255, 255, int(255 * self.shortcuts_opacity)))
+        # Semi-transparent background - adjusted for new layout
+        bg_color = QColor(0, 0, 0, int(180 * self.shortcuts_opacity))
+        painter.fillRect(10, 10, 420, 520, bg_color)
 
         # Title
         font = QFont("Arial", 14, QFont.Bold)
         painter.setFont(font)
-        painter.drawText(20, 35, "Toetsenbord Shortcuts")
+        painter.setPen(QColor(255, 255, 255, int(255 * self.shortcuts_opacity)))
+        painter.drawText(20, 35, "⌨️  Toetsenbord Shortcuts")
 
-        # Shortcuts list
-        font = QFont("Arial", 11)
-        painter.setFont(font)
-
+        # Shortcuts organized by category
         shortcuts = [
-            ("ESC / Q", "Afsluiten"),
-            ("F11", "Volledig scherm"),
-            ("N", "Nummers aan/uit"),
-            ("O", "Outlines aan/uit"),
-            ("G", "Grid aan/uit"),
-            ("C", "Grid kleur"),
-            ("[ / ]", "Grid grootte"),
-            ("H", "Deze hulp aan/uit"),
-            ("+/-", "Zoom in/uit"),
-            ("Z", "Zoom % invoeren"),
-            ("0", "Reset zoom"),
-            ("←↑↓→", "Pan beeld"),
-            ("Space", "Wissel modus"),
+            ("🎯 Algemeen", [
+                ("ESC / Q", "Afsluiten"),
+                ("F11", "Volledig scherm"),
+                ("H", "Deze hulp aan/uit"),
+            ]),
+            ("👁 Weergave", [
+                ("N", "Nummers aan/uit"),
+                ("O", "Outlines aan/uit"),
+                ("Space", "Wissel modus"),
+            ]),
+            ("📐 Grid", [
+                ("G", "Grid aan/uit"),
+                ("C", "Grid kleur wisselen"),
+                ("[ / ]", "Grid grootte +/-"),
+            ]),
+            ("🔍 Zoom & Navigatie", [
+                ("+ / -", "Zoom in/uit"),
+                ("Z", "Zoom % invoeren"),
+                ("0", "Reset zoom"),
+                ("←↑→↓", "Pan beeld"),
+                ("Muiswiel", "Zoom in/uit"),
+                ("Sleep", "Pan beeld"),
+            ]),
         ]
 
+        # Draw categories and shortcuts
+        font_cat = QFont("Arial", 11, QFont.Bold)
+        font_shortcut = QFont("Arial", 10)
         y = 60
-        for key, description in shortcuts:
-            painter.drawText(20, y, f"{key:<15} {description}")
-            y += 30
+
+        for category, items in shortcuts:
+            # Category header
+            painter.setFont(font_cat)
+            painter.setPen(QColor(100, 200, 255, int(255 * self.shortcuts_opacity)))
+            painter.drawText(20, y, category)
+            y += 25
+
+            # Category items
+            painter.setFont(font_shortcut)
+            painter.setPen(QColor(255, 255, 255, int(230 * self.shortcuts_opacity)))
+            for key, description in items:
+                # Draw key with background
+                key_width = 95
+                key_rect_color = QColor(70, 70, 90, int(120 * self.shortcuts_opacity))
+                painter.fillRect(35, y - 13, key_width, 18, key_rect_color)
+
+                painter.setPen(QColor(255, 255, 150, int(255 * self.shortcuts_opacity)))
+                painter.drawText(40, y, key)
+
+                # Draw description
+                painter.setPen(QColor(255, 255, 255, int(230 * self.shortcuts_opacity)))
+                painter.drawText(145, y, description)
+                y += 23
+
+            y += 10  # Extra space between categories
 
         painter.restore()
 
