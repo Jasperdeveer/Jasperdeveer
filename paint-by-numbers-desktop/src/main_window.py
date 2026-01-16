@@ -28,7 +28,8 @@ from presentation_mode import PresentationMode
 from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 from project_manager import ProjectManager
 from selection_tools import SelectionTools, SelectionMode
-from memory_manager import GlobalMemoryManager
+# Lazy import for memory_manager to speed up startup
+# from memory_manager import GlobalMemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -622,9 +623,9 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Initialize components
         self.image_processor = ImageProcessor()
-        self.color_manager = ColorManager()
+        self.color_manager = ColorManager(use_smart_naming=True)  # Smart naming enabled
         self.visualizer = Visualizer()
-        self.memory_manager = GlobalMemoryManager.get_instance(max_versions=20, max_cache_mb=500)
+        self.memory_manager = None  # Lazy load when needed
 
         # Connect components
         self.visualizer.set_image_processor(self.image_processor)
@@ -660,6 +661,13 @@ class JSPRBeamerSetup(QMainWindow):
         # QTimer.singleShot(2000, self.load_auto_save_if_exists)  # Disabled for faster startup
 
         logger.info("JSPR Beamer Setup initialized")
+
+    def get_memory_manager(self):
+        """Lazy load memory manager"""
+        if self.memory_manager is None:
+            from memory_manager import GlobalMemoryManager
+            self.memory_manager = GlobalMemoryManager.get_instance(max_versions=20, max_cache_mb=500)
+        return self.memory_manager
 
     def init_ui(self):
         """Initialize user interface"""
@@ -1377,8 +1385,8 @@ class JSPRBeamerSetup(QMainWindow):
             # Set original image for eyedropper
             self.canvas.set_original_image(img)
 
-            # Track original image in memory manager
-            self.memory_manager.add_image_version(
+            # Track original image in memory manager (lazy loaded)
+            self.get_memory_manager().add_image_version(
                 key=f"original_{os.path.basename(file_path)}",
                 image=img,
                 metadata={'type': 'original', 'file_path': file_path}
@@ -2220,9 +2228,9 @@ class JSPRBeamerSetup(QMainWindow):
             self.canvas.set_image(result)
             self.statusBar().showMessage("Klaar")
 
-            # Track rendered image in memory manager
+            # Track rendered image in memory manager (lazy loaded)
             import time
-            self.memory_manager.add_image_version(
+            self.get_memory_manager().add_image_version(
                 key=f"rendered_{self.current_mode}_{int(time.time())}",
                 image=result,
                 metadata={'type': 'rendered', 'mode': self.current_mode}
