@@ -76,7 +76,7 @@ def main():
         app.setApplicationName("JSPR Beamer Setup")
         app.setOrganizationName("JSPR")
 
-        # Minimal theme (skip heavy glassmorphism for now)
+        # Minimal theme
         app.setStyle("Fusion")
         palette = QPalette()
         palette.setColor(QPalette.Window, QColor(15, 15, 15))
@@ -88,10 +88,28 @@ def main():
         palette.setColor(QPalette.Highlight, QColor(102, 126, 234))
         app.setPalette(palette)
 
-        # Create and show main window (heavy operation happens here)
+        # Show splash screen immediately for instant feedback
+        from PyQt5.QtWidgets import QSplashScreen
+        from PyQt5.QtGui import QPixmap, QFont
+        from PyQt5.QtCore import Qt as QtCore
+
+        # Create simple splash screen
+        splash_pix = QPixmap(400, 200)
+        splash_pix.fill(QColor(25, 25, 25))
+        splash = QSplashScreen(splash_pix, QtCore.WindowStaysOnTopHint)
+
+        # Add text
+        font = QFont("Arial", 16, QFont.Bold)
+        splash.setFont(font)
+        splash.showMessage("JSPR Beamer Setup wordt geladen...", QtCore.AlignCenter, Qt.white)
+        splash.show()
+        app.processEvents()  # Force immediate display
+
+        # Create main window (this takes time due to imports)
         window = JSPRBeamerSetup()
 
-        # Show window ASAP
+        # Close splash and show window
+        splash.finish(window)
         window.show()
         window.raise_()
         window.activateWindow()
