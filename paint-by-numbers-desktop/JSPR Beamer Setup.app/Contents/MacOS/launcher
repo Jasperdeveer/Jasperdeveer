@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# JSPR Beamer Setup Launcher
+# Finds the app directory and starts the application
+
+# Get the directory where this app bundle is located
+APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+# Navigate to the paint-by-numbers-desktop directory
+cd "$APP_DIR"
+
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    echo "Virtual environment not found!"
+    echo "Please run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+    exit 1
+fi
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Start the application
+python main.py
+
+# Exit code
+exit $?
