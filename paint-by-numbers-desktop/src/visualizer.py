@@ -337,11 +337,19 @@ class Visualizer:
         # Draw numbers on each region
         result = image.copy()
 
+        # Check if preview mode is active
+        preview_index = self.color_manager.get_preview_color_index()
+        is_preview_active = preview_index is not None
+
         for region in self.regions:
             color_idx = region['color_idx']
             color = self.color_manager.get_color_by_index(color_idx)
 
             if color is None:
+                continue
+
+            # If preview is active, only show numbers for the preview color
+            if is_preview_active and color_idx != preview_index:
                 continue
 
             # Skip numbers for white and black regions
@@ -533,12 +541,25 @@ class Visualizer:
                     best_contrast = distance
                     contour_color = neon
 
+            # Add subtle hatched overlay (diagonal lines pattern)
+            overlay = result.copy()
+            height, width = result.shape[:2]
+
+            # Create diagonal line pattern on hover areas only
+            for y in range(0, height, 8):  # Every 8 pixels
+                for x in range(width):
+                    if (x + y) % 16 < 2 and mask[y, x]:  # Thin diagonal lines
+                        overlay[y, x] = [int(c * 0.85) for c in overlay[y, x]]  # Darken slightly
+
+            # Blend overlay (subtle)
+            result = cv2.addWeighted(result, 0.85, overlay, 0.15, 0)
+
             # Find contours of the mask
             mask_uint8 = mask.astype(np.uint8) * 255
             contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Draw contrasting neon contours (thicker for better visibility)
-            cv2.drawContours(result, contours, -1, contour_color, thickness=3)
+            # Draw thin neon contours (1px for subtle look)
+            cv2.drawContours(result, contours, -1, contour_color, thickness=1)
 
         return result
 
