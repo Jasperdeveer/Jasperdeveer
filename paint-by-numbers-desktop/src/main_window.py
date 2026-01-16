@@ -1651,8 +1651,8 @@ class JSPRBeamerSetup(QMainWindow):
             if self.image_processor.original_image is not None:
                 self.render()
 
-    def merge_color(self, source_color: Color):
-        """Merge a color with another color"""
+    def merge_color(self, initial_color: Color = None):
+        """Merge multiple colors into a base color with similarity percentages"""
         colors = self.color_manager.get_colors()
 
         if len(colors) <= 2:
@@ -1663,83 +1663,211 @@ class JSPRBeamerSetup(QMainWindow):
             )
             return
 
-        # Create dialog to select target color
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup, QRadioButton, QScrollArea
+        # STEP 1: Select BASE COLOR (target)
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QRadioButton, QScrollArea, QCheckBox
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Samenvoegen: {source_color.name}")
-        dialog.setModal(True)
-        dialog.setMinimumWidth(400)
-        dialog.setMinimumHeight(500)
+        base_dialog = QDialog(self)
+        base_dialog.setWindowTitle("Selecteer Basiskleur")
+        base_dialog.setModal(True)
+        base_dialog.setMinimumWidth(450)
+        base_dialog.setMinimumHeight(500)
 
-        layout = QVBoxLayout()
+        base_layout = QVBoxLayout()
 
         # Instructions
-        instruction = QLabel(f"<h3>Selecteer de doelkleur</h3><p>Alle pixels van <b>{source_color.name}</b> worden samengevoegd met de geselecteerde kleur.</p>")
+        instruction = QLabel("<h3>Stap 1: Selecteer de basiskleur</h3><p>Andere kleuren worden hiermee samengevoegd.</p>")
         instruction.setWordWrap(True)
-        layout.addWidget(instruction)
+        base_layout.addWidget(instruction)
 
         # Color selection area
         scroll_area = QScrollArea()
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
 
-        button_group = QButtonGroup(dialog)
-        target_color = [None]  # Use list to store reference
+        base_color = [initial_color if initial_color else None]
 
         for color in colors:
-            if color.id == source_color.id:
-                continue  # Skip the source color itself
-
             color_widget = QWidget()
             color_layout = QHBoxLayout(color_widget)
             color_layout.setContentsMargins(8, 4, 8, 4)
 
             # Radio button
             radio = QRadioButton()
-            button_group.addButton(radio)
+            if initial_color and color.id == initial_color.id:
+                radio.setChecked(True)
             color_layout.addWidget(radio)
 
             # Color swatch
             swatch = QLabel()
-            swatch.setFixedSize(40, 30)
+            swatch.setFixedSize(50, 40)
             swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 2px solid #888; border-radius: 3px;")
             color_layout.addWidget(swatch)
 
             # Color info
             info = QLabel(f"<b>#{color.number}</b> - {color.name}")
+            info.setMinimumWidth(200)
             color_layout.addWidget(info, stretch=1)
 
             # Store reference when selected
-            radio.toggled.connect(lambda checked, c=color: target_color.__setitem__(0, c) if checked else None)
+            radio.toggled.connect(lambda checked, c=color: base_color.__setitem__(0, c) if checked else None)
 
             scroll_layout.addWidget(color_widget)
 
         scroll_layout.addStretch()
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
-        layout.addWidget(scroll_area)
+        base_layout.addWidget(scroll_area)
 
         # Buttons
         button_layout = QHBoxLayout()
         cancel_btn = QPushButton("Annuleren")
-        cancel_btn.clicked.connect(dialog.reject)
+        cancel_btn.clicked.connect(base_dialog.reject)
         button_layout.addWidget(cancel_btn)
 
-        merge_btn = QPushButton("Samenvoegen")
-        merge_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
-        merge_btn.clicked.connect(dialog.accept)
-        button_layout.addWidget(merge_btn)
+        next_btn = QPushButton("Volgende →")
+        next_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px;")
+        next_btn.clicked.connect(base_dialog.accept)
+        button_layout.addWidget(next_btn)
 
-        layout.addLayout(button_layout)
-        dialog.setLayout(layout)
+        base_layout.addLayout(button_layout)
+        base_dialog.setLayout(base_layout)
 
         # Show dialog
-        if dialog.exec_() == QDialog.Accepted and target_color[0] is not None:
-            # Perform merge
-            self.perform_color_merge(source_color, target_color[0])
+        if base_dialog.exec_() != QDialog.Accepted or base_color[0] is None:
+            return
 
-    def perform_color_merge(self, source_color: Color, target_color: Color):
+        target_color = base_color[0]
+
+        # STEP 2: Select MULTIPLE COLORS to merge with similarity percentages
+        merge_dialog = QDialog(self)
+        merge_dialog.setWindowTitle(f"Samenvoegen met: {target_color.name}")
+        merge_dialog.setModal(True)
+        merge_dialog.setMinimumWidth(500)
+        merge_dialog.setMinimumHeight(600)
+
+        merge_layout = QVBoxLayout()
+
+        # Instructions
+        instruction2 = QLabel(f"<h3>Stap 2: Selecteer kleuren om samen te voegen</h3><p>Deze kleuren worden samengevoegd met <b>{target_color.name}</b>.</p>")
+        instruction2.setWordWrap(True)
+        merge_layout.addWidget(instruction2)
+
+        # Color selection area with checkboxes
+        scroll_area2 = QScrollArea()
+        scroll_widget2 = QWidget()
+        scroll_layout2 = QVBoxLayout(scroll_widget2)
+
+        selected_colors = []
+        checkboxes = []
+
+        # Calculate similarity for each color
+        target_rgb = (target_color.r, target_color.g, target_color.b)
+
+        for color in colors:
+            if color.id == target_color.id:
+                continue  # Skip the base color itself
+
+            # Calculate color similarity (Euclidean distance in RGB space)
+            color_rgb = (color.r, color.g, color.b)
+            distance = ((target_rgb[0] - color_rgb[0])**2 +
+                       (target_rgb[1] - color_rgb[1])**2 +
+                       (target_rgb[2] - color_rgb[2])**2) ** 0.5
+
+            # Convert to percentage (0 = identical, 441.67 = max distance)
+            max_distance = (255**2 + 255**2 + 255**2) ** 0.5
+            similarity_percentage = int((1 - distance / max_distance) * 100)
+
+            color_widget = QWidget()
+            color_layout = QHBoxLayout(color_widget)
+            color_layout.setContentsMargins(8, 4, 8, 4)
+
+            # Checkbox
+            checkbox = QCheckBox()
+            checkboxes.append((checkbox, color))
+            color_layout.addWidget(checkbox)
+
+            # Color swatch
+            swatch = QLabel()
+            swatch.setFixedSize(50, 40)
+            swatch.setStyleSheet(f"background-color: {color.to_hex()}; border: 2px solid #888; border-radius: 3px;")
+            color_layout.addWidget(swatch)
+
+            # Color info with similarity
+            info = QLabel(f"<b>#{color.number}</b> - {color.name}")
+            info.setMinimumWidth(200)
+            color_layout.addWidget(info, stretch=1)
+
+            # Similarity percentage
+            similarity_label = QLabel(f"<b>{similarity_percentage}%</b>")
+            similarity_label.setMinimumWidth(50)
+            similarity_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            # Color code similarity
+            if similarity_percentage >= 80:
+                similarity_label.setStyleSheet("color: #4CAF50; font-weight: bold;")  # Green
+            elif similarity_percentage >= 60:
+                similarity_label.setStyleSheet("color: #FFC107; font-weight: bold;")  # Orange
+            else:
+                similarity_label.setStyleSheet("color: #888; font-weight: bold;")  # Gray
+
+            color_layout.addWidget(similarity_label)
+
+            scroll_layout2.addWidget(color_widget)
+
+        scroll_layout2.addStretch()
+        scroll_area2.setWidget(scroll_widget2)
+        scroll_area2.setWidgetResizable(True)
+        merge_layout.addWidget(scroll_area2)
+
+        # Helper text
+        helper = QLabel("💡 Tip: Hogere percentages betekenen meer gelijkenis")
+        helper.setStyleSheet("color: #888; font-style: italic; padding: 5px;")
+        merge_layout.addWidget(helper)
+
+        # Buttons
+        button_layout2 = QHBoxLayout()
+
+        back_btn = QPushButton("← Terug")
+        back_btn.clicked.connect(merge_dialog.reject)
+        button_layout2.addWidget(back_btn)
+
+        button_layout2.addStretch()
+
+        merge_btn = QPushButton("Samenvoegen")
+        merge_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px; font-weight: bold;")
+
+        def do_merge():
+            # Collect selected colors
+            selected = [color for checkbox, color in checkboxes if checkbox.isChecked()]
+            if not selected:
+                QMessageBox.warning(merge_dialog, "Geen selectie", "Selecteer minimaal 1 kleur om samen te voegen")
+                return
+            merge_dialog.accept()
+
+            # Perform merges (efficient: only render once at the end)
+            color_names = [c.name for c in selected]
+            for i, source_color in enumerate(selected):
+                is_last = (i == len(selected) - 1)
+                self.perform_color_merge(source_color, target_color, render=is_last)
+
+            # Show summary message
+            if len(selected) == 1:
+                self.statusBar().showMessage(f"'{color_names[0]}' samengevoegd met '{target_color.name}'")
+            else:
+                self.statusBar().showMessage(f"{len(selected)} kleuren samengevoegd met '{target_color.name}': {', '.join(color_names)}")
+
+            logger.info(f"Batch merge complete. {len(selected)} colors merged into '{target_color.name}'")
+
+        merge_btn.clicked.connect(do_merge)
+        button_layout2.addWidget(merge_btn)
+
+        merge_layout.addLayout(button_layout2)
+        merge_dialog.setLayout(merge_layout)
+
+        # Show dialog
+        merge_dialog.exec_()
+
+    def perform_color_merge(self, source_color: Color, target_color: Color, render: bool = True):
         """Perform the actual color merge operation"""
         logger.info(f"Merging '{source_color.name}' into '{target_color.name}'")
 
@@ -1774,14 +1902,14 @@ class JSPRBeamerSetup(QMainWindow):
             if old_idx > source_index:
                 self.visualizer.color_map[self.visualizer.color_map == old_idx] = new_idx
 
-        # Update palette display
+        # Update palette display (always needed)
         self.update_color_palette()
 
-        # Clear cache and re-render
-        self.visualizer.clear_cache()
-        self.render()
+        # Only render if requested (for efficiency in batch merges)
+        if render:
+            self.visualizer.clear_cache()
+            self.render()
 
-        self.statusBar().showMessage(f"'{source_color.name}' samengevoegd met '{target_color.name}'")
         logger.info(f"Merge complete. Remaining colors: {len(self.color_manager.get_colors())}")
 
     def suggest_smart_merges(self):
