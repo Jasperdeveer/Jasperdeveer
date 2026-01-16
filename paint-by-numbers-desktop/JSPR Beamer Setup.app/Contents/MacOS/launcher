@@ -1,26 +1,63 @@
 #!/bin/bash
 
 # JSPR Beamer Setup Launcher
-# Finds the app directory and starts the application
+# Debug version - logs to file
+
+# Create log file
+LOG_FILE="/tmp/jspr_launcher.log"
+echo "=== JSPR Launcher Debug Log ===" > "$LOG_FILE"
+echo "Started at: $(date)" >> "$LOG_FILE"
 
 # Get the directory where this app bundle is located
-APP_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "Script directory: $SCRIPT_DIR" >> "$LOG_FILE"
 
-# Navigate to the paint-by-numbers-desktop directory
+# Navigate up to the paint-by-numbers-desktop directory
+# From: JSPR Beamer Setup.app/Contents/MacOS/launcher
+# To:   paint-by-numbers-desktop/
+APP_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+echo "App directory: $APP_DIR" >> "$LOG_FILE"
+
 cd "$APP_DIR"
+echo "Changed to: $(pwd)" >> "$LOG_FILE"
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
-    echo "Virtual environment not found!"
-    echo "Please run: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
+    echo "ERROR: Virtual environment not found at $(pwd)/venv" >> "$LOG_FILE"
+    osascript -e 'display dialog "Virtual environment niet gevonden!\n\nOpen Terminal en voer uit:\ncd '"$APP_DIR"'\npython3 -m venv venv\nsource venv/bin/activate\npip install -r requirements.txt" buttons {"OK"} default button "OK"'
     exit 1
 fi
 
+echo "Virtual environment found" >> "$LOG_FILE"
+
+# Check if main.py exists
+if [ ! -f "main.py" ]; then
+    echo "ERROR: main.py not found at $(pwd)/main.py" >> "$LOG_FILE"
+    osascript -e 'display dialog "main.py niet gevonden in:\n'"$APP_DIR"'" buttons {"OK"} default button "OK"'
+    exit 1
+fi
+
+echo "main.py found" >> "$LOG_FILE"
+
 # Activate virtual environment
 source venv/bin/activate
+echo "Virtual environment activated" >> "$LOG_FILE"
+
+# Check Python version
+PYTHON_VERSION=$(python --version 2>&1)
+echo "Python version: $PYTHON_VERSION" >> "$LOG_FILE"
 
 # Start the application
-python main.py
+echo "Starting main.py..." >> "$LOG_FILE"
+python main.py >> "$LOG_FILE" 2>&1
+EXIT_CODE=$?
 
-# Exit code
-exit $?
+echo "Application exited with code: $EXIT_CODE" >> "$LOG_FILE"
+echo "Ended at: $(date)" >> "$LOG_FILE"
+
+# If there was an error, show log
+if [ $EXIT_CODE -ne 0 ]; then
+    osascript -e 'display dialog "App gestopt met error.\n\nKijk in:\n/tmp/jspr_launcher.log\n\nOf start via Terminal:\ncd '"$APP_DIR"'\n./start_app.sh" buttons {"OK"} default button "OK"'
+fi
+
+exit $EXIT_CODE
