@@ -513,16 +513,31 @@ class Visualizer:
         # Get preview color for contrast calculation
         preview_color = self.color_manager.get_color_by_index(preview_index)
         if preview_color:
-            # Calculate brightness to determine contour color
-            brightness = 0.299 * preview_color.r + 0.587 * preview_color.g + 0.114 * preview_color.b
-            # Use white contour for dark colors, black for light colors
-            contour_color = (255, 255, 255) if brightness < 128 else (0, 0, 0)
+            # Choose best contrasting neon color (green, magenta, or cyan)
+            neon_colors = [
+                (0, 255, 0),      # Neon Green
+                (255, 0, 255),    # Magenta
+                (0, 255, 255)     # Cyan
+            ]
+
+            # Calculate color distance for each neon color
+            preview_rgb = np.array([preview_color.r, preview_color.g, preview_color.b], dtype=np.float32)
+            best_contrast = 0
+            contour_color = (0, 255, 0)  # Default: neon green
+
+            for neon in neon_colors:
+                neon_rgb = np.array(neon, dtype=np.float32)
+                # Euclidean distance in RGB space for contrast
+                distance = np.sqrt(np.sum((preview_rgb - neon_rgb) ** 2))
+                if distance > best_contrast:
+                    best_contrast = distance
+                    contour_color = neon
 
             # Find contours of the mask
             mask_uint8 = mask.astype(np.uint8) * 255
             contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Draw contrasting contours (thicker for better visibility)
+            # Draw contrasting neon contours (thicker for better visibility)
             cv2.drawContours(result, contours, -1, contour_color, thickness=3)
 
         return result
