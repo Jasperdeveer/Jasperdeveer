@@ -48,9 +48,9 @@ echo "Python binary found" >> "$LOG_FILE"
 PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1)
 echo "Python version: $PYTHON_VERSION" >> "$LOG_FILE"
 
-# Start the application
-echo "Starting main.py..." >> "$LOG_FILE"
-"$PYTHON_BIN" main.py >> "$LOG_FILE" 2>&1
+# Start the application with splash screen
+echo "Starting main_splash.py..." >> "$LOG_FILE"
+"$PYTHON_BIN" main_splash.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "Exit code: $EXIT_CODE" >> "$LOG_FILE"
