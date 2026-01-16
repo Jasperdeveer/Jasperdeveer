@@ -6,11 +6,20 @@
 # Ga naar de app directory
 cd "$(dirname "$0")"
 
-# Activeer virtual environment
-source venv/bin/activate
+# Check if virtual environment exists
+if [ ! -d "venv" ]; then
+    osascript -e 'display dialog "Virtual environment niet gevonden!\n\nOpen Terminal en voer uit:\ncd '"$(pwd)"'\npython3 -m venv venv\nsource venv/bin/activate\npip install -r requirements.txt" buttons {"OK"} default button "OK" with icon stop'
+    exit 1
+fi
 
-# Start de applicatie
-python main.py
+# Check if main.py exists
+if [ ! -f "main.py" ]; then
+    osascript -e 'display dialog "main.py niet gevonden in:\n'"$(pwd)"'" buttons {"OK"} default button "OK" with icon stop'
+    exit 1
+fi
 
-# Deactiveer virtual environment bij afsluiten
-deactivate
+# Use direct Python path to avoid venv activation issues
+PYTHON_BIN="$(pwd)/venv/bin/python"
+
+# Start the application
+"$PYTHON_BIN" main.py
