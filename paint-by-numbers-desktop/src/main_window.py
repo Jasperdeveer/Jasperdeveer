@@ -8,7 +8,7 @@ import os
 import json
 import time
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QSlider, QSpinBox, QDoubleSpinBox, QFileDialog, QScrollArea,
@@ -17,32 +17,21 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QPoint, QEvent, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen, QFont, QCursor, QKeyEvent
+import cv2
+import numpy as np
 import logging
 
-# Type checking imports (only for type hints, not loaded at runtime)
-if TYPE_CHECKING:
-    import numpy as np
-    from color_manager import ColorManager, Color
-    from image_processor import ImageProcessor
-    from visualizer import Visualizer
-
-# ALL HEAVY IMPORTS DEFERRED - Loaded only when needed for instant startup
-# import cv2
-# import numpy as np (imported in TYPE_CHECKING for type hints)
-# from image_processor import ImageProcessor
-# from color_manager import ColorManager, Color
-# from visualizer import Visualizer
-# from presentation_mode import PresentationMode
-# from manual_color_picker import ColorSelectionDialog, ManualColorPicker
-# from project_manager import ProjectManager
-# from selection_tools import SelectionTools, SelectionMode
+from image_processor import ImageProcessor
+from color_manager import ColorManager, Color
+from visualizer import Visualizer
+from presentation_mode import PresentationMode
+from manual_color_picker import ColorSelectionDialog, ManualColorPicker
+from project_manager import ProjectManager
+from selection_tools import SelectionTools, SelectionMode
+# Lazy import for memory_manager to speed up startup
 # from memory_manager import GlobalMemoryManager
 
 logger = logging.getLogger(__name__)
-
-# Global references for lazy-loaded heavy modules
-cv2 = None
-np = None
 
 
 class HoverWidget(QWidget):
@@ -68,7 +57,7 @@ class HoverWidget(QWidget):
 class BlackWhiteSelectionDialog(QDialog):
     """Dialog for selecting which colors should be treated as black or white"""
 
-    def __init__(self, color_manager: 'ColorManager', parent=None):
+    def __init__(self, color_manager: ColorManager, parent=None):
         super().__init__(parent)
         self.color_manager = color_manager
         self.black_checkboxes = []
@@ -190,11 +179,11 @@ class CanvasWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.image: Optional['np.ndarray'] = None
-        self.original_image: Optional['np.ndarray'] = None  # For eyedropper
+        self.image: Optional[np.ndarray] = None
+        self.original_image: Optional[np.ndarray] = None  # For eyedropper
         self.zoom_level = 1.0
         self.eyedropper_mode = False
-        self.selection_tools = None  # Optional[SelectionTools]
+        self.selection_tools: Optional[SelectionTools] = None
         self.selection_active = False
         self.is_brushing = False
 
@@ -218,7 +207,7 @@ class CanvasWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)  # Track mouse for cursor changes
 
-    def set_image(self, image: 'np.ndarray'):
+    def set_image(self, image: np.ndarray):
         """Set image to display (RGB numpy array)"""
         self.image = image
         # Clear cache when image changes
@@ -306,7 +295,7 @@ class CanvasWidget(QWidget):
 
             # Draw polygon points if in polygon mode
             if (self.selection_active and self.selection_tools and
-                self.selection_tools.mode.value == 'polygon' and
+                self.selection_tools.mode == SelectionMode.POLYGON and
                 len(self.selection_tools.polygon_points) > 0):
                 painter.setPen(QPen(QColor(0, 255, 255), 2))  # Cyan
 
@@ -493,7 +482,7 @@ class CanvasWidget(QWidget):
         else:
             self.setCursor(QCursor(Qt.ArrowCursor))
 
-    def set_original_image(self, image: 'np.ndarray'):
+    def set_original_image(self, image: np.ndarray):
         """Set original image for eyedropper sampling"""
         self.original_image = image
 
@@ -570,8 +559,7 @@ class CanvasWidget(QWidget):
 
         # Handle selection tools
         if self.selection_active and self.selection_tools:
-            mode_value = self.selection_tools.mode.value
-            if mode_value == 'magic_wand':
+            if self.selection_tools.mode == SelectionMode.MAGIC_WAND:
                 # Check if shift is pressed for additive selection
                 add_to_selection = event.modifiers() & Qt.ShiftModifier
                 self.selection_tools.magic_wand_select(self.original_image, img_x, img_y, add_to_selection)
@@ -581,14 +569,14 @@ class CanvasWidget(QWidget):
                 if parent and hasattr(parent, 'update_selection_stats'):
                     parent.update_selection_stats()
 
-            elif mode_value == 'brush':
+            elif self.selection_tools.mode == SelectionMode.BRUSH:
                 self.is_brushing = True
                 # Check if Ctrl is pressed for erasing
                 add = not (event.modifiers() & Qt.ControlModifier)
                 self.selection_tools.brush_select(img_x, img_y, add)
                 self.update()
 
-            elif mode_value == 'polygon':
+            elif self.selection_tools.mode == SelectionMode.POLYGON:
                 self.selection_tools.add_polygon_point(img_x, img_y)
                 self.update()
 
@@ -633,12 +621,15 @@ class JSPRBeamerSetup(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Lazy load ALL components for instant startup
-        self.image_processor = None
-        self.color_manager = None
-        self.visualizer = None
-        self.memory_manager = None
-        self._components_loaded = False
+        # Initialize components
+        self.image_processor = ImageProcessor()
+        self.color_manager = ColorManager(use_smart_naming=True)  # Smart naming enabled
+        self.visualizer = Visualizer()
+        self.memory_manager = None  # Lazy load when needed
+
+        # Connect components
+        self.visualizer.set_image_processor(self.image_processor)
+        self.visualizer.set_color_manager(self.color_manager)
 
         # State
         self.current_mode = 'original'
@@ -671,36 +662,6 @@ class JSPRBeamerSetup(QMainWindow):
 
         logger.info("JSPR Beamer Setup initialized")
 
-    def load_heavy_components(self):
-        """Lazy load all heavy components (OpenCV, numpy, etc.) - called when opening image"""
-        if self._components_loaded:
-            return
-
-        logger.info("⚡ Loading processing components...")
-        import time
-        start = time.time()
-
-        # Import heavy modules as globals so they're available everywhere
-        global cv2, np
-        import cv2
-        import numpy as np
-
-        from image_processor import ImageProcessor
-        from color_manager import ColorManager
-        from visualizer import Visualizer
-
-        # Initialize components
-        self.image_processor = ImageProcessor()
-        self.color_manager = ColorManager(use_smart_naming=True)
-        self.visualizer = Visualizer()
-
-        # Connect components
-        self.visualizer.set_image_processor(self.image_processor)
-        self.visualizer.set_color_manager(self.color_manager)
-
-        self._components_loaded = True
-        logger.info(f"✓ Components loaded in {time.time() - start:.2f}s")
-
     def get_memory_manager(self):
         """Lazy load memory manager"""
         if self.memory_manager is None:
@@ -710,9 +671,6 @@ class JSPRBeamerSetup(QMainWindow):
 
     def init_ui(self):
         """Initialize user interface"""
-        import time
-        start = time.time()
-
         self.setWindowTitle('JSPR Beamer Setup v1.0')
         self.setGeometry(100, 100, 1600, 900)
 
@@ -730,28 +688,23 @@ class JSPRBeamerSetup(QMainWindow):
         self.splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
         self.splitter.setHandleWidth(2)  # Slim splitter handle
 
-        logger.info(f"UI: Basic setup ({time.time() - start:.2f}s)")
-
         # Left panel: Controls
         left_panel = self.create_control_panel()
         left_panel.setMinimumWidth(280)
         left_panel.setMaximumWidth(450)
         self.splitter.addWidget(left_panel)
-        logger.info(f"UI: Control panel created ({time.time() - start:.2f}s)")
 
         # Center panel: Canvas
         center_panel = self.create_canvas_panel()
         center_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.splitter.addWidget(center_panel)
         self.splitter.setStretchFactor(1, 1)  # Canvas should stretch
-        logger.info(f"UI: Canvas panel created ({time.time() - start:.2f}s)")
 
         # Right panel: Legend
         right_panel = self.create_legend_panel()
         right_panel.setMinimumWidth(250)
         right_panel.setMaximumWidth(400)
         self.splitter.addWidget(right_panel)
-        logger.info(f"UI: Legend panel created ({time.time() - start:.2f}s)")
 
         # Set splitter sizes (proportions)
         # Use proportional sizing: left 20%, center 60%, right 20%
@@ -762,11 +715,9 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Create menu bar
         self.create_menu_bar()
-        logger.info(f"UI: Menu bar created ({time.time() - start:.2f}s)")
 
         # Create status bar
         self.statusBar().showMessage('Klaar')
-        logger.info(f"UI: Complete ({time.time() - start:.2f}s)")
 
     def setup_auto_save(self):
         """Setup automatic saving"""
@@ -1204,21 +1155,21 @@ class JSPRBeamerSetup(QMainWindow):
         self.magic_wand_btn.setCheckable(True)
         self.magic_wand_btn.setToolTip("Magic Wand - Klik om vergelijkbare kleuren te selecteren\nShift+Klik: voeg toe aan selectie")
         self.magic_wand_btn.setMaximumWidth(40)
-        self.magic_wand_btn.clicked.connect(lambda: self.set_selection_mode('magic_wand'))
+        self.magic_wand_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.MAGIC_WAND))
         tools_layout.addWidget(self.magic_wand_btn)
 
         self.brush_btn = QPushButton("🖌")
         self.brush_btn.setCheckable(True)
         self.brush_btn.setToolTip("Brush - Verf over gebieden\nCtrl: wis selectie")
         self.brush_btn.setMaximumWidth(40)
-        self.brush_btn.clicked.connect(lambda: self.set_selection_mode('brush'))
+        self.brush_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.BRUSH))
         tools_layout.addWidget(self.brush_btn)
 
         self.polygon_btn = QPushButton("📐")
         self.polygon_btn.setCheckable(True)
         self.polygon_btn.setToolTip("Polygon - Klik punten om vorm te maken\nEnter: voltooi, Esc: annuleer")
         self.polygon_btn.setMaximumWidth(40)
-        self.polygon_btn.clicked.connect(lambda: self.set_selection_mode('polygon'))
+        self.polygon_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.POLYGON))
         tools_layout.addWidget(self.polygon_btn)
 
         selection_layout.addLayout(tools_layout)
@@ -1409,9 +1360,6 @@ class JSPRBeamerSetup(QMainWindow):
 
     def load_image(self, file_path: str):
         """Load image from file"""
-        # Lazy load heavy components on first image open
-        self.load_heavy_components()
-
         self.statusBar().showMessage(f"Laden: {os.path.basename(file_path)}...")
 
         success = self.image_processor.load_image(file_path)
@@ -1436,9 +1384,6 @@ class JSPRBeamerSetup(QMainWindow):
 
             # Initialize selection tools
             self.init_selection_tools()
-
-            # Lazy import color selection dialog
-            from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 
             # Show color selection dialog
             logger.info("Showing ColorSelectionDialog...")
@@ -1468,7 +1413,7 @@ class JSPRBeamerSetup(QMainWindow):
             QMessageBox.critical(self, "Fout", "Kan afbeelding niet laden")
             self.statusBar().showMessage("Fout bij laden")
 
-    def show_manual_color_picker(self, image: 'np.ndarray'):
+    def show_manual_color_picker(self, image: np.ndarray):
         """Show manual color picker fullscreen interface"""
         logger.info("Creating ManualColorPicker window...")
 
@@ -1496,7 +1441,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         self.statusBar().showMessage("Handmatige kleur selectie - Klik op kleuren om toe te voegen")
 
-    def on_manual_colors_selected(self, colors: List['Color']):
+    def on_manual_colors_selected(self, colors: List[Color]):
         """Handle colors selected from manual picker"""
         logger.info(f"Manual selection complete: {len(colors)} colors")
 
@@ -1525,7 +1470,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Cleanup picker reference
         self.manual_picker = None
 
-    def update_preview(self, image: 'np.ndarray'):
+    def update_preview(self, image: np.ndarray):
         """Update image preview thumbnail"""
         # Resize for preview
         height, width = image.shape[:2]
@@ -1624,7 +1569,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         self.legend_layout.addStretch()
 
-    def add_legend_item(self, color: 'Color'):
+    def add_legend_item(self, color: Color):
         """Add an editable color item to the legend"""
         # Use HoverWidget to detect mouse hover
         item_widget = HoverWidget(color.number - 1, self)  # color.number is 1-based, need 0-based index
@@ -1692,7 +1637,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         self.legend_layout.addWidget(item_widget)
 
-    def on_color_name_changed(self, color: 'Color', new_name: str):
+    def on_color_name_changed(self, color: Color, new_name: str):
         """Handle color name change"""
         if new_name and new_name != color.name:
             old_name = color.name
@@ -1706,7 +1651,7 @@ class JSPRBeamerSetup(QMainWindow):
             if self.image_processor.original_image is not None:
                 self.render()
 
-    def merge_color(self, source_color: 'Color'):
+    def merge_color(self, source_color: Color):
         """Merge a color with another color"""
         colors = self.color_manager.get_colors()
 
@@ -1794,7 +1739,7 @@ class JSPRBeamerSetup(QMainWindow):
             # Perform merge
             self.perform_color_merge(source_color, target_color[0])
 
-    def perform_color_merge(self, source_color: 'Color', target_color: 'Color'):
+    def perform_color_merge(self, source_color: Color, target_color: Color):
         """Perform the actual color merge operation"""
         logger.info(f"Merging '{source_color.name}' into '{target_color.name}'")
 
@@ -2035,7 +1980,7 @@ class JSPRBeamerSetup(QMainWindow):
         if result == QMessageBox.Yes:
             self.suggest_smart_merges()
 
-    def delete_color(self, color: 'Color'):
+    def delete_color(self, color: Color):
         """Delete a color from the palette"""
         colors = self.color_manager.get_colors()
 
@@ -2423,9 +2368,6 @@ class JSPRBeamerSetup(QMainWindow):
             )
             return
 
-        # Lazy import presentation mode
-        from presentation_mode import PresentationMode
-
         # Create presentation window if it doesn't exist
         if self.presentation_window is None:
             self.presentation_window = PresentationMode()
@@ -2566,12 +2508,6 @@ class JSPRBeamerSetup(QMainWindow):
         )
 
         if file_path:
-            # Lazy load heavy components
-            self.load_heavy_components()
-
-            # Import ProjectManager on demand
-            from project_manager import ProjectManager
-
             # Load project data
             project_data = ProjectManager.load_project(file_path)
 
@@ -3439,10 +3375,6 @@ class JSPRBeamerSetup(QMainWindow):
             if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
                 self.load_image(file_path)
             elif file_path.lower().endswith('.jspr'):
-                # Lazy load components for project
-                self.load_heavy_components()
-                from project_manager import ProjectManager
-
                 # Load project file
                 project_data = ProjectManager.load_project(file_path)
                 if project_data:
@@ -3574,13 +3506,12 @@ class JSPRBeamerSetup(QMainWindow):
     def init_selection_tools(self):
         """Initialize selection tools when image is loaded"""
         if self.canvas.image is not None:
-            from selection_tools import SelectionTools
             height, width = self.canvas.image.shape[:2]
             self.canvas.selection_tools = SelectionTools((height, width))
             logger.info(f"Selection tools initialized for {width}x{height} image")
 
-    def set_selection_mode(self, mode):
-        """Set the active selection tool mode (accepts string or SelectionMode enum)"""
+    def set_selection_mode(self, mode: SelectionMode):
+        """Set the active selection tool mode"""
         if not self.canvas.selection_tools:
             QMessageBox.warning(
                 self,
@@ -3592,18 +3523,6 @@ class JSPRBeamerSetup(QMainWindow):
             self.brush_btn.setChecked(False)
             self.polygon_btn.setChecked(False)
             return
-
-        # Lazy import SelectionMode
-        from selection_tools import SelectionMode
-
-        # Convert string to enum if needed
-        if isinstance(mode, str):
-            mode_map = {
-                'magic_wand': SelectionMode.MAGIC_WAND,
-                'brush': SelectionMode.BRUSH,
-                'polygon': SelectionMode.POLYGON
-            }
-            mode = mode_map.get(mode, SelectionMode.NONE)
 
         # Update button states
         self.magic_wand_btn.setChecked(mode == SelectionMode.MAGIC_WAND)
@@ -3765,7 +3684,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Handle polygon completion/cancellation
         if self.canvas.selection_active and self.canvas.selection_tools:
-            if self.canvas.selection_tools.mode.value == 'polygon':
+            if self.canvas.selection_tools.mode == SelectionMode.POLYGON:
                 if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
                     # Complete polygon
                     add_to_selection = event.modifiers() & Qt.ShiftModifier
