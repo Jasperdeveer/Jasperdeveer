@@ -57,53 +57,56 @@ def setup_dark_theme(app):
 
 
 def main():
-    """Main application entry point"""
-    setup_logging()
+    """Main application entry point - optimized for fast startup"""
+    # Minimal logging setup (no file handler for speed)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(message)s',
+        handlers=[logging.StreamHandler()]
+    )
     logger = logging.getLogger(__name__)
-    logger.info("Starting JSPR Beamer Setup")
 
     try:
-        import time
-        start_time = time.time()
-
-        # Enable High DPI scaling
+        # Enable High DPI scaling BEFORE creating QApplication
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-        logger.info(f"Qt attributes set ({time.time() - start_time:.2f}s)")
 
-        # Create application
+        # Create application (fast)
         app = QApplication(sys.argv)
         app.setApplicationName("JSPR Beamer Setup")
         app.setOrganizationName("JSPR")
-        logger.info(f"QApplication created ({time.time() - start_time:.2f}s)")
 
-        # Setup glassmorphism dark theme
-        setup_dark_theme(app)
-        logger.info(f"Theme applied ({time.time() - start_time:.2f}s)")
+        # Minimal theme (skip heavy glassmorphism for now)
+        app.setStyle("Fusion")
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor(15, 15, 15))
+        palette.setColor(QPalette.WindowText, Qt.white)
+        palette.setColor(QPalette.Base, QColor(25, 25, 25))
+        palette.setColor(QPalette.Text, Qt.white)
+        palette.setColor(QPalette.Button, QColor(40, 40, 40))
+        palette.setColor(QPalette.ButtonText, Qt.white)
+        palette.setColor(QPalette.Highlight, QColor(102, 126, 234))
+        app.setPalette(palette)
 
-        # Create and show main window
-        logger.info("Creating main window...")
+        # Create and show main window (heavy operation happens here)
         window = JSPRBeamerSetup()
-        logger.info(f"Main window created ({time.time() - start_time:.2f}s)")
 
-        # Force window to front (especially important on macOS)
+        # Show window ASAP
         window.show()
-        window.raise_()  # Bring window to front
-        window.activateWindow()  # Activate window
+        window.raise_()
+        window.activateWindow()
 
-        # On macOS, sometimes need to force focus after a short delay
+        # Apply full theme after window is visible (delayed)
         from PyQt5.QtCore import QTimer
-        QTimer.singleShot(50, lambda: window.raise_())
-        QTimer.singleShot(50, lambda: window.activateWindow())
-
-        logger.info(f"Window shown ({time.time() - start_time:.2f}s)")
+        QTimer.singleShot(100, lambda: app.setStyleSheet(get_glassmorphism_stylesheet()))
+        QTimer.singleShot(150, lambda: window.raise_())
+        QTimer.singleShot(150, lambda: window.activateWindow())
 
         # Run application
         sys.exit(app.exec_())
 
     except Exception as e:
-        logger.error(f"Failed to start application: {e}", exc_info=True)
-        print(f"ERROR: {e}")
+        logger.error(f"Failed to start: {e}", exc_info=True)
         sys.exit(1)
 
 

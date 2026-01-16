@@ -49,8 +49,8 @@ PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1)
 echo "Python version: $PYTHON_VERSION" >> "$LOG_FILE"
 
 # Start the application with splash screen
-echo "Starting preloader.py..." >> "$LOG_FILE"
-"$PYTHON_BIN" preloader.py >> "$LOG_FILE" 2>&1
+echo "Starting main.py..." >> "$LOG_FILE"
+"$PYTHON_BIN" main.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "Exit code: $EXIT_CODE" >> "$LOG_FILE"
