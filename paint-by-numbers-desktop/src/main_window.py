@@ -40,6 +40,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Global references for lazy-loaded heavy modules
+cv2 = None
+np = None
+
 
 class HoverWidget(QWidget):
     """Widget that detects mouse hover for color preview"""
@@ -676,7 +680,11 @@ class JSPRBeamerSetup(QMainWindow):
         import time
         start = time.time()
 
-        # Import heavy modules
+        # Import heavy modules as globals so they're available everywhere
+        global cv2, np
+        import cv2
+        import numpy as np
+
         from image_processor import ImageProcessor
         from color_manager import ColorManager
         from visualizer import Visualizer
