@@ -39,17 +39,17 @@ fi
 
 echo "main.py found" >> "$LOG_FILE"
 
-# Activate virtual environment
-source venv/bin/activate
-echo "Virtual environment activated" >> "$LOG_FILE"
+# Use direct path to Python binary instead of activating venv
+PYTHON_BIN="$APP_DIR/venv/bin/python"
+echo "Using Python: $PYTHON_BIN" >> "$LOG_FILE"
 
 # Check Python version
-PYTHON_VERSION=$(python --version 2>&1)
+PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1)
 echo "Python version: $PYTHON_VERSION" >> "$LOG_FILE"
 
-# Start the application
+# Start the application with direct Python path
 echo "Starting main.py..." >> "$LOG_FILE"
-python main.py >> "$LOG_FILE" 2>&1
+"$PYTHON_BIN" main.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "Application exited with code: $EXIT_CODE" >> "$LOG_FILE"
