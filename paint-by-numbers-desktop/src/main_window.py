@@ -904,6 +904,11 @@ class JSPRBeamerSetup(QMainWindow):
 
         edit_menu.addSeparator()
 
+        auto_merge_action = edit_menu.addAction('⚡ Auto-Merge Vergelijkbare Kleuren...')
+        auto_merge_action.setShortcut('Ctrl+Shift+M')
+        auto_merge_action.setToolTip('Detecteer en voeg automatisch zeer vergelijkbare kleuren samen (>90%)')
+        auto_merge_action.triggered.connect(self.auto_merge_similar_colors)
+
         smart_merge_action = edit_menu.addAction('🤖 Slimme Samenvoeg Suggesties...')
         smart_merge_action.setShortcut('Ctrl+M')
         smart_merge_action.triggered.connect(self.suggest_smart_merges)
@@ -1912,6 +1917,213 @@ class JSPRBeamerSetup(QMainWindow):
 
         logger.info(f"Merge complete. Remaining colors: {len(self.color_manager.get_colors())}")
 
+    def auto_merge_similar_colors(self):
+        """Automatically detect and merge highly similar colors (>90% similarity)"""
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(self, "Geen kleuren", "Er zijn geen kleuren om samen te voegen")
+            return
+
+        colors = self.color_manager.get_colors()
+        if len(colors) <= 2:
+            QMessageBox.information(self, "Geen kleuren", "Er zijn te weinig kleuren om samen te voegen")
+            return
+
+        # Calculate similarity for all color pairs
+        similar_pairs = []
+        max_distance = (255**2 + 255**2 + 255**2) ** 0.5
+
+        for i, color1 in enumerate(colors):
+            for j, color2 in enumerate(colors):
+                if i >= j:
+                    continue
+
+                # Calculate similarity percentage
+                color1_rgb = (color1.r, color1.g, color1.b)
+                color2_rgb = (color2.r, color2.g, color2.b)
+                distance = ((color1_rgb[0] - color2_rgb[0])**2 +
+                           (color1_rgb[1] - color2_rgb[1])**2 +
+                           (color1_rgb[2] - color2_rgb[2])**2) ** 0.5
+                similarity = int((1 - distance / max_distance) * 100)
+
+                # Only include pairs with >90% similarity
+                if similarity >= 90:
+                    similar_pairs.append({
+                        'color1': color1,
+                        'color2': color2,
+                        'similarity': similarity
+                    })
+
+        if not similar_pairs:
+            QMessageBox.information(
+                self,
+                "Geen vergelijkbare kleuren",
+                "Er zijn geen kleuren gevonden met >90% overeenkomst.\n\n"
+                "Tip: Gebruik 'Slimme Samenvoeg Suggesties' voor meer opties."
+            )
+            return
+
+        # Sort by similarity (highest first)
+        similar_pairs.sort(key=lambda x: x['similarity'], reverse=True)
+
+        # Show dialog to confirm merges
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QCheckBox, QSpinBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⚡ Auto-Merge Vergelijkbare Kleuren")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+
+        layout = QVBoxLayout()
+
+        # Header with instructions
+        header = QLabel(
+            f"<h3>Gevonden: {len(similar_pairs)} zeer vergelijkbare kleurparen</h3>"
+            f"<p>Selecteer welke paren je wilt samenvoegen. De tweede kleur wordt samengevoegd met de eerste.</p>"
+        )
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        # Threshold slider
+        threshold_layout = QHBoxLayout()
+        threshold_layout.addWidget(QLabel("Minimale overeenkomst:"))
+        threshold_spin = QSpinBox()
+        threshold_spin.setRange(50, 99)
+        threshold_spin.setValue(90)
+        threshold_spin.setSuffix("%")
+        threshold_layout.addWidget(threshold_spin)
+        threshold_layout.addStretch()
+        layout.addLayout(threshold_layout)
+
+        # Scroll area for pairs
+        scroll = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+
+        pair_checkboxes = []
+
+        def update_pairs():
+            # Clear existing
+            for i in reversed(range(scroll_layout.count())):
+                scroll_layout.itemAt(i).widget().deleteLater()
+
+            pair_checkboxes.clear()
+            threshold = threshold_spin.value()
+
+            # Re-filter and display
+            filtered_pairs = [p for p in similar_pairs if p['similarity'] >= threshold]
+
+            if not filtered_pairs:
+                no_pairs_label = QLabel(f"Geen kleurparen gevonden met ≥{threshold}% overeenkomst")
+                no_pairs_label.setStyleSheet("color: #888; font-style: italic; padding: 20px;")
+                scroll_layout.addWidget(no_pairs_label)
+            else:
+                for pair in filtered_pairs:
+                    pair_widget = QWidget()
+                    pair_layout = QHBoxLayout(pair_widget)
+                    pair_layout.setContentsMargins(4, 4, 4, 4)
+
+                    # Checkbox
+                    checkbox = QCheckBox()
+                    checkbox.setChecked(True)
+                    pair_checkboxes.append((checkbox, pair))
+                    pair_layout.addWidget(checkbox)
+
+                    # Color 1 swatch
+                    swatch1 = QLabel()
+                    swatch1.setFixedSize(40, 30)
+                    swatch1.setStyleSheet(
+                        f"background-color: {pair['color1'].to_hex()}; "
+                        f"border: 2px solid #888; border-radius: 3px;"
+                    )
+                    pair_layout.addWidget(swatch1)
+
+                    # Color 1 info
+                    info1 = QLabel(f"#{pair['color1'].number} {pair['color1'].name}")
+                    info1.setMinimumWidth(150)
+                    pair_layout.addWidget(info1)
+
+                    # Arrow
+                    arrow = QLabel("→")
+                    arrow.setStyleSheet("font-size: 16px; font-weight: bold;")
+                    pair_layout.addWidget(arrow)
+
+                    # Color 2 swatch
+                    swatch2 = QLabel()
+                    swatch2.setFixedSize(40, 30)
+                    swatch2.setStyleSheet(
+                        f"background-color: {pair['color2'].to_hex()}; "
+                        f"border: 2px solid #888; border-radius: 3px;"
+                    )
+                    pair_layout.addWidget(swatch2)
+
+                    # Color 2 info
+                    info2 = QLabel(f"#{pair['color2'].number} {pair['color2'].name}")
+                    info2.setMinimumWidth(150)
+                    pair_layout.addWidget(info2)
+
+                    # Similarity
+                    similarity_label = QLabel(f"<b>{pair['similarity']}%</b>")
+                    similarity_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+                    similarity_label.setMinimumWidth(60)
+                    pair_layout.addWidget(similarity_label)
+
+                    scroll_layout.addWidget(pair_widget)
+
+            scroll_layout.addStretch()
+
+        threshold_spin.valueChanged.connect(lambda: update_pairs())
+        update_pairs()
+
+        scroll.setWidget(scroll_widget)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        select_all_btn = QPushButton("Selecteer Alles")
+        select_all_btn.clicked.connect(lambda: [cb.setChecked(True) for cb, _ in pair_checkboxes])
+        button_layout.addWidget(select_all_btn)
+
+        deselect_all_btn = QPushButton("Deselecteer Alles")
+        deselect_all_btn.clicked.connect(lambda: [cb.setChecked(False) for cb, _ in pair_checkboxes])
+        button_layout.addWidget(deselect_all_btn)
+
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Annuleren")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        merge_btn = QPushButton("Samenvoegen")
+        merge_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px; font-weight: bold;")
+
+        def do_merge():
+            selected = [(pair['color2'], pair['color1']) for cb, pair in pair_checkboxes if cb.isChecked()]
+            if not selected:
+                QMessageBox.warning(dialog, "Geen selectie", "Selecteer minimaal 1 paar om samen te voegen")
+                return
+
+            dialog.accept()
+
+            # Perform merges (efficient: only render once at end)
+            for i, (source, target) in enumerate(selected):
+                is_last = (i == len(selected) - 1)
+                self.perform_color_merge(source, target, render=is_last)
+
+            # Show summary
+            self.statusBar().showMessage(f"⚡ Auto-merge voltooid: {len(selected)} kleurparen samengevoegd")
+            logger.info(f"Auto-merge complete: {len(selected)} pairs merged")
+
+        merge_btn.clicked.connect(do_merge)
+        button_layout.addWidget(merge_btn)
+
+        layout.addLayout(button_layout)
+        dialog.setLayout(layout)
+
+        dialog.exec_()
+
     def suggest_smart_merges(self):
         """Analyze colors and suggest smart merges based on similarity and region fragmentation"""
         if self.visualizer.color_map is None or not self.color_manager.get_colors():
@@ -2259,30 +2471,53 @@ class JSPRBeamerSetup(QMainWindow):
                 self.stats_label.setText("")
                 return
 
-            # Calculate difficulty rating
+            # Calculate complexity score (1-10 scale)
             total_regions = sum(s['regions'] for s in stats['color_stats'])
             num_colors = len(stats['color_stats'])
             avg_regions_per_color = total_regions / num_colors if num_colors > 0 else 0
 
-            # Difficulty scale: Easy (1-2), Medium (3-4), Hard (5+)
-            if avg_regions_per_color < 15:
-                difficulty = "★ Makkelijk"
-            elif avg_regions_per_color < 35:
-                difficulty = "★★ Gemiddeld"
-            elif avg_regions_per_color < 60:
-                difficulty = "★★★ Uitdagend"
+            # Calculate average region size (smaller = harder)
+            total_pixels = sum(s['pixels'] for s in stats['color_stats'])
+            avg_region_size = total_pixels / total_regions if total_regions > 0 else 0
+
+            # Complexity factors (normalized 0-10):
+            # 1. Color count (more colors = harder)
+            color_score = min(num_colors / 3, 10)  # 30+ colors = max score
+
+            # 2. Region fragmentation (more regions = harder)
+            region_score = min(avg_regions_per_color / 10, 10)  # 100+ regions/color = max
+
+            # 3. Small regions (smaller avg = harder)
+            size_score = max(0, 10 - (avg_region_size / 100))  # <100px = high score
+
+            # Weighted average: regions matter most, then colors, then size
+            complexity_raw = (region_score * 0.5 + color_score * 0.3 + size_score * 0.2)
+            complexity_score = max(1, min(10, round(complexity_raw)))
+
+            # Determine difficulty label and emoji
+            if complexity_score <= 3:
+                difficulty = f"★☆☆ Makkelijk (Score: {complexity_score}/10)"
+                emoji = "😊"
+            elif complexity_score <= 6:
+                difficulty = f"★★☆ Gemiddeld (Score: {complexity_score}/10)"
+                emoji = "🙂"
+            elif complexity_score <= 8:
+                difficulty = f"★★★ Uitdagend (Score: {complexity_score}/10)"
+                emoji = "😅"
             else:
-                difficulty = "★★★★ Moeilijk"
+                difficulty = f"★★★★ Expert (Score: {complexity_score}/10)"
+                emoji = "🔥"
 
             # Format statistics text
             lines = [
-                f"<b>Project Statistieken</b>",
+                f"<b>📊 Project Statistieken</b>",
                 f"",
                 f"Kleuren: <b>{num_colors}</b>",
                 f"Gebieden: <b>{total_regions}</b>",
-                f"Gemiddeld: <b>{avg_regions_per_color:.1f}</b>",
+                f"Gem. per kleur: <b>{avg_regions_per_color:.1f}</b>",
+                f"Gem. grootte: <b>{avg_region_size:.0f}px</b>",
                 f"",
-                f"Moeilijkheid: <b>{difficulty}</b>",
+                f"{emoji} <b>{difficulty}</b>",
             ]
 
             self.stats_label.setText("<br>".join(lines))
