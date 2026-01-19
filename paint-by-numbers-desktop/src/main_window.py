@@ -28,6 +28,8 @@ from presentation_mode import PresentationMode
 from manual_color_picker import ColorSelectionDialog, ManualColorPicker
 from project_manager import ProjectManager
 from selection_tools import SelectionTools, SelectionMode
+from welcome_screen import WelcomeScreen
+from status_indicator import StatusIndicator
 # Lazy import for memory_manager to speed up startup
 # from memory_manager import GlobalMemoryManager
 
@@ -637,6 +639,11 @@ class JSPRBeamerSetup(QMainWindow):
         self.presentation_window = None
         self.manual_picker = None
 
+        # UI components
+        self.welcome_screen = None
+        self.status_indicator = None
+        self.main_ui_widget = None
+
         # Auto-save state
         self.has_unsaved_changes = False
         self.auto_save_enabled = True
@@ -674,12 +681,21 @@ class JSPRBeamerSetup(QMainWindow):
         self.setWindowTitle('JSPR Beamer Setup v1.0')
         self.setGeometry(100, 100, 1600, 900)
 
-        # Create central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        # Create central widget with stacked layout
+        from PyQt5.QtWidgets import QStackedWidget
+        self.stacked_widget = QStackedWidget()
+        self.setCentralWidget(self.stacked_widget)
 
-        # Main layout
-        main_layout = QHBoxLayout(central_widget)
+        # Create welcome screen
+        self.welcome_screen = WelcomeScreen(recent_files=self.get_recent_files_with_time())
+        self.welcome_screen.open_file_requested.connect(self.open_image)
+        self.welcome_screen.open_project_requested.connect(self.load_project)
+        self.welcome_screen.load_recent_requested.connect(self.open_recent_file)
+        self.stacked_widget.addWidget(self.welcome_screen)
+
+        # Create main UI widget
+        self.main_ui_widget = QWidget()
+        main_layout = QHBoxLayout(self.main_ui_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
@@ -712,12 +728,37 @@ class JSPRBeamerSetup(QMainWindow):
         self.splitter.setSizes([int(total_width * 0.20), int(total_width * 0.60), int(total_width * 0.20)])
 
         main_layout.addWidget(self.splitter)
+        self.stacked_widget.addWidget(self.main_ui_widget)
+
+        # Show welcome screen by default
+        self.stacked_widget.setCurrentWidget(self.welcome_screen)
 
         # Create menu bar
         self.create_menu_bar()
 
         # Create status bar
         self.statusBar().showMessage('Klaar')
+
+    def switch_to_main_ui(self):
+        """Switch from welcome screen to main UI"""
+        if self.stacked_widget.currentWidget() == self.welcome_screen:
+            self.stacked_widget.setCurrentWidget(self.main_ui_widget)
+            logger.info("Switched to main UI")
+
+    def open_recent_file(self, file_path: str):
+        """Open a recent file from the welcome screen"""
+        if Path(file_path).exists():
+            self.load_image(file_path)
+        else:
+            QMessageBox.warning(
+                self,
+                "Bestand niet gevonden",
+                f"Het bestand kan niet worden gevonden:\n{file_path}"
+            )
+            # Remove from recent files
+            if file_path in self.recent_files:
+                self.recent_files.remove(file_path)
+                self.save_config()
 
     def setup_auto_save(self):
         """Setup automatic saving"""
@@ -972,12 +1013,12 @@ class JSPRBeamerSetup(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
 
         # === BESTAND SECTION ===
-        file_group = QGroupBox("📁 Bestand")
+        file_group = QGroupBox("Bestand")
         file_layout = QVBoxLayout()
         file_layout.setSpacing(6)
 
         # Open button
-        self.open_btn = QPushButton("📂 Open Afbeelding...")
+        self.open_btn = QPushButton("Open Afbeelding...")
         self.open_btn.setMinimumHeight(32)
         self.open_btn.clicked.connect(self.open_image)
         file_layout.addWidget(self.open_btn)
@@ -994,7 +1035,7 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(file_group)
 
         # === KLEUREN SECTION ===
-        colors_group = QGroupBox("🎨 Kleuren")
+        colors_group = QGroupBox("Kleuren")
         colors_layout = QVBoxLayout()
         colors_layout.setSpacing(6)
 
@@ -1009,12 +1050,12 @@ class JSPRBeamerSetup(QMainWindow):
         colors_layout.addLayout(color_count_layout)
 
         # Detect colors button
-        self.detect_colors_btn = QPushButton("🔍 Detecteer Kleuren")
+        self.detect_colors_btn = QPushButton("Detecteer Kleuren")
         self.detect_colors_btn.clicked.connect(self.show_color_selection_dialog)
         colors_layout.addWidget(self.detect_colors_btn)
 
         # Black/White selection button
-        self.black_white_btn = QPushButton("⚫⚪ Markeer Zwart/Wit...")
+        self.black_white_btn = QPushButton("Markeer Zwart/Wit...")
         self.black_white_btn.setToolTip("Selecteer welke kleuren als zwart of wit behandeld moeten worden")
         self.black_white_btn.clicked.connect(self.open_black_white_dialog)
         colors_layout.addWidget(self.black_white_btn)
@@ -1023,22 +1064,22 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(colors_group)
 
         # === VISUALISATIE SECTION ===
-        mode_group = QGroupBox("👁 Visualisatie")
+        mode_group = QGroupBox("Visualisatie")
         mode_layout = QVBoxLayout()
         mode_layout.setSpacing(6)
 
-        self.mode_original_btn = QPushButton("📷 Origineel")
+        self.mode_original_btn = QPushButton("Origineel")
         self.mode_original_btn.setCheckable(True)
         self.mode_original_btn.setChecked(True)
         self.mode_original_btn.clicked.connect(lambda: self.set_mode('original'))
         mode_layout.addWidget(self.mode_original_btn)
 
-        self.mode_pbn_btn = QPushButton("🎨 Paint-by-Numbers")
+        self.mode_pbn_btn = QPushButton("Paint-by-Numbers")
         self.mode_pbn_btn.setCheckable(True)
         self.mode_pbn_btn.clicked.connect(lambda: self.set_mode('paintByNumbers'))
         mode_layout.addWidget(self.mode_pbn_btn)
 
-        self.mode_line_btn = QPushButton("✏️ Lijntekening")
+        self.mode_line_btn = QPushButton("Lijntekening")
         self.mode_line_btn.setCheckable(True)
         self.mode_line_btn.clicked.connect(lambda: self.set_mode('lineDrawing'))
         mode_layout.addWidget(self.mode_line_btn)
@@ -1047,7 +1088,7 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(mode_group)
 
         # === WEERGAVE SECTION ===
-        display_group = QGroupBox("⚙️ Weergave")
+        display_group = QGroupBox("Weergave")
         display_layout = QVBoxLayout()
         display_layout.setSpacing(6)
 
@@ -1066,7 +1107,7 @@ class JSPRBeamerSetup(QMainWindow):
         display_layout.addWidget(self.show_outlines_checkbox)
 
         # Herbereken button (hidden when real-time is on)
-        self.recalc_btn = QPushButton("🔄 Herbereken")
+        self.recalc_btn = QPushButton("Herbereken")
         self.recalc_btn.setToolTip("Handmatig updaten (Ctrl+R)")
         self.recalc_btn.clicked.connect(self.update_parameters)
         self.recalc_btn.setVisible(False)
@@ -1076,7 +1117,7 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(display_group)
 
         # === TEKENING PARAMETERS SECTION ===
-        drawing_group = QGroupBox("✏️ Tekening")
+        drawing_group = QGroupBox("Tekening")
         drawing_layout = QVBoxLayout()
         drawing_layout.setSpacing(6)
 
@@ -1121,18 +1162,18 @@ class JSPRBeamerSetup(QMainWindow):
         layout.addWidget(drawing_group)
 
         # === TOOLS SECTION ===
-        tools_group = QGroupBox("🔧 Tools")
+        tools_group = QGroupBox("Tools")
         tools_layout = QVBoxLayout()
         tools_layout.setSpacing(6)
 
         # Presentation mode button
-        self.presentation_btn = QPushButton("🖥 Presentatiemodus")
+        self.presentation_btn = QPushButton("Presentatiemodus")
         self.presentation_btn.setToolTip("Open in fullscreen presentatiemodus")
         self.presentation_btn.clicked.connect(self.enter_presentation_mode)
         tools_layout.addWidget(self.presentation_btn)
 
         # Magnifier toggle button
-        self.magnifier_toggle_btn = QPushButton("🔍 Vergrootglas (M)")
+        self.magnifier_toggle_btn = QPushButton("Vergrootglas (M)")
         self.magnifier_toggle_btn.setCheckable(True)
         self.magnifier_toggle_btn.setChecked(True)
         self.magnifier_toggle_btn.setToolTip("Toggle vergrootglas bij cursor (sneltoets: M)")
@@ -1156,24 +1197,24 @@ class JSPRBeamerSetup(QMainWindow):
         # Tool buttons
         tools_layout = QHBoxLayout()
 
-        self.magic_wand_btn = QPushButton("🪄")
+        self.magic_wand_btn = QPushButton("Wand")
         self.magic_wand_btn.setCheckable(True)
         self.magic_wand_btn.setToolTip("Magic Wand - Klik om vergelijkbare kleuren te selecteren\nShift+Klik: voeg toe aan selectie")
-        self.magic_wand_btn.setMaximumWidth(40)
+        self.magic_wand_btn.setMaximumWidth(60)
         self.magic_wand_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.MAGIC_WAND))
         tools_layout.addWidget(self.magic_wand_btn)
 
-        self.brush_btn = QPushButton("🖌")
+        self.brush_btn = QPushButton("Brush")
         self.brush_btn.setCheckable(True)
         self.brush_btn.setToolTip("Brush - Verf over gebieden\nCtrl: wis selectie")
-        self.brush_btn.setMaximumWidth(40)
+        self.brush_btn.setMaximumWidth(60)
         self.brush_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.BRUSH))
         tools_layout.addWidget(self.brush_btn)
 
-        self.polygon_btn = QPushButton("📐")
+        self.polygon_btn = QPushButton("Polygon")
         self.polygon_btn.setCheckable(True)
         self.polygon_btn.setToolTip("Polygon - Klik punten om vorm te maken\nEnter: voltooi, Esc: annuleer")
-        self.polygon_btn.setMaximumWidth(40)
+        self.polygon_btn.setMaximumWidth(60)
         self.polygon_btn.clicked.connect(lambda: self.set_selection_mode(SelectionMode.POLYGON))
         tools_layout.addWidget(self.polygon_btn)
 
@@ -1316,6 +1357,10 @@ class JSPRBeamerSetup(QMainWindow):
         """)
         layout.addWidget(self.stats_label)
 
+        # Status Indicator
+        self.status_indicator = StatusIndicator()
+        layout.addWidget(self.status_indicator)
+
         # Sorting dropdown
         sort_layout = QHBoxLayout()
         sort_layout.setSpacing(6)
@@ -1367,11 +1412,18 @@ class JSPRBeamerSetup(QMainWindow):
         """Load image from file"""
         self.statusBar().showMessage(f"Laden: {os.path.basename(file_path)}...")
 
+        # Switch to main UI if still on welcome screen
+        self.switch_to_main_ui()
+
         success = self.image_processor.load_image(file_path)
 
         if success:
             self.current_file_path = file_path
             self.add_to_recent_files(file_path)
+
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("image_loaded", True)
 
             # Update preview
             img = self.image_processor.get_image_copy()
@@ -1548,6 +1600,10 @@ class JSPRBeamerSetup(QMainWindow):
 
         progress_callback(50, "Kleuren verwerken...")
         self.color_manager.set_colors(colors)
+
+        # Update status indicator
+        if self.status_indicator:
+            self.status_indicator.set_status("colors_detected", True)
 
         progress_callback(80, "Interface updaten...")
         self.update_color_palette()
@@ -2589,6 +2645,10 @@ class JSPRBeamerSetup(QMainWindow):
                 metadata={'type': 'rendered', 'mode': self.current_mode}
             )
 
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("rendered", True)
+
             # Update statistics after successful render
             self.update_statistics()
         else:
@@ -3031,6 +3091,10 @@ class JSPRBeamerSetup(QMainWindow):
             cv2.imwrite(file_path, bgr)
             self.statusBar().showMessage(f"Geëxporteerd: {os.path.basename(file_path)}")
 
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("exported", True)
+
     def export_with_legend(self):
         """Export as PNG with color legend embedded"""
         if self.canvas.image is None:
@@ -3140,6 +3204,10 @@ class JSPRBeamerSetup(QMainWindow):
             cv2.imwrite(file_path, bgr)
             self.statusBar().showMessage(f"Geëxporteerd met legenda: {os.path.basename(file_path)}")
 
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("exported", True)
+
         except Exception as e:
             logger.error(f"Error exporting with legend: {e}")
             QMessageBox.critical(
@@ -3235,6 +3303,11 @@ class JSPRBeamerSetup(QMainWindow):
                     f.write(svg_content)
 
                 self.statusBar().showMessage(f"SVG geëxporteerd: {os.path.basename(file_path)}")
+
+                # Update status indicator
+                if self.status_indicator:
+                    self.status_indicator.set_status("exported", True)
+
                 QMessageBox.information(
                     self,
                     "SVG Export Succesvol",
@@ -3448,6 +3521,11 @@ class JSPRBeamerSetup(QMainWindow):
             c.save()
 
             self.statusBar().showMessage(f"PDF geëxporteerd: {os.path.basename(file_path)}")
+
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("exported", True)
+
             QMessageBox.information(
                 self,
                 "PDF Export Succesvol",
@@ -3517,6 +3595,23 @@ class JSPRBeamerSetup(QMainWindow):
             logger.info("Config saved")
         except Exception as e:
             logger.error(f"Error saving config: {e}")
+
+    def get_recent_files_with_time(self):
+        """Get recent files with time ago information"""
+        from datetime import datetime
+        result = []
+        for file_path in self.recent_files[:5]:  # Max 5 for welcome screen
+            if Path(file_path).exists():
+                modified_time = Path(file_path).stat().st_mtime
+                time_diff = time.time() - modified_time
+                if time_diff < 3600:
+                    time_ago = f"{int(time_diff / 60)} minuten geleden"
+                elif time_diff < 86400:
+                    time_ago = f"{int(time_diff / 3600)} uur geleden"
+                else:
+                    time_ago = f"{int(time_diff / 86400)} dagen geleden"
+                result.append((file_path, time_ago))
+        return result
 
     def add_to_recent_files(self, file_path: str):
         """Add file to recent files list"""
