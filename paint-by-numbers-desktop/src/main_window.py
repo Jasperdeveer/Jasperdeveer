@@ -739,11 +739,77 @@ class JSPRBeamerSetup(QMainWindow):
         # Create status bar
         self.statusBar().showMessage('Klaar')
 
+        # Set initial button states (all disabled except open)
+        self.update_button_states()
+
     def switch_to_main_ui(self):
         """Switch from welcome screen to main UI"""
         if self.stacked_widget.currentWidget() == self.welcome_screen:
             self.stacked_widget.setCurrentWidget(self.main_ui_widget)
             logger.info("Switched to main UI")
+
+    def update_button_states(self):
+        """Update enabled/disabled state of buttons based on workflow state"""
+        has_image = self.image_processor.original_image is not None
+        has_colors = len(self.color_manager.get_colors()) > 0
+        has_rendered = self.canvas.image is not None
+
+        # File operations - always enabled
+        self.open_btn.setEnabled(True)
+
+        # Color detection - requires image
+        self.detect_colors_btn.setEnabled(has_image)
+        self.detect_colors_btn.setToolTip(
+            "Detecteer kleuren in de afbeelding" if has_image
+            else "Open eerst een afbeelding"
+        )
+
+        # Mode buttons - require colors
+        self.mode_original_btn.setEnabled(has_colors)
+        self.mode_pbn_btn.setEnabled(has_colors)
+        self.mode_line_btn.setEnabled(has_colors)
+
+        # Visualization controls - require colors
+        if hasattr(self, 'realtime_checkbox'):
+            self.realtime_checkbox.setEnabled(has_colors)
+        if hasattr(self, 'show_outlines_checkbox'):
+            self.show_outlines_checkbox.setEnabled(has_colors)
+        if hasattr(self, 'recalc_btn'):
+            self.recalc_btn.setEnabled(has_colors)
+
+        # Drawing parameters - require colors
+        if hasattr(self, 'line_width_spin'):
+            self.line_width_spin.setEnabled(has_colors)
+        if hasattr(self, 'number_size_spin'):
+            self.number_size_spin.setEnabled(has_colors)
+        if hasattr(self, 'region_size_spin'):
+            self.region_size_spin.setEnabled(has_colors)
+
+        # Tools - require image
+        if hasattr(self, 'presentation_btn'):
+            self.presentation_btn.setEnabled(has_rendered)
+            self.presentation_btn.setToolTip(
+                "Open in fullscreen presentatiemodus" if has_rendered
+                else "Render eerst de afbeelding"
+            )
+        if hasattr(self, 'magnifier_toggle_btn'):
+            self.magnifier_toggle_btn.setEnabled(has_image)
+
+        # Selection tools - require image and colors
+        if hasattr(self, 'magic_wand_btn'):
+            self.magic_wand_btn.setEnabled(has_colors)
+        if hasattr(self, 'brush_btn'):
+            self.brush_btn.setEnabled(has_colors)
+        if hasattr(self, 'polygon_btn'):
+            self.polygon_btn.setEnabled(has_colors)
+
+        # Color management - require colors
+        if hasattr(self, 'black_white_btn'):
+            self.black_white_btn.setEnabled(has_colors)
+            self.black_white_btn.setToolTip(
+                "Selecteer welke kleuren als zwart of wit behandeld moeten worden" if has_colors
+                else "Detecteer eerst kleuren"
+            )
 
     def open_recent_file(self, file_path: str):
         """Open a recent file from the welcome screen"""
@@ -1425,6 +1491,9 @@ class JSPRBeamerSetup(QMainWindow):
             if self.status_indicator:
                 self.status_indicator.set_status("image_loaded", True)
 
+            # Update button states
+            self.update_button_states()
+
             # Update preview
             img = self.image_processor.get_image_copy()
             self.update_preview(img)
@@ -1604,6 +1673,9 @@ class JSPRBeamerSetup(QMainWindow):
         # Update status indicator
         if self.status_indicator:
             self.status_indicator.set_status("colors_detected", True)
+
+        # Update button states
+        self.update_button_states()
 
         progress_callback(80, "Interface updaten...")
         self.update_color_palette()
@@ -2648,6 +2720,9 @@ class JSPRBeamerSetup(QMainWindow):
             # Update status indicator
             if self.status_indicator:
                 self.status_indicator.set_status("rendered", True)
+
+            # Update button states
+            self.update_button_states()
 
             # Update statistics after successful render
             self.update_statistics()
