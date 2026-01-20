@@ -41,7 +41,8 @@ class Visualizer:
             'simplify_epsilon': 1.0,
             'smoothing_iterations': 2,
             'corner_angle_threshold': 120,
-            'show_outlines': False  # Default: outlines hidden (black is always visible)
+            'show_outlines': False,  # Default: outlines hidden (black is always visible)
+            'hide_black_fill': False  # New: Option to hide black fill in line drawing
         }
 
     def set_image_processor(self, processor: ImageProcessor):
@@ -199,14 +200,26 @@ class Visualizer:
             # For black regions, only draw external boundary (not internal details)
             result = self.draw_contours(result, exclude_internal_for_black=True)
 
-        # Fill black regions completely (ALWAYS, after contours so black stays on top)
-        color_map_2d = self.color_map.reshape(height, width)
-        for color in self.color_manager.get_colors():
-            if hasattr(color, 'is_black') and color.is_black:
-                # Fill all pixels of this color with pure black
-                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
-                result[mask] = [0, 0, 0]
-                logger.info(f"Filled black regions: {np.sum(mask)} pixels")
+        # Fill black regions completely (unless hide_black_fill is enabled)
+        if not self.parameters.get('hide_black_fill'):
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    # Fill all pixels of this color with pure black
+                    mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                    result[mask] = [0, 0, 0]
+                    logger.info(f"Filled black regions: {np.sum(mask)} pixels")
+        else:
+            # When hiding black fill, draw only the contours of black regions
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    # Find contours of black regions
+                    mask = (color_map_2d == (color.number - 1)).astype(np.uint8)
+                    contours_black, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    # Draw black contours
+                    cv2.drawContours(result, contours_black, -1, (0, 0, 0), int(self.parameters['line_width']))
+                    logger.info(f"Drew {len(contours_black)} black contours")
 
         if progress_callback:
             progress_callback(70, "Placing numbers...")
@@ -366,11 +379,12 @@ class Visualizer:
                 region
             )
 
-            # Calculate font size based on region size
-            font_size = max(0.3, min(
-                self.parameters['number_size'] / 20.0,
-                np.sqrt(region['size']) / 50.0
-            ))
+            # Calculate font size proportional to image dimensions
+            # Base size scales with image width (larger images = larger numbers)
+            base_size = (width / 1000.0) * (self.parameters['number_size'] / 16.0)
+            # Add region-based adjustment (smaller regions = slightly smaller numbers)
+            region_scale = min(1.0, np.sqrt(region['size']) / 100.0)
+            font_size = max(0.3, base_size * region_scale)
 
             number_text = str(color.number)
 
@@ -463,13 +477,24 @@ class Visualizer:
             if self.parameters.get('show_outlines'):
                 result = self.draw_contours(result, exclude_internal_for_black=True)
 
-            # Fill black regions completely (ALWAYS, after contours so black stays on top)
+            # Fill black regions completely (unless hide_black_fill is enabled)
             if self.color_map is not None and self.color_manager:
-                color_map_2d = self.color_map.reshape(height, width)
-                for color in self.color_manager.get_colors():
-                    if hasattr(color, 'is_black') and color.is_black:
-                        mask = color_map_2d == (color.number - 1)
-                        result[mask] = [0, 0, 0]
+                if not self.parameters.get('hide_black_fill'):
+                    color_map_2d = self.color_map.reshape(height, width)
+                    for color in self.color_manager.get_colors():
+                        if hasattr(color, 'is_black') and color.is_black:
+                            mask = color_map_2d == (color.number - 1)
+                            result[mask] = [0, 0, 0]
+                else:
+                    # When hiding black fill, draw only the contours of black regions
+                    color_map_2d = self.color_map.reshape(height, width)
+                    for color in self.color_manager.get_colors():
+                        if hasattr(color, 'is_black') and color.is_black:
+                            # Find contours of black regions
+                            mask = (color_map_2d == (color.number - 1)).astype(np.uint8)
+                            contours_black, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                            # Draw black contours
+                            cv2.drawContours(result, contours_black, -1, (0, 0, 0), int(self.parameters['line_width']))
 
             if self.show_numbers:
                 result = self.draw_numbers(result)

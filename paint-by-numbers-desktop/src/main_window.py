@@ -179,6 +179,8 @@ class CanvasWidget(QWidget):
     color_picked = pyqtSignal(int, int, int)
     # Signal emitted when zoom level changes (float)
     zoom_changed = pyqtSignal(float)
+    # Signal emitted when zoom crosses quality threshold (requires re-render)
+    quality_change_needed = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -206,6 +208,11 @@ class CanvasWidget(QWidget):
         self.cache_max_size = 10  # Max cached zoom levels
         self.current_image_hash = None  # Track when image changes
 
+        # Dynamic quality: track zoom level at last render
+        self.last_render_zoom = 1.0
+        # Quality thresholds: re-render when crossing these
+        self.quality_thresholds = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
         self.setMinimumSize(800, 600)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)  # Track mouse for cursor changes
@@ -215,6 +222,8 @@ class CanvasWidget(QWidget):
         self.image = image
         # Clear cache when image changes
         self.clear_render_cache()
+        # Reset quality tracking
+        self.last_render_zoom = 1.0
         # Update image hash for cache management
         if image is not None:
             import hashlib
@@ -471,10 +480,35 @@ class CanvasWidget(QWidget):
         self.render_cache[cache_key] = q_image.copy()
         logger.debug(f"Cached QImage at zoom {cache_key} (cache size: {len(self.render_cache)})")
 
+    def get_quality_level(self, zoom: float) -> float:
+        """Get the nearest quality threshold for a zoom level"""
+        # Find the nearest threshold
+        nearest = self.quality_thresholds[0]
+        for threshold in self.quality_thresholds:
+            if abs(zoom - threshold) < abs(zoom - nearest):
+                nearest = threshold
+        return nearest
+
+    def check_quality_change(self, new_zoom: float):
+        """Check if zoom crossed a quality threshold"""
+        old_quality = self.get_quality_level(self.last_render_zoom)
+        new_quality = self.get_quality_level(new_zoom)
+
+        if old_quality != new_quality:
+            logger.info(f"Quality threshold crossed: {old_quality} -> {new_quality}")
+            self.last_render_zoom = new_zoom
+            self.render_cache.clear()  # Clear cache since we're re-rendering
+            self.quality_change_needed.emit(new_zoom)
+
     def set_zoom(self, zoom: float):
         """Set zoom level"""
+        old_zoom = self.zoom_level
         self.zoom_level = max(0.1, min(5.0, zoom))
         self.zoom_changed.emit(self.zoom_level)
+
+        # Check if we need to re-render at different quality
+        self.check_quality_change(self.zoom_level)
+
         self.update()
 
     def set_eyedropper_mode(self, enabled: bool):
@@ -510,6 +544,12 @@ class CanvasWidget(QWidget):
 
         # Clamp zoom level
         self.zoom_level = max(0.1, min(5.0, self.zoom_level))
+
+        # Check if we need to re-render at different quality
+        self.check_quality_change(self.zoom_level)
+
+        # Emit zoom changed signal
+        self.zoom_changed.emit(self.zoom_level)
 
         # Update display
         self.update()
@@ -840,6 +880,8 @@ class JSPRBeamerSetup(QMainWindow):
             self.realtime_checkbox.setEnabled(has_colors)
         if hasattr(self, 'show_outlines_checkbox'):
             self.show_outlines_checkbox.setEnabled(has_colors)
+        if hasattr(self, 'hide_black_checkbox'):
+            self.hide_black_checkbox.setEnabled(has_colors)
         if hasattr(self, 'recalc_btn'):
             self.recalc_btn.setEnabled(has_colors)
 
@@ -1260,6 +1302,13 @@ class JSPRBeamerSetup(QMainWindow):
         self.show_outlines_checkbox.stateChanged.connect(self.on_parameter_changed)
         display_layout.addWidget(self.show_outlines_checkbox)
 
+        # Hide black fill checkbox (only for line drawing mode)
+        self.hide_black_checkbox = QCheckBox("Verberg zwart (alleen contouren)")
+        self.hide_black_checkbox.setChecked(False)
+        self.hide_black_checkbox.setToolTip("Verberg zwarte vulling en toon alleen contouren (lijntekening modus)")
+        self.hide_black_checkbox.stateChanged.connect(self.on_parameter_changed)
+        display_layout.addWidget(self.hide_black_checkbox)
+
         # Herbereken button (hidden when real-time is on)
         self.recalc_btn = QPushButton("Herbereken")
         self.recalc_btn.setToolTip("Handmatig updaten (Ctrl+R)")
@@ -1485,6 +1534,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.canvas = CanvasWidget()
         self.canvas.color_picked.connect(self.on_color_picked)
         self.canvas.zoom_changed.connect(self.on_zoom_changed)
+        self.canvas.quality_change_needed.connect(self.on_quality_change_needed)
         layout.addWidget(self.canvas, stretch=1)
 
         return panel
@@ -2774,7 +2824,8 @@ class JSPRBeamerSetup(QMainWindow):
             line_width=self.line_width_spin.value(),
             number_size=self.number_size_spin.value(),
             min_region_size=self.region_size_spin.value(),
-            show_outlines=self.show_outlines_checkbox.isChecked()
+            show_outlines=self.show_outlines_checkbox.isChecked(),
+            hide_black_fill=self.hide_black_checkbox.isChecked()
         )
 
         # Clear cache to force re-render
@@ -2832,6 +2883,28 @@ class JSPRBeamerSetup(QMainWindow):
     def on_zoom_changed(self, zoom_level: float):
         """Handle zoom level changed from canvas"""
         self.zoom_label.setText(f"{int(zoom_level * 100)}%")
+
+    def on_quality_change_needed(self, zoom_level: float):
+        """Handle quality threshold crossed - re-render at appropriate resolution"""
+        logger.info(f"Re-rendering at zoom level {zoom_level} for better quality")
+
+        # Scale parameters based on zoom level for better quality
+        # At higher zoom, use larger font sizes and line widths
+        zoom_scale = max(0.5, min(2.0, zoom_level))  # Clamp scaling between 0.5x and 2.0x
+
+        self.visualizer.set_parameters(
+            line_width=self.line_width_spin.value() * zoom_scale,
+            number_size=self.number_size_spin.value() * zoom_scale,
+            min_region_size=self.region_size_spin.value(),
+            show_outlines=self.show_outlines_checkbox.isChecked(),
+            hide_black_fill=self.hide_black_checkbox.isChecked()
+        )
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        self.render()
+
+        self.statusBar().showMessage(f"Kwaliteit aangepast voor zoom {int(zoom_level * 100)}%", 2000)
 
     def toggle_eyedropper(self):
         """Toggle eyedropper mode"""
@@ -3008,7 +3081,8 @@ class JSPRBeamerSetup(QMainWindow):
             line_width=self.line_width_spin.value(),
             number_size=self.number_size_spin.value(),
             min_region_size=self.region_size_spin.value(),
-            show_outlines=not current_state
+            show_outlines=not current_state,
+            hide_black_fill=self.hide_black_checkbox.isChecked()
         )
 
         # Clear cache and re-render
@@ -3058,7 +3132,8 @@ class JSPRBeamerSetup(QMainWindow):
                 'line_width': self.line_width_spin.value(),
                 'number_size': self.number_size_spin.value(),
                 'min_region_size': self.region_size_spin.value(),
-                'show_outlines': self.show_outlines_checkbox.isChecked()
+                'show_outlines': self.show_outlines_checkbox.isChecked(),
+                'hide_black_fill': self.hide_black_checkbox.isChecked()
             }
 
             # Save project
@@ -3123,6 +3198,7 @@ class JSPRBeamerSetup(QMainWindow):
             self.number_size_spin.setValue(params.get('number_size', 16))
             self.region_size_spin.setValue(params.get('min_region_size', 50))
             self.show_outlines_checkbox.setChecked(params.get('show_outlines', True))
+            self.hide_black_checkbox.setChecked(params.get('hide_black_fill', False))
 
             # Restore mode
             self.set_mode(project_data['current_mode'])
