@@ -41,21 +41,26 @@ echo ""
 echo "Updating from git..."
 git pull origin claude/enhance-line-drawing-precision-kyhzU 2>&1 || echo "Git pull failed (continuing anyway)"
 
-# Activeer venv
-echo ""
-echo "Activating venv..."
-source venv/bin/activate
+# Gebruik direct het Python pad uit venv (geen activate nodig)
+PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
 
-# Check python
-echo "Python: $(which python)"
-echo "Version: $(python --version 2>&1)"
+echo ""
+echo "Python binary: $PYTHON_BIN"
+
+if [ ! -f "$PYTHON_BIN" ]; then
+    echo "ERROR: Python binary not found at $PYTHON_BIN"
+    osascript -e 'display dialog "Python binary niet gevonden!\n\nVerwacht: '"$PYTHON_BIN"'\n\nLog: '"$LOG_FILE"'" buttons {"OK"} with icon stop' &
+    exit 1
+fi
+
+echo "Version: $($PYTHON_BIN --version 2>&1)"
 
 # Start de app
 echo ""
 echo "Starting main.py..."
 echo ""
 
-python main.py
+"$PYTHON_BIN" main.py
 
 EXIT_CODE=$?
 echo ""
