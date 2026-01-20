@@ -21,6 +21,7 @@ class PresentationMode(QWidget):
     toggle_numbers_requested = pyqtSignal()
     cycle_mode_requested = pyqtSignal()
     toggle_outlines_requested = pyqtSignal()
+    quality_change_needed = pyqtSignal(float)  # Emitted when zoom crosses quality threshold
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -50,6 +51,11 @@ class PresentationMode(QWidget):
         # Clickable areas
         self.zoom_rect = None  # QRect for zoom text clickable area
 
+        # Dynamic quality: track zoom level at last render
+        self.last_render_zoom = 1.0
+        # Quality thresholds: re-render when crossing these
+        self.quality_thresholds = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
         # Keyboard shortcuts overlay
         self.show_shortcuts = True
         self.shortcuts_opacity = 1.0
@@ -72,11 +78,32 @@ class PresentationMode(QWidget):
     def set_image(self, image: np.ndarray):
         """Set image to display"""
         self.image = image
+        # Reset quality tracking when setting new image
+        self.last_render_zoom = self.zoom_level
         self.update()
 
     def set_original_image(self, original: np.ndarray):
         """Set original image for reference"""
         self.original_image = original
+
+    def get_quality_level(self, zoom: float) -> float:
+        """Get the nearest quality threshold for a zoom level"""
+        # Find the nearest threshold
+        nearest = self.quality_thresholds[0]
+        for threshold in self.quality_thresholds:
+            if abs(zoom - threshold) < abs(zoom - nearest):
+                nearest = threshold
+        return nearest
+
+    def check_quality_change(self, new_zoom: float):
+        """Check if zoom crossed a quality threshold"""
+        old_quality = self.get_quality_level(self.last_render_zoom)
+        new_quality = self.get_quality_level(new_zoom)
+
+        if old_quality != new_quality:
+            logger.info(f"Presentation quality threshold crossed: {old_quality} -> {new_quality}")
+            self.last_render_zoom = new_zoom
+            self.quality_change_needed.emit(new_zoom)
 
     def toggle_numbers(self):
         """Toggle number visibility"""
@@ -138,12 +165,14 @@ class PresentationMode(QWidget):
         """Zoom in"""
         self.zoom_level = min(5.0, self.zoom_level + 0.25)
         logger.info(f"Zoom: {int(self.zoom_level * 100)}%")
+        self.check_quality_change(self.zoom_level)
         self.update()
 
     def zoom_out(self):
         """Zoom out"""
         self.zoom_level = max(0.25, self.zoom_level - 0.25)
         logger.info(f"Zoom: {int(self.zoom_level * 100)}%")
+        self.check_quality_change(self.zoom_level)
         self.update()
 
     def reset_zoom(self):
@@ -152,6 +181,7 @@ class PresentationMode(QWidget):
         self.pan_x = 0
         self.pan_y = 0
         logger.info("Reset zoom and pan")
+        self.check_quality_change(self.zoom_level)
         self.update()
 
     def pan(self, dx: int, dy: int):
@@ -219,6 +249,9 @@ class PresentationMode(QWidget):
 
         # Clamp zoom level
         self.zoom_level = max(0.1, min(5.0, self.zoom_level))
+
+        # Check if we need to re-render at different quality
+        self.check_quality_change(self.zoom_level)
 
         # Update display
         self.update()
@@ -534,6 +567,7 @@ class PresentationMode(QWidget):
         if ok:
             self.zoom_level = zoom_value / 100.0
             logger.info(f"Zoom set to {zoom_value}%")
+            self.check_quality_change(self.zoom_level)
             self.update()
 
     def closeEvent(self, event):

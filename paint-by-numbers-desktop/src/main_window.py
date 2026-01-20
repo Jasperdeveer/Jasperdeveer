@@ -3034,6 +3034,7 @@ class JSPRBeamerSetup(QMainWindow):
             self.presentation_window.toggle_numbers_requested.connect(self.on_toggle_numbers_presentation)
             self.presentation_window.cycle_mode_requested.connect(self.on_cycle_mode_presentation)
             self.presentation_window.toggle_outlines_requested.connect(self.on_toggle_outlines_presentation)
+            self.presentation_window.quality_change_needed.connect(self.on_presentation_quality_change)
 
         # Set current image
         self.presentation_window.set_image(self.canvas.image)
@@ -3112,6 +3113,34 @@ class JSPRBeamerSetup(QMainWindow):
             self.presentation_window.set_image(self.canvas.image)
 
         logger.info(f"Mode cycled to: {next_mode}")
+
+    def on_presentation_quality_change(self, zoom_level: float):
+        """Handle quality threshold crossed in presentation mode - re-render at appropriate resolution"""
+        logger.info(f"Re-rendering for presentation mode at zoom level {zoom_level}")
+
+        # Scale parameters based on zoom level for better quality
+        # At higher zoom, use larger font sizes and line widths
+        zoom_scale = max(0.5, min(2.0, zoom_level))  # Clamp scaling between 0.5x and 2.0x
+
+        self.visualizer.set_parameters(
+            line_width=self.line_width_spin.value() * zoom_scale,
+            number_size=self.number_size_spin.value() * zoom_scale,
+            min_region_size=self.region_size_spin.value(),
+            show_outlines=self.show_outlines_checkbox.isChecked(),
+            hide_black_fill=self.hide_black_checkbox.isChecked()
+        )
+
+        # Clear cache and re-render
+        self.visualizer.clear_cache()
+        result = self.visualizer.render()
+
+        if result is not None:
+            # Update both canvas and presentation window
+            self.canvas.set_image(result)
+            if self.presentation_window:
+                self.presentation_window.set_image(result)
+
+        logger.info(f"Presentation quality updated for zoom {int(zoom_level * 100)}%")
 
     def save_project(self):
         """Save current project as .jspr file"""
