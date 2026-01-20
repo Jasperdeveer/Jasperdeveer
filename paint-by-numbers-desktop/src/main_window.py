@@ -691,6 +691,7 @@ class JSPRBeamerSetup(QMainWindow):
         self.welcome_screen.open_file_requested.connect(self.open_image)
         self.welcome_screen.open_project_requested.connect(self.load_project)
         self.welcome_screen.load_recent_requested.connect(self.open_recent_file)
+        self.welcome_screen.remove_recent_requested.connect(self.remove_recent_file)
         self.stacked_widget.addWidget(self.welcome_screen)
 
         # Create main UI widget
@@ -825,6 +826,28 @@ class JSPRBeamerSetup(QMainWindow):
             if file_path in self.recent_files:
                 self.recent_files.remove(file_path)
                 self.save_config()
+
+    def remove_recent_file(self, file_path: str):
+        """Remove a file from recent files list"""
+        if file_path in self.recent_files:
+            self.recent_files.remove(file_path)
+            self.save_config()
+
+            # Refresh welcome screen
+            self.welcome_screen.recent_files = self.get_recent_files_with_time()
+            # Force UI refresh by recreating the welcome screen
+            self.stacked_widget.removeWidget(self.welcome_screen)
+            self.welcome_screen.deleteLater()
+
+            self.welcome_screen = WelcomeScreen(recent_files=self.get_recent_files_with_time())
+            self.welcome_screen.open_file_requested.connect(self.open_image)
+            self.welcome_screen.open_project_requested.connect(self.load_project)
+            self.welcome_screen.load_recent_requested.connect(self.open_recent_file)
+            self.welcome_screen.remove_recent_requested.connect(self.remove_recent_file)
+            self.stacked_widget.insertWidget(0, self.welcome_screen)
+            self.stacked_widget.setCurrentWidget(self.welcome_screen)
+
+            logger.info(f"Removed from recent files: {file_path}")
 
     def setup_auto_save(self):
         """Setup automatic saving"""
