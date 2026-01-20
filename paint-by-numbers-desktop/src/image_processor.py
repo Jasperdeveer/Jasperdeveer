@@ -24,6 +24,7 @@ class ImageProcessor:
     def load_image(self, file_path: str) -> bool:
         """
         Load image from file path
+        Automatically scales down large images to max 4500px to improve performance
 
         Args:
             file_path: Path to image file
@@ -40,7 +41,21 @@ class ImageProcessor:
                 return False
 
             # Convert BGR to RGB for consistency
-            self.original_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            height, width = img_rgb.shape[:2]
+
+            # Scale down if image is too large (max 4500px on longest side)
+            MAX_DIMENSION = 4500
+            if width > MAX_DIMENSION or height > MAX_DIMENSION:
+                # Calculate scaling factor to fit within MAX_DIMENSION
+                scale = MAX_DIMENSION / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+
+                logger.info(f"Scaling down image from {width}x{height} to {new_width}x{new_height} for performance")
+                img_rgb = cv2.resize(img_rgb, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+            self.original_image = img_rgb
             self.height, self.width = self.original_image.shape[:2]
 
             logger.info(f"Loaded image: {self.width}x{self.height}")
@@ -51,17 +66,34 @@ class ImageProcessor:
             return False
 
     def load_image_from_array(self, img_array: np.ndarray) -> bool:
-        """Load image from numpy array (for drag & drop)"""
+        """
+        Load image from numpy array (for drag & drop)
+        Automatically scales down large images to max 4500px to improve performance
+        """
         try:
             if len(img_array.shape) == 2:
                 # Grayscale -> RGB
-                self.original_image = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
+                img_rgb = cv2.cvtColor(img_array, cv2.COLOR_GRAY2RGB)
             elif img_array.shape[2] == 4:
                 # RGBA -> RGB
-                self.original_image = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
+                img_rgb = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
             else:
-                self.original_image = img_array
+                img_rgb = img_array
 
+            height, width = img_rgb.shape[:2]
+
+            # Scale down if image is too large (max 4500px on longest side)
+            MAX_DIMENSION = 4500
+            if width > MAX_DIMENSION or height > MAX_DIMENSION:
+                # Calculate scaling factor to fit within MAX_DIMENSION
+                scale = MAX_DIMENSION / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+
+                logger.info(f"Scaling down image from {width}x{height} to {new_width}x{new_height} for performance")
+                img_rgb = cv2.resize(img_rgb, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+            self.original_image = img_rgb
             self.height, self.width = self.original_image.shape[:2]
             return True
         except Exception as e:
