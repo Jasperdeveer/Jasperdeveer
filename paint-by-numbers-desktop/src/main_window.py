@@ -30,6 +30,7 @@ from project_manager import ProjectManager
 from selection_tools import SelectionTools, SelectionMode
 from welcome_screen import WelcomeScreen
 from status_indicator import StatusIndicator
+from collapsible_section import CollapsibleSection
 # Lazy import for memory_manager to speed up startup
 # from memory_manager import GlobalMemoryManager
 
@@ -681,6 +682,70 @@ class JSPRBeamerSetup(QMainWindow):
         self.setWindowTitle('JSPR Beamer Setup v1.0')
         self.setGeometry(100, 100, 1600, 900)
 
+        # Apply modern stylesheet for better readability
+        self.setStyleSheet("""
+            QWidget {
+                font-size: 11pt;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            }
+            QLabel {
+                font-size: 11pt;
+                color: rgba(255, 255, 255, 0.9);
+            }
+            QPushButton {
+                font-size: 11pt;
+                padding: 8px 12px;
+                border-radius: 4px;
+                background-color: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                min-height: 28px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+            }
+            QPushButton:pressed {
+                background-color: rgba(255, 255, 255, 0.05);
+            }
+            QPushButton:checked {
+                background-color: rgba(102, 126, 234, 0.5);
+                border: 1px solid rgba(102, 126, 234, 0.7);
+            }
+            QGroupBox {
+                font-size: 12pt;
+                font-weight: bold;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                margin-top: 12px;
+                padding-top: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+            }
+            QSpinBox, QDoubleSpinBox, QLineEdit {
+                font-size: 11pt;
+                padding: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 3px;
+                background-color: rgba(0, 0, 0, 0.3);
+                min-height: 24px;
+            }
+            QCheckBox {
+                font-size: 11pt;
+                spacing: 8px;
+            }
+            QComboBox {
+                font-size: 11pt;
+                padding: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 3px;
+                background-color: rgba(0, 0, 0, 0.3);
+                min-height: 28px;
+            }
+        """)
+
         # Create central widget with stacked layout
         from PyQt5.QtWidgets import QStackedWidget
         self.stacked_widget = QStackedWidget()
@@ -707,8 +772,8 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Left panel: Controls
         left_panel = self.create_control_panel()
-        left_panel.setMinimumWidth(280)
-        left_panel.setMaximumWidth(450)
+        left_panel.setMinimumWidth(320)  # Wider for larger text
+        left_panel.setMaximumWidth(480)
         self.splitter.addWidget(left_panel)
 
         # Center panel: Canvas
@@ -1098,13 +1163,13 @@ class JSPRBeamerSetup(QMainWindow):
         """Create left control panel"""
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        layout.setSpacing(8)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(12)  # More spacing between sections
+        layout.setContentsMargins(12, 12, 12, 12)  # More padding
 
         # === BESTAND SECTION ===
         file_group = QGroupBox("Bestand")
         file_layout = QVBoxLayout()
-        file_layout.setSpacing(6)
+        file_layout.setSpacing(10)  # More spacing within section
 
         # Open button
         self.open_btn = QPushButton("Open Afbeelding...")
@@ -1126,7 +1191,7 @@ class JSPRBeamerSetup(QMainWindow):
         # === KLEUREN SECTION ===
         colors_group = QGroupBox("Kleuren")
         colors_layout = QVBoxLayout()
-        colors_layout.setSpacing(6)
+        colors_layout.setSpacing(10)
 
         # Color count
         color_count_layout = QHBoxLayout()
@@ -1155,7 +1220,7 @@ class JSPRBeamerSetup(QMainWindow):
         # === VISUALISATIE SECTION ===
         mode_group = QGroupBox("Visualisatie")
         mode_layout = QVBoxLayout()
-        mode_layout.setSpacing(6)
+        mode_layout.setSpacing(10)
 
         self.mode_original_btn = QPushButton("Origineel")
         self.mode_original_btn.setCheckable(True)
@@ -1179,7 +1244,7 @@ class JSPRBeamerSetup(QMainWindow):
         # === WEERGAVE SECTION ===
         display_group = QGroupBox("Weergave")
         display_layout = QVBoxLayout()
-        display_layout.setSpacing(6)
+        display_layout.setSpacing(10)
 
         # Real-time updates checkbox
         self.realtime_checkbox = QCheckBox("Live voorvertoning")
@@ -1208,7 +1273,7 @@ class JSPRBeamerSetup(QMainWindow):
         # === TEKENING PARAMETERS SECTION ===
         drawing_group = QGroupBox("Tekening")
         drawing_layout = QVBoxLayout()
-        drawing_layout.setSpacing(6)
+        drawing_layout.setSpacing(10)
 
         # Line width
         line_width_layout = QHBoxLayout()
@@ -1253,7 +1318,7 @@ class JSPRBeamerSetup(QMainWindow):
         # === TOOLS SECTION ===
         tools_group = QGroupBox("Tools")
         tools_layout = QVBoxLayout()
-        tools_layout.setSpacing(6)
+        tools_layout.setSpacing(10)
 
         # Presentation mode button
         self.presentation_btn = QPushButton("Presentatiemodus")
@@ -1275,7 +1340,7 @@ class JSPRBeamerSetup(QMainWindow):
         # Selection Tools section
         selection_group = QGroupBox("Selectie Tools")
         selection_layout = QVBoxLayout()
-        selection_layout.setSpacing(6)
+        selection_layout.setSpacing(10)
 
         # Info label
         info_label = QLabel("Selecteer gebieden om kleur toe te passen")
@@ -1452,7 +1517,7 @@ class JSPRBeamerSetup(QMainWindow):
 
         # Sorting dropdown
         sort_layout = QHBoxLayout()
-        sort_layout.setSpacing(6)
+        sort_layout.setSpacing(10)
 
         sort_label = QLabel("Sorteer op:")
         sort_layout.addWidget(sort_label)
