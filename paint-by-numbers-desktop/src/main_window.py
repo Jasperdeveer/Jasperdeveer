@@ -38,92 +38,169 @@ logger = logging.getLogger(__name__)
 
 
 class ShortcutsWidget(QWidget):
-    """Collapsible widget showing keyboard shortcuts"""
+    """Modern, responsive widget showing keyboard shortcuts"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2b2b2b;
-                border-radius: 4px;
-                padding: 8px;
-            }
-            QLabel {
-                color: #e0e0e0;
-            }
-        """)
+        self.setMinimumHeight(100)
+        self.setMaximumHeight(150)
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(4)
-        layout.setContentsMargins(12, 8, 12, 8)
+        # Main container with better styling
+        self.setStyleSheet("""
+            ShortcutsWidget {
+                background-color: #1e1e1e;
+                border: 1px solid #3d3d3d;
+                border-radius: 6px;
+            }
+        """)
 
-        # Title
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(10)
+
+        # Header with toggle hint
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(10)
+
         title = QLabel("⌨️ <b>Sneltoetsen</b>")
-        title.setStyleSheet("font-size: 13px; color: #4A90E2;")
-        layout.addWidget(title)
+        title.setStyleSheet("""
+            font-size: 14px;
+            color: #4A90E2;
+            font-weight: bold;
+            padding: 0;
+            margin: 0;
+        """)
+        header_layout.addWidget(title)
 
-        # Create grid for shortcuts
-        grid = QHBoxLayout()
-        grid.setSpacing(20)
+        toggle_hint = QLabel("<i>Druk H om te verbergen</i>")
+        toggle_hint.setStyleSheet("""
+            font-size: 11px;
+            color: #888;
+            font-style: italic;
+        """)
+        header_layout.addWidget(toggle_hint)
+        header_layout.addStretch()
+
+        main_layout.addLayout(header_layout)
+
+        # Scrollable shortcuts area
+        scroll = QScrollArea()
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+        """)
+
+        shortcuts_container = QWidget()
+        shortcuts_layout = QHBoxLayout(shortcuts_container)
+        shortcuts_layout.setSpacing(25)
+        shortcuts_layout.setContentsMargins(0, 0, 0, 0)
 
         # Column 1: View controls
-        col1 = QVBoxLayout()
-        col1.setSpacing(3)
-        col1_title = QLabel("<b>Weergave</b>")
-        col1_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
-        col1.addWidget(col1_title)
-        col1.addWidget(self.create_shortcut_label("N", "Cijfers aan/uit"))
-        col1.addWidget(self.create_shortcut_label("O", "Contouren aan/uit"))
-        col1.addWidget(self.create_shortcut_label("Z", "Wissel modus"))
-        col1.addWidget(self.create_shortcut_label("H", "Toggle dit venster"))
-        grid.addLayout(col1)
+        col1 = self.create_column("Weergave", [
+            ("N", "Cijfers"),
+            ("O", "Contouren"),
+            ("Z", "Wissel modus"),
+            ("H", "Verberg panel")
+        ])
+        shortcuts_layout.addLayout(col1)
 
         # Column 2: Grid controls
-        col2 = QVBoxLayout()
-        col2.setSpacing(3)
-        col2_title = QLabel("<b>Grid</b>")
-        col2_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
-        col2.addWidget(col2_title)
-        col2.addWidget(self.create_shortcut_label("G", "Grid aan/uit"))
-        col2.addWidget(self.create_shortcut_label("C", "Wissel kleur"))
-        col2.addWidget(self.create_shortcut_label("[", "Kleiner"))
-        col2.addWidget(self.create_shortcut_label("]", "Groter"))
-        grid.addLayout(col2)
+        col2 = self.create_column("Grid", [
+            ("G", "Aan/uit"),
+            ("C", "Kleur"),
+            ("[", "Kleiner"),
+            ("]", "Groter")
+        ])
+        shortcuts_layout.addLayout(col2)
 
         # Column 3: Zoom controls
-        col3 = QVBoxLayout()
-        col3.setSpacing(3)
-        col3_title = QLabel("<b>Zoom</b>")
-        col3_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
-        col3.addWidget(col3_title)
-        col3.addWidget(self.create_shortcut_label("+", "Zoom in"))
-        col3.addWidget(self.create_shortcut_label("-", "Zoom uit"))
-        col3.addWidget(self.create_shortcut_label("0", "Reset zoom"))
-        col3.addWidget(self.create_shortcut_label("Scroll", "Zoom"))
-        grid.addLayout(col3)
+        col3 = self.create_column("Zoom", [
+            ("+", "Inzoomen"),
+            ("-", "Uitzoomen"),
+            ("0", "Reset"),
+            ("Scroll", "Scrollen")
+        ])
+        shortcuts_layout.addLayout(col3)
 
         # Column 4: Other
-        col4 = QVBoxLayout()
-        col4.setSpacing(3)
-        col4_title = QLabel("<b>Overig</b>")
-        col4_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
-        col4.addWidget(col4_title)
-        col4.addWidget(self.create_shortcut_label("M", "Vergrootglas"))
-        col4.addWidget(self.create_shortcut_label("F11", "Presentatie"))
-        col4.addWidget(self.create_shortcut_label("F1", "Alle shortcuts"))
-        col4.addWidget(self.create_shortcut_label("Ctrl+E", "Export"))
-        grid.addLayout(col4)
+        col4 = self.create_column("Overig", [
+            ("M", "Vergrootglas"),
+            ("F11", "Presentatie"),
+            ("F1", "Help"),
+            ("Ctrl+E", "Export")
+        ])
+        shortcuts_layout.addLayout(col4)
 
-        grid.addStretch()
-        layout.addLayout(grid)
+        shortcuts_layout.addStretch()
 
-    def create_shortcut_label(self, key, description):
-        """Create a shortcut label with key and description"""
-        label = QLabel(f"<span style='background: #404040; padding: 2px 6px; border-radius: 2px; font-family: monospace;'>{key}</span>  {description}")
-        label.setStyleSheet("font-size: 10px; color: #e0e0e0;")
-        return label
+        scroll.setWidget(shortcuts_container)
+        main_layout.addWidget(scroll)
+
+    def create_column(self, title, shortcuts):
+        """Create a column with shortcuts"""
+        col = QVBoxLayout()
+        col.setSpacing(6)
+
+        # Column title
+        col_title = QLabel(f"<b>{title}</b>")
+        col_title.setStyleSheet("""
+            color: #60d0ff;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 0 0 4px 0;
+        """)
+        col_title.setMinimumWidth(110)
+        col.addWidget(col_title)
+
+        # Shortcuts
+        for key, desc in shortcuts:
+            shortcut_widget = self.create_shortcut_item(key, desc)
+            col.addWidget(shortcut_widget)
+
+        return col
+
+    def create_shortcut_item(self, key, description):
+        """Create a single shortcut item with key badge and description"""
+        container = QWidget()
+        container.setMinimumWidth(110)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        # Key badge
+        key_label = QLabel(key)
+        key_label.setStyleSheet("""
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #555;
+            border-radius: 3px;
+            padding: 3px 8px;
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 11px;
+            font-weight: bold;
+        """)
+        key_label.setFixedHeight(22)
+        key_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(key_label)
+
+        # Description
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("""
+            color: #d0d0d0;
+            font-size: 11px;
+        """)
+        desc_label.setWordWrap(False)
+        layout.addWidget(desc_label, stretch=1)
+
+        return container
 
 
 class HoverWidget(QWidget):
@@ -887,67 +964,136 @@ class JSPRBeamerSetup(QMainWindow):
         self.setWindowTitle('JSPR Beamer Setup v1.0')
         self.setGeometry(100, 100, 1600, 900)
 
-        # Apply modern stylesheet for better readability
+        # Apply modern, responsive stylesheet for better readability
         self.setStyleSheet("""
+            /* Base widget styling */
             QWidget {
                 font-size: 11pt;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             }
+
+            /* Labels */
             QLabel {
                 font-size: 11pt;
                 color: rgba(255, 255, 255, 0.9);
+                padding: 2px 0;
             }
+
+            /* Buttons - improved spacing and height */
             QPushButton {
                 font-size: 11pt;
-                padding: 8px 12px;
-                border-radius: 4px;
+                padding: 10px 14px;
+                border-radius: 5px;
                 background-color: rgba(255, 255, 255, 0.1);
                 border: 1px solid rgba(255, 255, 255, 0.2);
-                min-height: 28px;
+                min-height: 32px;
+                color: rgba(255, 255, 255, 0.95);
+                font-weight: 500;
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.15);
-                border: 1px solid rgba(255, 255, 255, 0.3);
+                background-color: rgba(255, 255, 255, 0.18);
+                border: 1px solid rgba(255, 255, 255, 0.35);
             }
             QPushButton:pressed {
-                background-color: rgba(255, 255, 255, 0.05);
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.25);
             }
             QPushButton:checked {
-                background-color: rgba(102, 126, 234, 0.5);
-                border: 1px solid rgba(102, 126, 234, 0.7);
+                background-color: rgba(74, 144, 226, 0.6);
+                border: 1px solid rgba(74, 144, 226, 0.8);
+                font-weight: 600;
             }
+            QPushButton:disabled {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.3);
+            }
+
+            /* GroupBox - better spacing */
             QGroupBox {
                 font-size: 12pt;
                 font-weight: bold;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 4px;
-                margin-top: 12px;
-                padding-top: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 6px;
+                margin-top: 14px;
+                padding-top: 14px;
+                padding-bottom: 8px;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 left: 12px;
-                padding: 0 6px;
+                padding: 0 8px;
+                color: rgba(255, 255, 255, 0.95);
             }
+
+            /* Input fields */
             QSpinBox, QDoubleSpinBox, QLineEdit {
                 font-size: 11pt;
-                padding: 6px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 3px;
-                background-color: rgba(0, 0, 0, 0.3);
-                min-height: 24px;
+                padding: 7px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: 4px;
+                background-color: rgba(0, 0, 0, 0.35);
+                color: rgba(255, 255, 255, 0.95);
+                min-height: 28px;
+                selection-background-color: rgba(74, 144, 226, 0.5);
             }
+            QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
+                border: 1px solid rgba(74, 144, 226, 0.6);
+                background-color: rgba(0, 0, 0, 0.4);
+            }
+
+            /* Checkboxes */
             QCheckBox {
                 font-size: 11pt;
-                spacing: 8px;
+                spacing: 10px;
+                padding: 4px 0;
+                color: rgba(255, 255, 255, 0.9);
             }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 3px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                background-color: rgba(0, 0, 0, 0.3);
+            }
+            QCheckBox::indicator:checked {
+                background-color: rgba(74, 144, 226, 0.7);
+                border: 1px solid rgba(74, 144, 226, 0.8);
+            }
+
+            /* ComboBox */
             QComboBox {
                 font-size: 11pt;
-                padding: 6px;
+                padding: 7px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: 4px;
+                background-color: rgba(0, 0, 0, 0.35);
+                color: rgba(255, 255, 255, 0.95);
+                min-height: 32px;
+            }
+            QComboBox:hover {
+                border: 1px solid rgba(255, 255, 255, 0.35);
+                background-color: rgba(0, 0, 0, 0.4);
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 25px;
+            }
+
+            /* ScrollArea */
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+
+            /* Tooltips */
+            QToolTip {
+                font-size: 10pt;
+                padding: 6px 10px;
                 border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 3px;
-                background-color: rgba(0, 0, 0, 0.3);
-                min-height: 28px;
+                border-radius: 4px;
+                background-color: rgba(30, 30, 30, 0.95);
+                color: rgba(255, 255, 255, 0.95);
             }
         """)
 
@@ -975,28 +1121,31 @@ class JSPRBeamerSetup(QMainWindow):
         self.splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
         self.splitter.setHandleWidth(2)  # Slim splitter handle
 
-        # Left panel: Controls
+        # Left panel: Controls (responsive)
         left_panel = self.create_control_panel()
-        left_panel.setMinimumWidth(320)  # Wider for larger text
-        left_panel.setMaximumWidth(480)
+        left_panel.setMinimumWidth(300)
+        left_panel.setMaximumWidth(420)
+        left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.splitter.addWidget(left_panel)
 
-        # Center panel: Canvas
+        # Center panel: Canvas (main focus, gets most space)
         center_panel = self.create_canvas_panel()
         center_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        center_panel.setMinimumWidth(600)  # Ensure canvas has minimum space
         self.splitter.addWidget(center_panel)
-        self.splitter.setStretchFactor(1, 1)  # Canvas should stretch
+        self.splitter.setStretchFactor(1, 3)  # Canvas gets 3x more stretch
 
-        # Right panel: Legend
+        # Right panel: Legend (responsive)
         right_panel = self.create_legend_panel()
-        right_panel.setMinimumWidth(250)
-        right_panel.setMaximumWidth(400)
+        right_panel.setMinimumWidth(220)
+        right_panel.setMaximumWidth(380)
+        right_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.splitter.addWidget(right_panel)
 
-        # Set splitter sizes (proportions)
-        # Use proportional sizing: left 20%, center 60%, right 20%
+        # Set splitter sizes (proportions) - more space for canvas
+        # Use proportional sizing: left 18%, center 64%, right 18%
         total_width = self.width()
-        self.splitter.setSizes([int(total_width * 0.20), int(total_width * 0.60), int(total_width * 0.20)])
+        self.splitter.setSizes([int(total_width * 0.18), int(total_width * 0.64), int(total_width * 0.18)])
 
         main_layout.addWidget(self.splitter)
         self.stacked_widget.addWidget(self.main_ui_widget)
@@ -1811,9 +1960,9 @@ class JSPRBeamerSetup(QMainWindow):
         self.canvas.quality_change_needed.connect(self.on_quality_change_needed)
         layout.addWidget(self.canvas, stretch=1)
 
-        # Shortcuts overlay widget
+        # Shortcuts overlay widget (responsive)
         self.shortcuts_widget = ShortcutsWidget()
-        self.shortcuts_widget.setMaximumHeight(120)
+        self.shortcuts_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         layout.addWidget(self.shortcuts_widget)
 
         return panel
