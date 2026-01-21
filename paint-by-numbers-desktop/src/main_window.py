@@ -3711,6 +3711,39 @@ class JSPRBeamerSetup(QMainWindow):
         options_group_box.setLayout(options_layout)
         layout.addWidget(options_group_box)
 
+        # Function to update option availability based on mode
+        def update_options_availability():
+            """Disable incompatible options for Original mode"""
+            is_original = orig_radio.isChecked()
+
+            # Original mode doesn't support numbers, grid, or legend (no color regions)
+            numbers_check.setEnabled(not is_original)
+            grid_check.setEnabled(not is_original)
+            legend_check.setEnabled(not is_original)
+
+            if is_original:
+                # Uncheck disabled options
+                numbers_check.setChecked(False)
+                grid_check.setChecked(False)
+                legend_check.setChecked(False)
+                # Update tooltips
+                numbers_check.setToolTip("Niet beschikbaar voor originele afbeelding")
+                grid_check.setToolTip("Niet beschikbaar voor originele afbeelding")
+                legend_check.setToolTip("Niet beschikbaar voor originele afbeelding")
+            else:
+                # Restore normal tooltips
+                numbers_check.setToolTip("Toon kleurnummers in de vakken")
+                grid_check.setToolTip(f"Voeg {self.grid_size_spin.value()}x{self.grid_size_spin.value()} grid toe met labels")
+                legend_check.setToolTip("Voeg kleuren legenda toe aan de rechterkant")
+
+        # Connect mode changes to option availability
+        pbn_radio.toggled.connect(update_options_availability)
+        line_radio.toggled.connect(update_options_availability)
+        orig_radio.toggled.connect(update_options_availability)
+
+        # Initial state
+        update_options_availability()
+
         # Format selection
         format_group_box = QGroupBox("Bestandsformaat:")
         format_layout = QHBoxLayout()
@@ -3744,6 +3777,12 @@ class JSPRBeamerSetup(QMainWindow):
         browse_btn.setMaximumWidth(100)
         browse_layout.addWidget(browse_btn)
 
+        # Reset button to restore auto-generated name
+        reset_filename_btn = QPushButton("↻")
+        reset_filename_btn.setMaximumWidth(35)
+        reset_filename_btn.setToolTip("Herstel automatische bestandsnaam")
+        browse_layout.addWidget(reset_filename_btn)
+
         filename_layout.addWidget(QLabel("Automatische bestandsnaam preview:"))
         filename_layout.addWidget(filename_preview_label)
         filename_layout.addWidget(QLabel("Bewerk indien gewenst:"))
@@ -3751,6 +3790,9 @@ class JSPRBeamerSetup(QMainWindow):
 
         filename_group_box.setLayout(filename_layout)
         layout.addWidget(filename_group_box)
+
+        # Track whether user has manually edited filename
+        user_edited_filename = [False]  # Use list to allow modification in nested functions
 
         # Function to generate filename
         def generate_filename():
@@ -3786,8 +3828,22 @@ class JSPRBeamerSetup(QMainWindow):
         def update_filename_preview():
             filename = generate_filename()
             filename_preview_label.setText(f"📄 {filename}")
-            if not filename_edit.text():  # Only update if user hasn't typed custom name
+            # Only auto-update if user hasn't manually edited
+            if not user_edited_filename[0]:
                 filename_edit.setText(filename)
+
+        # Track manual edits to filename
+        def on_filename_edited():
+            # Mark as edited only if text differs from auto-generated
+            user_edited_filename[0] = True
+
+        # Reset to auto-generated filename
+        def reset_filename():
+            user_edited_filename[0] = False
+            update_filename_preview()
+
+        filename_edit.textEdited.connect(on_filename_edited)
+        reset_filename_btn.clicked.connect(reset_filename)
 
         # Connect all controls to update preview
         pbn_radio.toggled.connect(update_filename_preview)
@@ -3882,33 +3938,41 @@ class JSPRBeamerSetup(QMainWindow):
             show_grid = grid_check.isChecked()
             show_legend = legend_check.isChecked()
 
+            # Create progress dialog
+            progress = QProgressDialog("Bezig met exporteren...", None, 0, 0, self)
+            progress.setWindowTitle("Export")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setCancelButton(None)  # No cancel button for single export
+            progress.show()
+
             # Render variant
+            progress.setLabelText("Renderen van afbeelding...")
             result = self.render_variant(mode, show_numbers, show_grid)
 
             if result is None:
+                progress.close()
                 QMessageBox.warning(self, "Render fout", "Kon afbeelding niet renderen")
                 return
 
             # Add legend if requested
             if show_legend:
+                progress.setLabelText("Legenda toevoegen...")
                 result = self.add_legend_to_image(result)
 
             # Save
+            progress.setLabelText("Opslaan...")
             format_ext = 'png' if png_radio.isChecked() else 'jpg'
             self.save_image(result, export_path, format_ext)
 
-            # Show success message
-            self.statusBar().showMessage(f"✓ Geëxporteerd: {os.path.basename(export_path)}")
+            progress.close()
+
+            # Show success message in statusbar only (no popup dialog)
+            self.statusBar().showMessage(f"✓ Geëxporteerd: {os.path.basename(export_path)}", 5000)
 
             # Update status indicator
             if self.status_indicator:
                 self.status_indicator.set_status("exported", True)
-
-            QMessageBox.information(
-                self,
-                "Export Geslaagd",
-                f"Afbeelding succesvol geëxporteerd naar:\n{export_path}"
-            )
 
         except Exception as e:
             logger.error(f"Advanced export failed: {e}", exc_info=True)
@@ -5135,6 +5199,15 @@ class JSPRBeamerSetup(QMainWindow):
         # Get grid settings
         grid_size = self.grid_size_spin.value()
         color_index = self.grid_color_combo.currentIndex()
+
+        # Defensive checks
+        if grid_size < 1:
+            logger.warning(f"Invalid grid_size: {grid_size}, returning original image")
+            return result
+
+        if grid_size > 26:
+            logger.warning(f"Grid size {grid_size} exceeds alphabet limit (26), clamping to 26")
+            grid_size = 26
 
         # Color map
         color_map = {
