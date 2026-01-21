@@ -3414,12 +3414,12 @@ class JSPRBeamerSetup(QMainWindow):
                 swatch_w = 60
                 swatch_h = 40
 
-                # Fill swatch with color (BGR format for OpenCV)
+                # Fill swatch with color (RGB format - will be converted to BGR later)
                 cv2.rectangle(
                     legend_image,
                     (swatch_x, swatch_y),
                     (swatch_x + swatch_w, swatch_y + swatch_h),
-                    (int(color.b), int(color.g), int(color.r)),  # BGR - ensure integers
+                    (int(color.r), int(color.g), int(color.b)),  # RGB - converted to BGR at export
                     -1  # Filled
                 )
 
