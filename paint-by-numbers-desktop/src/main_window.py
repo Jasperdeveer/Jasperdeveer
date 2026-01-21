@@ -37,6 +37,95 @@ from collapsible_section import CollapsibleSection
 logger = logging.getLogger(__name__)
 
 
+class ShortcutsWidget(QWidget):
+    """Collapsible widget showing keyboard shortcuts"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #2b2b2b;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QLabel {
+                color: #e0e0e0;
+            }
+        """)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(4)
+        layout.setContentsMargins(12, 8, 12, 8)
+
+        # Title
+        title = QLabel("⌨️ <b>Sneltoetsen</b>")
+        title.setStyleSheet("font-size: 13px; color: #4A90E2;")
+        layout.addWidget(title)
+
+        # Create grid for shortcuts
+        grid = QHBoxLayout()
+        grid.setSpacing(20)
+
+        # Column 1: View controls
+        col1 = QVBoxLayout()
+        col1.setSpacing(3)
+        col1_title = QLabel("<b>Weergave</b>")
+        col1_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
+        col1.addWidget(col1_title)
+        col1.addWidget(self.create_shortcut_label("N", "Cijfers aan/uit"))
+        col1.addWidget(self.create_shortcut_label("O", "Contouren aan/uit"))
+        col1.addWidget(self.create_shortcut_label("Z", "Wissel modus"))
+        col1.addWidget(self.create_shortcut_label("H", "Toggle dit venster"))
+        grid.addLayout(col1)
+
+        # Column 2: Grid controls
+        col2 = QVBoxLayout()
+        col2.setSpacing(3)
+        col2_title = QLabel("<b>Grid</b>")
+        col2_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
+        col2.addWidget(col2_title)
+        col2.addWidget(self.create_shortcut_label("G", "Grid aan/uit"))
+        col2.addWidget(self.create_shortcut_label("C", "Wissel kleur"))
+        col2.addWidget(self.create_shortcut_label("[", "Kleiner"))
+        col2.addWidget(self.create_shortcut_label("]", "Groter"))
+        grid.addLayout(col2)
+
+        # Column 3: Zoom controls
+        col3 = QVBoxLayout()
+        col3.setSpacing(3)
+        col3_title = QLabel("<b>Zoom</b>")
+        col3_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
+        col3.addWidget(col3_title)
+        col3.addWidget(self.create_shortcut_label("+", "Zoom in"))
+        col3.addWidget(self.create_shortcut_label("-", "Zoom uit"))
+        col3.addWidget(self.create_shortcut_label("0", "Reset zoom"))
+        col3.addWidget(self.create_shortcut_label("Scroll", "Zoom"))
+        grid.addLayout(col3)
+
+        # Column 4: Other
+        col4 = QVBoxLayout()
+        col4.setSpacing(3)
+        col4_title = QLabel("<b>Overig</b>")
+        col4_title.setStyleSheet("color: #60d0ff; font-size: 11px;")
+        col4.addWidget(col4_title)
+        col4.addWidget(self.create_shortcut_label("M", "Vergrootglas"))
+        col4.addWidget(self.create_shortcut_label("F11", "Presentatie"))
+        col4.addWidget(self.create_shortcut_label("F1", "Alle shortcuts"))
+        col4.addWidget(self.create_shortcut_label("Ctrl+E", "Export"))
+        grid.addLayout(col4)
+
+        grid.addStretch()
+        layout.addLayout(grid)
+
+    def create_shortcut_label(self, key, description):
+        """Create a shortcut label with key and description"""
+        label = QLabel(f"<span style='background: #404040; padding: 2px 6px; border-radius: 2px; font-family: monospace;'>{key}</span>  {description}")
+        label.setStyleSheet("font-size: 10px; color: #e0e0e0;")
+        return label
+
+
 class HoverWidget(QWidget):
     """Widget that detects mouse hover for color preview"""
 
@@ -1254,18 +1343,79 @@ class JSPRBeamerSetup(QMainWindow):
 
         view_menu.addSeparator()
 
+        # Toggle numbers (checkable)
+        self.numbers_toggle_action = view_menu.addAction('🔢 Cijfers Tonen')
+        self.numbers_toggle_action.setCheckable(True)
+        self.numbers_toggle_action.setChecked(True)  # Default on
+        self.numbers_toggle_action.setShortcut('N')
+        self.numbers_toggle_action.triggered.connect(self.toggle_numbers)
+
+        # Toggle outlines (checkable)
+        self.outlines_toggle_action = view_menu.addAction('⬜ Contouren Tonen')
+        self.outlines_toggle_action.setCheckable(True)
+        self.outlines_toggle_action.setChecked(False)
+        self.outlines_toggle_action.setShortcut('O')
+        self.outlines_toggle_action.triggered.connect(self.toggle_outlines)
+
+        view_menu.addSeparator()
+
         # Grid overlay toggle (checkable)
         self.grid_toggle_action = view_menu.addAction('📐 Grid Overlay')
         self.grid_toggle_action.setCheckable(True)
         self.grid_toggle_action.setChecked(False)
-        self.grid_toggle_action.setShortcut('Ctrl+G')
+        self.grid_toggle_action.setShortcut('G')
         self.grid_toggle_action.triggered.connect(self.toggle_grid_overlay)
+
+        # Grid color cycle
+        grid_color_action = view_menu.addAction('🎨 Wissel Grid Kleur')
+        grid_color_action.setShortcut('C')
+        grid_color_action.triggered.connect(self.cycle_grid_color)
+
+        # Grid size controls
+        grid_bigger_action = view_menu.addAction('🔼 Grid Groter')
+        grid_bigger_action.setShortcut(']')
+        grid_bigger_action.triggered.connect(self.increase_grid_size)
+
+        grid_smaller_action = view_menu.addAction('🔽 Grid Kleiner')
+        grid_smaller_action.setShortcut('[')
+        grid_smaller_action.triggered.connect(self.decrease_grid_size)
+
+        view_menu.addSeparator()
+
+        # Zoom controls
+        zoom_in_action = view_menu.addAction('🔍 Zoom In')
+        zoom_in_action.setShortcut('+')
+        zoom_in_action.triggered.connect(self.zoom_in)
+
+        zoom_out_action = view_menu.addAction('🔎 Zoom Uit')
+        zoom_out_action.setShortcut('-')
+        zoom_out_action.triggered.connect(self.zoom_out)
+
+        zoom_reset_action = view_menu.addAction('↺ Reset Zoom')
+        zoom_reset_action.setShortcut('0')
+        zoom_reset_action.triggered.connect(self.zoom_reset)
+
+        view_menu.addSeparator()
+
+        # Cycle mode
+        cycle_mode_action = view_menu.addAction('🔄 Wissel Modus (PBN/Line/Orig)')
+        cycle_mode_action.setShortcut('Z')
+        cycle_mode_action.triggered.connect(self.cycle_mode)
+
+        view_menu.addSeparator()
 
         magnifier_toggle_action = view_menu.addAction('🔍 Vergrootglas')
         magnifier_toggle_action.setCheckable(True)
         magnifier_toggle_action.setChecked(True)
         magnifier_toggle_action.setShortcut('M')
         magnifier_toggle_action.triggered.connect(self.toggle_magnifier)
+
+        # Shortcuts overlay toggle
+        self.shortcuts_overlay_action = view_menu.addAction('⌨️ Sneltoetsen Overlay')
+        self.shortcuts_overlay_action.setCheckable(True)
+        self.shortcuts_overlay_action.setChecked(True)
+        self.shortcuts_overlay_action.setShortcut('H')
+        self.shortcuts_overlay_action.triggered.connect(self.toggle_shortcuts_overlay)
 
         logger.info(f"Menu: View menu complete {time.time() - start:.2f}s")
 
@@ -1620,16 +1770,19 @@ class JSPRBeamerSetup(QMainWindow):
 
         zoom_in_btn = QPushButton("+")
         zoom_in_btn.setMaximumWidth(40)
-        zoom_in_btn.clicked.connect(lambda: self.zoom(0.1))
+        zoom_in_btn.setToolTip("Zoom in (+)")
+        zoom_in_btn.clicked.connect(self.zoom_in)
         controls_layout.addWidget(zoom_in_btn)
 
         zoom_out_btn = QPushButton("-")
         zoom_out_btn.setMaximumWidth(40)
-        zoom_out_btn.clicked.connect(lambda: self.zoom(-0.1))
+        zoom_out_btn.setToolTip("Zoom uit (-)")
+        zoom_out_btn.clicked.connect(self.zoom_out)
         controls_layout.addWidget(zoom_out_btn)
 
         zoom_reset_btn = QPushButton("Reset")
-        zoom_reset_btn.clicked.connect(self.reset_zoom)
+        zoom_reset_btn.setToolTip("Reset zoom (0)")
+        zoom_reset_btn.clicked.connect(self.zoom_reset)
         controls_layout.addWidget(zoom_reset_btn)
 
         presentation_btn = QPushButton("Presentatie Mode")
@@ -1657,6 +1810,11 @@ class JSPRBeamerSetup(QMainWindow):
         self.canvas.zoom_changed.connect(self.on_zoom_changed)
         self.canvas.quality_change_needed.connect(self.on_quality_change_needed)
         layout.addWidget(self.canvas, stretch=1)
+
+        # Shortcuts overlay widget
+        self.shortcuts_widget = ShortcutsWidget()
+        self.shortcuts_widget.setMaximumHeight(120)
+        layout.addWidget(self.shortcuts_widget)
 
         return panel
 
@@ -3013,17 +3171,6 @@ class JSPRBeamerSetup(QMainWindow):
         else:
             self.statusBar().showMessage("Fout bij renderen")
 
-    def zoom(self, delta: float):
-        """Zoom canvas"""
-        current_zoom = self.canvas.zoom_level
-        new_zoom = current_zoom + delta
-        self.canvas.set_zoom(new_zoom)
-        self.zoom_label.setText(f"{int(new_zoom * 100)}%")
-
-    def reset_zoom(self):
-        """Reset zoom to 100%"""
-        self.canvas.set_zoom(1.0)
-        self.zoom_label.setText("100%")
 
     def on_zoom_changed(self, zoom_level: float):
         """Handle zoom level changed from canvas"""
@@ -4493,6 +4640,122 @@ class JSPRBeamerSetup(QMainWindow):
         logger.info(f"Grid overlay toggled: {self.canvas.show_grid}")
         self.canvas.update()
 
+    def toggle_numbers(self):
+        """Toggle numbers on/off"""
+        self.visualizer.set_show_numbers(not self.visualizer.show_numbers)
+        self.numbers_toggle_action.setChecked(self.visualizer.show_numbers)
+        status = "aan" if self.visualizer.show_numbers else "uit"
+        self.statusBar().showMessage(f"Cijfers: {status}")
+        logger.info(f"Numbers toggled: {self.visualizer.show_numbers}")
+        # Re-render
+        if self.realtime_checkbox.isChecked():
+            self.render_image()
+
+    def toggle_outlines(self):
+        """Toggle outlines on/off"""
+        current = self.show_outlines_checkbox.isChecked()
+        self.show_outlines_checkbox.setChecked(not current)
+        self.outlines_toggle_action.setChecked(not current)
+        status = "aan" if not current else "uit"
+        self.statusBar().showMessage(f"Contouren: {status}")
+        logger.info(f"Outlines toggled: {not current}")
+
+    def cycle_grid_color(self):
+        """Cycle grid color"""
+        color_names = ["Gifgroen", "Magenta", "Cyaan", "Geel", "Zwart", "Grijs"]
+        current_index = self.grid_color_combo.currentIndex()
+        next_index = (current_index + 1) % len(color_names)
+        self.grid_color_combo.setCurrentIndex(next_index)
+        self.statusBar().showMessage(f"Grid kleur: {color_names[next_index]}")
+        logger.info(f"Grid color cycled to: {color_names[next_index]}")
+
+    def increase_grid_size(self):
+        """Increase grid size"""
+        current = self.grid_size_spin.value()
+        new_size = min(12, current + 1)
+        self.grid_size_spin.setValue(new_size)
+        self.statusBar().showMessage(f"Grid: {new_size}×{new_size}")
+        logger.info(f"Grid size increased to: {new_size}")
+
+    def decrease_grid_size(self):
+        """Decrease grid size"""
+        current = self.grid_size_spin.value()
+        new_size = max(2, current - 1)
+        self.grid_size_spin.setValue(new_size)
+        self.statusBar().showMessage(f"Grid: {new_size}×{new_size}")
+        logger.info(f"Grid size decreased to: {new_size}")
+
+    def zoom_in(self):
+        """Zoom in"""
+        self.canvas.zoom_level = min(5.0, self.canvas.zoom_level * 1.25)
+        self.canvas.zoom_changed.emit(self.canvas.zoom_level)
+        self.canvas.check_quality_change(self.canvas.zoom_level)
+        self.canvas.update()
+        self.statusBar().showMessage(f"Zoom: {int(self.canvas.zoom_level * 100)}%")
+        logger.info(f"Zoom in: {self.canvas.zoom_level}")
+
+    def zoom_out(self):
+        """Zoom out"""
+        self.canvas.zoom_level = max(0.1, self.canvas.zoom_level * 0.8)
+        self.canvas.zoom_changed.emit(self.canvas.zoom_level)
+        self.canvas.check_quality_change(self.canvas.zoom_level)
+        self.canvas.update()
+        self.statusBar().showMessage(f"Zoom: {int(self.canvas.zoom_level * 100)}%")
+        logger.info(f"Zoom out: {self.canvas.zoom_level}")
+
+    def zoom_reset(self):
+        """Reset zoom to fit"""
+        self.canvas.fit_to_canvas()
+        self.statusBar().showMessage(f"Zoom: {int(self.canvas.zoom_level * 100)}% (reset)")
+        logger.info(f"Zoom reset: {self.canvas.zoom_level}")
+
+    def cycle_mode(self):
+        """Cycle through modes: PBN -> Line -> Original -> PBN"""
+        current_mode = self.visualizer.mode
+
+        if current_mode == 'paintByNumbers':
+            new_mode = 'lineDrawing'
+            mode_name = "Lijntekening"
+            # Select line drawing radio
+            for radio in self.mode_radio_group.buttons():
+                if radio.text() == "🖊 Lijntekening":
+                    radio.setChecked(True)
+                    break
+        elif current_mode == 'lineDrawing':
+            new_mode = 'original'
+            mode_name = "Origineel"
+            # Select original radio
+            for radio in self.mode_radio_group.buttons():
+                if radio.text() == "📷 Origineel":
+                    radio.setChecked(True)
+                    break
+        else:
+            new_mode = 'paintByNumbers'
+            mode_name = "Paint-by-Numbers"
+            # Select PBN radio
+            for radio in self.mode_radio_group.buttons():
+                if radio.text() == "🎨 Paint-by-Numbers":
+                    radio.setChecked(True)
+                    break
+
+        self.visualizer.set_mode(new_mode)
+        self.statusBar().showMessage(f"Modus: {mode_name}")
+        logger.info(f"Mode cycled to: {new_mode}")
+
+        # Re-render
+        if self.realtime_checkbox.isChecked():
+            self.render_image()
+
+    def toggle_shortcuts_overlay(self):
+        """Toggle shortcuts overlay widget"""
+        if hasattr(self, 'shortcuts_widget'):
+            is_visible = self.shortcuts_widget.isVisible()
+            self.shortcuts_widget.setVisible(not is_visible)
+            self.shortcuts_overlay_action.setChecked(not is_visible)
+            status = "aan" if not is_visible else "uit"
+            self.statusBar().showMessage(f"Sneltoetsen overlay: {status}")
+            logger.info(f"Shortcuts overlay toggled: {not is_visible}")
+
     def open_documentation(self):
         """Open online documentation"""
         import webbrowser
@@ -5315,9 +5578,66 @@ class JSPRBeamerSetup(QMainWindow):
         logger.info(f"Exported: {filepath}")
 
     def keyPressEvent(self, event):
-        """Handle keyboard shortcuts for selection tools and magnifier"""
-        # Toggle magnifier with M key
-        if event.key() == Qt.Key_M:
+        """Handle keyboard shortcuts for selection tools, magnifier, and view controls"""
+        key = event.key()
+
+        # N: Toggle numbers
+        if key == Qt.Key_N:
+            self.toggle_numbers()
+            return
+
+        # O: Toggle outlines
+        if key == Qt.Key_O:
+            self.toggle_outlines()
+            return
+
+        # G: Toggle grid overlay
+        if key == Qt.Key_G:
+            self.toggle_grid_overlay()
+            return
+
+        # C: Cycle grid color
+        if key == Qt.Key_C:
+            self.cycle_grid_color()
+            return
+
+        # [: Grid smaller
+        if key == Qt.Key_BracketLeft:
+            self.decrease_grid_size()
+            return
+
+        # ]: Grid bigger
+        if key == Qt.Key_BracketRight:
+            self.increase_grid_size()
+            return
+
+        # Z: Cycle mode
+        if key == Qt.Key_Z:
+            self.cycle_mode()
+            return
+
+        # +/=: Zoom in
+        if key in (Qt.Key_Plus, Qt.Key_Equal):
+            self.zoom_in()
+            return
+
+        # -/_: Zoom out
+        if key in (Qt.Key_Minus, Qt.Key_Underscore):
+            self.zoom_out()
+            return
+
+        # 0: Reset zoom
+        if key == Qt.Key_0:
+            self.zoom_reset()
+            return
+
+        # H: Toggle shortcuts overlay
+        if key == Qt.Key_H:
+            self.toggle_shortcuts_overlay()
+            return
+
+        # M: Toggle magnifier
+        if key == Qt.Key_M:
             self.toggle_magnifier()
             return
 
