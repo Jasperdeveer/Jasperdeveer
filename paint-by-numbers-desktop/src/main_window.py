@@ -1181,8 +1181,16 @@ class JSPRBeamerSetup(QMainWindow):
         # Export submenu
         export_menu = file_menu.addMenu('Export')
 
-        export_png_action = export_menu.addAction('PNG Export...')
-        export_png_action.setShortcut('Ctrl+E')
+        # Advanced single export with options
+        advanced_export_action = export_menu.addAction('Geavanceerde Export...')
+        advanced_export_action.setShortcut('Ctrl+E')
+        advanced_export_action.setToolTip('Exporteer met keuze voor modus, cijfers, grid en legenda')
+        advanced_export_action.triggered.connect(self.advanced_export)
+
+        export_menu.addSeparator()
+
+        export_png_action = export_menu.addAction('Snelle PNG Export...')
+        export_png_action.setShortcut('Ctrl+Shift+P')
         export_png_action.triggered.connect(self.export_png)
 
         export_with_legend_action = export_menu.addAction('Exporteer met Legenda...')
@@ -3501,7 +3509,7 @@ class JSPRBeamerSetup(QMainWindow):
                 self.status_indicator.set_status("exported", True)
 
     def export_with_legend(self):
-        """Export as PNG with color legend embedded"""
+        """Export as PNG with color legend embedded - ALWAYS shows numbers"""
         if self.canvas.image is None:
             QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
             return
@@ -3521,8 +3529,14 @@ class JSPRBeamerSetup(QMainWindow):
             return
 
         try:
-            # Get current rendered image
-            main_image = self.canvas.image.copy()
+            # Always render with numbers for legend export
+            current_mode = self.visualizer.mode
+            self.visualizer.set_show_numbers(True)
+            main_image = self.visualizer.render()
+
+            if main_image is None:
+                QMessageBox.warning(self, "Render fout", "Kon afbeelding niet renderen")
+                return
             img_height, img_width = main_image.shape[:2]
 
             # Create legend image
@@ -3619,6 +3633,289 @@ class JSPRBeamerSetup(QMainWindow):
                 self,
                 "Export Fout",
                 f"Kon niet exporteren met legenda:\n{str(e)}"
+            )
+
+    def advanced_export(self):
+        """Advanced export with full control over mode, numbers, grid, and legend"""
+        if self.canvas.image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
+            return
+
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(self, "Geen kleuren", "Detecteer eerst kleuren")
+            return
+
+        from PyQt5.QtWidgets import (QDialog, QRadioButton, QCheckBox, QLineEdit,
+                                     QPushButton, QButtonGroup, QFileDialog)
+
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Geavanceerde Export")
+        dialog.setMinimumWidth(550)
+        dialog.setMinimumHeight(500)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(20)
+
+        # Title
+        title = QLabel("<h2>Geavanceerde Export</h2>")
+        layout.addWidget(title)
+
+        # Mode selection
+        mode_group_box = QGroupBox("Selecteer Modus:")
+        mode_layout = QVBoxLayout()
+
+        mode_button_group = QButtonGroup(dialog)
+        pbn_radio = QRadioButton("Paint-by-Numbers (gekleurde vakken)")
+        line_radio = QRadioButton("Lijntekening (zwart/wit contour)")
+        orig_radio = QRadioButton("Origineel (originele afbeelding)")
+
+        # Check current mode to set default
+        current_mode = self.visualizer.mode
+        if current_mode == 'paintByNumbers':
+            pbn_radio.setChecked(True)
+        elif current_mode == 'lineDrawing':
+            line_radio.setChecked(True)
+        else:
+            orig_radio.setChecked(True)
+
+        mode_button_group.addButton(pbn_radio, 0)
+        mode_button_group.addButton(line_radio, 1)
+        mode_button_group.addButton(orig_radio, 2)
+
+        mode_layout.addWidget(pbn_radio)
+        mode_layout.addWidget(line_radio)
+        mode_layout.addWidget(orig_radio)
+        mode_group_box.setLayout(mode_layout)
+        layout.addWidget(mode_group_box)
+
+        # Options
+        options_group_box = QGroupBox("Opties:")
+        options_layout = QVBoxLayout()
+
+        numbers_check = QCheckBox("Cijfers tonen")
+        numbers_check.setChecked(self.visualizer.show_numbers)
+        numbers_check.setToolTip("Toon kleurnummers in de vakken")
+
+        grid_check = QCheckBox("Grid overlay")
+        grid_check.setChecked(False)
+        grid_check.setToolTip(f"Voeg {self.grid_size_spin.value()}x{self.grid_size_spin.value()} grid toe met labels")
+
+        legend_check = QCheckBox("Legenda toevoegen")
+        legend_check.setChecked(False)
+        legend_check.setToolTip("Voeg kleuren legenda toe aan de rechterkant")
+
+        options_layout.addWidget(numbers_check)
+        options_layout.addWidget(grid_check)
+        options_layout.addWidget(legend_check)
+        options_group_box.setLayout(options_layout)
+        layout.addWidget(options_group_box)
+
+        # Format selection
+        format_group_box = QGroupBox("Bestandsformaat:")
+        format_layout = QHBoxLayout()
+
+        format_button_group = QButtonGroup(dialog)
+        png_radio = QRadioButton("PNG (lossless, grotere bestanden)")
+        jpg_radio = QRadioButton("JPG (compressed, kleinere bestanden)")
+        png_radio.setChecked(True)
+
+        format_button_group.addButton(png_radio, 0)
+        format_button_group.addButton(jpg_radio, 1)
+
+        format_layout.addWidget(png_radio)
+        format_layout.addWidget(jpg_radio)
+        format_group_box.setLayout(format_layout)
+        layout.addWidget(format_group_box)
+
+        # Filename section
+        filename_group_box = QGroupBox("Bestandsnaam:")
+        filename_layout = QVBoxLayout()
+
+        filename_preview_label = QLabel()
+        filename_preview_label.setStyleSheet("color: #666; font-style: italic; padding: 5px;")
+
+        filename_edit = QLineEdit()
+        filename_edit.setPlaceholderText("Bestandsnaam wordt automatisch gegenereerd...")
+
+        browse_layout = QHBoxLayout()
+        browse_layout.addWidget(filename_edit)
+        browse_btn = QPushButton("Browse...")
+        browse_btn.setMaximumWidth(100)
+        browse_layout.addWidget(browse_btn)
+
+        filename_layout.addWidget(QLabel("Automatische bestandsnaam preview:"))
+        filename_layout.addWidget(filename_preview_label)
+        filename_layout.addWidget(QLabel("Bewerk indien gewenst:"))
+        filename_layout.addLayout(browse_layout)
+
+        filename_group_box.setLayout(filename_layout)
+        layout.addWidget(filename_group_box)
+
+        # Function to generate filename
+        def generate_filename():
+            # Get base name
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                base = os.path.splitext(os.path.basename(self.current_file_path))[0]
+            else:
+                base = "export"
+
+            # Add mode
+            if pbn_radio.isChecked():
+                parts = [base, "pbn"]
+            elif line_radio.isChecked():
+                parts = [base, "line"]
+            else:
+                parts = [base, "orig"]
+
+            # Add options
+            if numbers_check.isChecked():
+                parts.append("numbers")
+            if grid_check.isChecked():
+                parts.append("grid")
+            if legend_check.isChecked():
+                parts.append("legend")
+
+            # Add extension
+            ext = "png" if png_radio.isChecked() else "jpg"
+            filename = "_".join(parts) + "." + ext
+
+            return filename
+
+        # Function to update filename preview
+        def update_filename_preview():
+            filename = generate_filename()
+            filename_preview_label.setText(f"📄 {filename}")
+            if not filename_edit.text():  # Only update if user hasn't typed custom name
+                filename_edit.setText(filename)
+
+        # Connect all controls to update preview
+        pbn_radio.toggled.connect(update_filename_preview)
+        line_radio.toggled.connect(update_filename_preview)
+        orig_radio.toggled.connect(update_filename_preview)
+        numbers_check.toggled.connect(update_filename_preview)
+        grid_check.toggled.connect(update_filename_preview)
+        legend_check.toggled.connect(update_filename_preview)
+        png_radio.toggled.connect(update_filename_preview)
+        jpg_radio.toggled.connect(update_filename_preview)
+
+        # Initial preview
+        update_filename_preview()
+
+        # Browse button handler
+        def browse_file():
+            filename = generate_filename()
+            ext = "PNG Files (*.png)" if png_radio.isChecked() else "JPG Files (*.jpg)"
+
+            default_path = ""
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                default_dir = os.path.dirname(self.current_file_path)
+                default_path = os.path.join(default_dir, filename)
+            else:
+                default_path = filename
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                dialog,
+                "Kies export locatie",
+                default_path,
+                ext
+            )
+
+            if file_path:
+                filename_edit.setText(file_path)
+
+        browse_btn.clicked.connect(browse_file)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Annuleren")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        export_btn = QPushButton("Exporteren")
+        export_btn.setDefault(True)
+        export_btn.clicked.connect(dialog.accept)
+        export_btn.setStyleSheet("font-weight: bold;")
+        button_layout.addWidget(export_btn)
+
+        layout.addLayout(button_layout)
+
+        # Show dialog
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        # Get export path
+        export_path = filename_edit.text().strip()
+
+        if not export_path:
+            # If empty, use generated filename and ask for location
+            filename = generate_filename()
+            default_path = ""
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                default_dir = os.path.dirname(self.current_file_path)
+                default_path = os.path.join(default_dir, filename)
+
+            ext = "PNG Files (*.png)" if png_radio.isChecked() else "JPG Files (*.jpg)"
+            export_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Kies export locatie",
+                default_path,
+                ext
+            )
+
+            if not export_path:
+                return
+
+        try:
+            # Determine mode
+            if pbn_radio.isChecked():
+                mode = 'paintByNumbers'
+            elif line_radio.isChecked():
+                mode = 'lineDrawing'
+            else:
+                mode = 'original'
+
+            # Get options
+            show_numbers = numbers_check.isChecked()
+            show_grid = grid_check.isChecked()
+            show_legend = legend_check.isChecked()
+
+            # Render variant
+            result = self.render_variant(mode, show_numbers, show_grid)
+
+            if result is None:
+                QMessageBox.warning(self, "Render fout", "Kon afbeelding niet renderen")
+                return
+
+            # Add legend if requested
+            if show_legend:
+                result = self.add_legend_to_image(result)
+
+            # Save
+            format_ext = 'png' if png_radio.isChecked() else 'jpg'
+            self.save_image(result, export_path, format_ext)
+
+            # Show success message
+            self.statusBar().showMessage(f"✓ Geëxporteerd: {os.path.basename(export_path)}")
+
+            # Update status indicator
+            if self.status_indicator:
+                self.status_indicator.set_status("exported", True)
+
+            QMessageBox.information(
+                self,
+                "Export Geslaagd",
+                f"Afbeelding succesvol geëxporteerd naar:\n{export_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"Advanced export failed: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Export Fout",
+                f"Kon niet exporteren:\n{str(e)}"
             )
 
     def export_svg(self):
