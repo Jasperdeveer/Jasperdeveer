@@ -42,9 +42,18 @@ class ShortcutsWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(100)
-        self.setMaximumHeight(150)
-        self.init_ui()
+        self.setMinimumHeight(90)
+        self.setMaximumHeight(140)
+        try:
+            self.init_ui()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error initializing ShortcutsWidget: {e}", exc_info=True)
+            # Fallback: create simple label if initialization fails
+            from PyQt5.QtWidgets import QVBoxLayout, QLabel
+            layout = QVBoxLayout(self)
+            layout.addWidget(QLabel("Sneltoetsen: Druk F1 voor overzicht"))
 
     def init_ui(self):
         # Main container with better styling
@@ -86,11 +95,12 @@ class ShortcutsWidget(QWidget):
         main_layout.addLayout(header_layout)
 
         # Scrollable shortcuts area
+        from PyQt5.QtCore import Qt as QtCore
         scroll = QScrollArea()
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(QtCore.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(QtCore.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
             QScrollArea {
                 background: transparent;
@@ -1116,10 +1126,24 @@ class JSPRBeamerSetup(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Create splitter for resizable panels
+        # Create splitter for resizable panels with draggable handles
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setChildrenCollapsible(False)  # Prevent panels from collapsing
-        self.splitter.setHandleWidth(2)  # Slim splitter handle
+        self.splitter.setHandleWidth(8)  # Wide enough to grab and drag
+
+        # Style the splitter handle for visibility
+        self.splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: rgba(255, 255, 255, 0.1);
+                margin: 0px 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: rgba(74, 144, 226, 0.5);
+            }
+            QSplitter::handle:horizontal {
+                width: 8px;
+            }
+        """)
 
         # Left panel: Controls (responsive)
         left_panel = self.create_control_panel()
