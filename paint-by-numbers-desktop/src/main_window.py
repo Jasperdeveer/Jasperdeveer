@@ -1178,22 +1178,31 @@ class JSPRBeamerSetup(QMainWindow):
 
         logger.info(f"Menu: File menu created {time.time() - start:.2f}s")
 
-        export_png_action = file_menu.addAction('Exporteer PNG...')
+        # Export submenu
+        export_menu = file_menu.addMenu('Export')
+
+        export_png_action = export_menu.addAction('PNG Export...')
         export_png_action.setShortcut('Ctrl+E')
         export_png_action.triggered.connect(self.export_png)
 
-        export_with_legend_action = file_menu.addAction('Exporteer met Legenda...')
+        export_with_legend_action = export_menu.addAction('Exporteer met Legenda...')
         export_with_legend_action.setShortcut('Ctrl+L')
         export_with_legend_action.triggered.connect(self.export_with_legend)
 
-        batch_export_action = file_menu.addAction('Batch Export (Alle Modi)...')
-        batch_export_action.setShortcut('Ctrl+Shift+E')
+        export_all_action = export_menu.addAction('Export All Varianten...')
+        export_all_action.setShortcut('Ctrl+Shift+E')
+        export_all_action.setToolTip('Exporteer alle modi en varianten (cijfers, grid, legenda)')
+        export_all_action.triggered.connect(self.export_all_variants)
+
+        export_menu.addSeparator()
+
+        batch_export_action = export_menu.addAction('Batch Export (Alle Modi)...')
         batch_export_action.triggered.connect(self.batch_export)
 
-        export_svg_action = file_menu.addAction('Exporteer SVG...')
+        export_svg_action = export_menu.addAction('Exporteer SVG...')
         export_svg_action.triggered.connect(self.export_svg)
 
-        export_pdf_action = file_menu.addAction('Exporteer PDF met Grid...')
+        export_pdf_action = export_menu.addAction('Exporteer PDF met Grid...')
         export_pdf_action.triggered.connect(self.export_pdf_with_grid)
 
         file_menu.addSeparator()
@@ -1436,6 +1445,34 @@ class JSPRBeamerSetup(QMainWindow):
         self.region_size_spin.installEventFilter(self)
         region_size_layout.addWidget(self.region_size_spin)
         drawing_layout.addLayout(region_size_layout)
+
+        # Grid size
+        grid_size_layout = QHBoxLayout()
+        grid_size_layout.addWidget(QLabel("Grid grootte:"))
+        self.grid_size_spin = QSpinBox()
+        self.grid_size_spin.setRange(2, 12)
+        self.grid_size_spin.setValue(4)
+        self.grid_size_spin.setMaximumWidth(60)
+        self.grid_size_spin.setToolTip("Grid grootte voor export (2x2 tot 12x12)")
+        self.grid_size_spin.valueChanged.connect(self.on_grid_settings_changed)
+        grid_size_layout.addWidget(self.grid_size_spin)
+        grid_size_layout.addWidget(QLabel("×"))
+        grid_size_layout.addWidget(self.grid_size_spin)
+        grid_size_layout.addStretch()
+        drawing_layout.addLayout(grid_size_layout)
+
+        # Grid color
+        grid_color_layout = QHBoxLayout()
+        grid_color_layout.addWidget(QLabel("Grid kleur:"))
+        self.grid_color_combo = QComboBox()
+        self.grid_color_combo.addItems(["Gifgroen", "Magenta", "Cyaan", "Geel", "Zwart", "Grijs"])
+        self.grid_color_combo.setCurrentIndex(0)  # Default: Gifgroen
+        self.grid_color_combo.setMaximumWidth(120)
+        self.grid_color_combo.setToolTip("Kleur voor grid overlay en export")
+        self.grid_color_combo.currentIndexChanged.connect(self.on_grid_settings_changed)
+        grid_color_layout.addWidget(self.grid_color_combo)
+        grid_color_layout.addStretch()
+        drawing_layout.addLayout(grid_color_layout)
 
         drawing_group.setLayout(drawing_layout)
         layout.addWidget(drawing_group)
@@ -2893,6 +2930,30 @@ class JSPRBeamerSetup(QMainWindow):
         # If turning on real-time, trigger immediate update
         if is_realtime:
             self.update_parameters()
+
+    def on_grid_settings_changed(self):
+        """Handle grid settings change"""
+        # Update canvas grid settings
+        if hasattr(self, 'canvas'):
+            self.canvas.grid_size = self.grid_size_spin.value() * 50  # Convert to pixels
+            # Update grid color
+            color_map = {
+                0: (0, 255, 0),      # Gifgroen
+                1: (255, 0, 255),    # Magenta
+                2: (0, 255, 255),    # Cyaan
+                3: (255, 255, 0),    # Geel
+                4: (0, 0, 0),        # Zwart
+                5: (128, 128, 128)   # Grijs
+            }
+            r, g, b = color_map.get(self.grid_color_combo.currentIndex(), (0, 255, 0))
+            self.canvas.grid_color = QColor(r, g, b, 120)  # Semi-transparent
+            if self.canvas.show_grid:
+                self.canvas.update()
+
+        # Update presentation mode if open
+        if hasattr(self, 'presentation_window') and self.presentation_window:
+            self.presentation_window.grid_size = self.grid_size_spin.value()
+            self.presentation_window.grid_color_index = min(self.grid_color_combo.currentIndex(), 3)  # Limit to 4 colors
 
     def update_parameters(self):
         """Update visualization parameters"""
@@ -4476,6 +4537,412 @@ class JSPRBeamerSetup(QMainWindow):
 
             self.statusBar().showMessage(f"Selectie toegepast op kleur {colors[selected_index].name}")
             logger.info(f"Selection applied to color index {selected_index}")
+
+    def export_all_variants(self):
+        """Export all variants with dialog for selection"""
+        if self.canvas.image is None:
+            QMessageBox.warning(self, "Geen afbeelding", "Render eerst een afbeelding")
+            return
+
+        if not self.color_manager.get_colors():
+            QMessageBox.warning(self, "Geen kleuren", "Detecteer eerst kleuren")
+            return
+
+        # Create export dialog
+        from PyQt5.QtWidgets import QDialog, QCheckBox, QRadioButton, QButtonGroup
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Export All Varianten")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(600)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+
+        # Title
+        title_label = QLabel("<h2>Export All Varianten</h2>")
+        layout.addWidget(title_label)
+
+        # Modi selection
+        modi_group = QGroupBox("Modi om te exporteren:")
+        modi_layout = QVBoxLayout()
+        self.export_pbn_check = QCheckBox("Paint-by-Numbers")
+        self.export_pbn_check.setChecked(True)
+        modi_layout.addWidget(self.export_pbn_check)
+
+        self.export_line_check = QCheckBox("Lijntekening")
+        self.export_line_check.setChecked(True)
+        modi_layout.addWidget(self.export_line_check)
+
+        self.export_original_check = QCheckBox("Origineel")
+        self.export_original_check.setChecked(True)
+        modi_layout.addWidget(self.export_original_check)
+        modi_group.setLayout(modi_layout)
+        layout.addWidget(modi_group)
+
+        # Variants selection
+        variants_group = QGroupBox("Varianten per modus:")
+        variants_layout = QVBoxLayout()
+
+        self.export_basis_check = QCheckBox("Basis")
+        self.export_basis_check.setChecked(True)
+        variants_layout.addWidget(self.export_basis_check)
+
+        self.export_numbers_check = QCheckBox("+ Cijfers")
+        self.export_numbers_check.setChecked(True)
+        variants_layout.addWidget(self.export_numbers_check)
+
+        self.export_numbers_grid_check = QCheckBox("+ Cijfers + Grid")
+        self.export_numbers_grid_check.setChecked(True)
+        variants_layout.addWidget(self.export_numbers_grid_check)
+
+        self.export_legend_check = QCheckBox("+ Legenda")
+        self.export_legend_check.setChecked(True)
+        variants_layout.addWidget(self.export_legend_check)
+
+        self.export_numbers_legend_check = QCheckBox("+ Cijfers + Legenda")
+        self.export_numbers_legend_check.setChecked(True)
+        variants_layout.addWidget(self.export_numbers_legend_check)
+
+        self.export_complete_check = QCheckBox("+ Complete (alles)")
+        self.export_complete_check.setChecked(True)
+        variants_layout.addWidget(self.export_complete_check)
+
+        variants_group.setLayout(variants_layout)
+        layout.addWidget(variants_group)
+
+        # Settings info
+        settings_info = QLabel(f"""
+        <b>Huidige instellingen:</b><br>
+        • Grid: {self.grid_size_spin.value()}x{self.grid_size_spin.value()},
+          {self.grid_color_combo.currentText()}, met labels<br>
+        • Cijfers: {self.number_size_spin.value()}pt<br>
+        • Lijnen: {self.line_width_spin.value()}px
+        """)
+        settings_info.setWordWrap(True)
+        layout.addWidget(settings_info)
+
+        # Format selection
+        format_group = QGroupBox("Formaat:")
+        format_layout = QHBoxLayout()
+        self.export_format_png = QRadioButton("PNG")
+        self.export_format_png.setChecked(True)
+        self.export_format_jpg = QRadioButton("JPG")
+        format_layout.addWidget(self.export_format_png)
+        format_layout.addWidget(self.export_format_jpg)
+        format_layout.addStretch()
+        format_group.setLayout(format_layout)
+        layout.addWidget(format_group)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        select_all_btn = QPushButton("Alles Aan")
+        select_all_btn.clicked.connect(lambda: self.toggle_all_export_checks(True))
+        button_layout.addWidget(select_all_btn)
+
+        select_none_btn = QPushButton("Alles Uit")
+        select_none_btn.clicked.connect(lambda: self.toggle_all_export_checks(False))
+        button_layout.addWidget(select_none_btn)
+
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Annuleren")
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        export_btn = QPushButton("Exporteer...")
+        export_btn.setDefault(True)
+        export_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(export_btn)
+
+        layout.addLayout(button_layout)
+
+        # Show dialog
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        # Get selections
+        selected_modi = []
+        if self.export_pbn_check.isChecked():
+            selected_modi.append('paintByNumbers')
+        if self.export_line_check.isChecked():
+            selected_modi.append('lineDrawing')
+        if self.export_original_check.isChecked():
+            selected_modi.append('original')
+
+        selected_variants = []
+        if self.export_basis_check.isChecked():
+            selected_variants.append('basis')
+        if self.export_numbers_check.isChecked():
+            selected_variants.append('numbers')
+        if self.export_numbers_grid_check.isChecked():
+            selected_variants.append('numbers_grid')
+        if self.export_legend_check.isChecked():
+            selected_variants.append('legend')
+        if self.export_numbers_legend_check.isChecked():
+            selected_variants.append('numbers_legend')
+        if self.export_complete_check.isChecked():
+            selected_variants.append('complete')
+
+        if not selected_modi or not selected_variants:
+            QMessageBox.warning(self, "Geen selectie", "Selecteer minimaal 1 modus en 1 variant")
+            return
+
+        # Ask for export folder
+        default_path = os.path.dirname(self.current_file_path) if hasattr(self, 'current_file_path') and self.current_file_path else os.path.expanduser("~")
+        export_folder = QFileDialog.getExistingDirectory(
+            self,
+            "Kies exportmap",
+            default_path,
+            QFileDialog.ShowDirsOnly
+        )
+
+        if not export_folder:
+            return
+
+        # Perform export
+        self.perform_export_all(export_folder, selected_modi, selected_variants, 'png' if self.export_format_png.isChecked() else 'jpg')
+
+    def toggle_all_export_checks(self, checked: bool):
+        """Toggle all export checkboxes"""
+        self.export_pbn_check.setChecked(checked)
+        self.export_line_check.setChecked(checked)
+        self.export_original_check.setChecked(checked)
+        self.export_basis_check.setChecked(checked)
+        self.export_numbers_check.setChecked(checked)
+        self.export_numbers_grid_check.setChecked(checked)
+        self.export_legend_check.setChecked(checked)
+        self.export_numbers_legend_check.setChecked(checked)
+        self.export_complete_check.setChecked(checked)
+
+    def perform_export_all(self, base_folder: str, modi: list, variants: list, format: str):
+        """Perform the actual export of all selected variants"""
+        # Get base filename
+        if hasattr(self, 'current_file_path') and self.current_file_path:
+            base_name = os.path.splitext(os.path.basename(self.current_file_path))[0]
+        else:
+            base_name = "export"
+
+        # Create export folder
+        export_folder = os.path.join(base_folder, f"{base_name}_project_exports")
+        os.makedirs(export_folder, exist_ok=True)
+
+        # Calculate total exports
+        total_exports = 0
+        for mode in modi:
+            if mode == 'original':
+                total_exports += 1  # Only basis for original
+            else:
+                total_exports += len(variants)
+
+        # Progress dialog
+        progress = QProgressDialog("Exporteren...", "Annuleren", 0, total_exports, self)
+        progress.setWindowTitle("Export All")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        current = 0
+        extension = f".{format}"
+
+        try:
+            for mode in modi:
+                # Set mode
+                self.visualizer.set_mode(mode)
+
+                # For original, only export basis
+                if mode == 'original':
+                    progress.setLabelText(f"Exporteren: origineel...")
+                    if progress.wasCanceled():
+                        break
+
+                    filename = f"{base_name}_original{extension}"
+                    filepath = os.path.join(export_folder, filename)
+
+                    result = self.visualizer.render()
+                    if result is not None:
+                        self.save_image(result, filepath, format)
+
+                    current += 1
+                    progress.setValue(current)
+                    continue
+
+                # For PBN and Line modes, export selected variants
+                mode_prefix = "pbn" if mode == 'paintByNumbers' else "line"
+
+                for variant in variants:
+                    if progress.wasCanceled():
+                        break
+
+                    progress.setLabelText(f"Exporteren: {mode_prefix}_{variant}...")
+
+                    # Determine settings for this variant
+                    show_numbers = 'numbers' in variant
+                    show_grid = 'grid' in variant
+                    show_legend = 'legend' in variant
+
+                    # Render with appropriate settings
+                    result = self.render_variant(mode, show_numbers, show_grid)
+
+                    if result is not None:
+                        # Add legend if requested
+                        if show_legend:
+                            result = self.add_legend_to_image(result)
+
+                        # Save
+                        filename = f"{base_name}_{mode_prefix}_{variant}{extension}"
+                        filepath = os.path.join(export_folder, filename)
+                        self.save_image(result, filepath, format)
+
+                    current += 1
+                    progress.setValue(current)
+
+            progress.close()
+
+            if current == total_exports:
+                QMessageBox.information(
+                    self,
+                    "Export Voltooid",
+                    f"✅ {total_exports} bestanden geëxporteerd naar:\n{export_folder}"
+                )
+                # Open folder
+                import subprocess
+                subprocess.Popen(['open' if os.name == 'darwin' else 'xdg-open', export_folder])
+
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Export Fout", f"Fout bij exporteren:\n{str(e)}")
+            logger.error(f"Export all failed: {e}", exc_info=True)
+
+    def render_variant(self, mode: str, show_numbers: bool, show_grid: bool) -> Optional[np.ndarray]:
+        """Render a specific variant"""
+        # Set visualizer mode
+        self.visualizer.set_mode(mode)
+        self.visualizer.set_show_numbers(show_numbers)
+
+        # Render
+        result = self.visualizer.render()
+
+        if result is not None and show_grid:
+            # Add grid overlay
+            result = self.add_grid_to_image(result)
+
+        return result
+
+    def add_grid_to_image(self, image: np.ndarray) -> np.ndarray:
+        """Add presentation-style grid to image"""
+        height, width = image.shape[:2]
+        result = image.copy()
+
+        # Get grid settings
+        grid_size = self.grid_size_spin.value()
+        color_index = self.grid_color_combo.currentIndex()
+
+        # Color map
+        color_map = {
+            0: (0, 255, 0),      # Gifgroen
+            1: (255, 0, 255),    # Magenta
+            2: (0, 255, 255),    # Cyaan
+            3: (255, 255, 0),    # Geel
+            4: (0, 0, 0),        # Zwart
+            5: (128, 128, 128)   # Grijs
+        }
+        r, g, b = color_map.get(color_index, (0, 255, 0))
+
+        # Draw grid lines
+        cell_width = width / grid_size
+        cell_height = height / grid_size
+
+        # Vertical lines
+        for i in range(1, grid_size):
+            x = int(i * cell_width)
+            cv2.line(result, (x, 0), (x, height), (r, g, b), 3)
+
+        # Horizontal lines
+        for i in range(1, grid_size):
+            y = int(i * cell_height)
+            cv2.line(result, (0, y), (width, y), (r, g, b), 3)
+
+        # Add grid labels (A1, A2, B1, B2, etc.)
+        letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        font = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = min(cell_width, cell_height) / 100
+        thickness = max(1, int(font_scale * 2))
+
+        for row in range(grid_size):
+            for col in range(grid_size):
+                label = f"{letters[row]}{col + 1}"
+                label_x = int(col * cell_width + 10)
+                label_y = int(row * cell_height + 30)
+
+                # Draw with white outline for visibility
+                cv2.putText(result, label, (label_x, label_y), font, font_scale, (255, 255, 255), thickness + 2, cv2.LINE_AA)
+                cv2.putText(result, label, (label_x, label_y), font, font_scale, (r, g, b), thickness, cv2.LINE_AA)
+
+        return result
+
+    def add_legend_to_image(self, image: np.ndarray) -> np.ndarray:
+        """Add legend to right side of image"""
+        colors = self.color_manager.get_colors()
+        img_height, img_width = image.shape[:2]
+
+        # Create legend
+        legend_width = 400
+        row_height = 50
+        legend_height = max(img_height, len(colors) * row_height + 100)
+
+        legend_image = np.ones((legend_height, legend_width, 3), dtype=np.uint8) * 255
+
+        # Title
+        cv2.putText(legend_image, "Kleuren Legenda", (20, 40), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 0, 0), 2)
+
+        # Draw colors
+        y_offset = 80
+        for color in colors:
+            swatch_x, swatch_y = 20, y_offset
+            swatch_w, swatch_h = 60, 40
+
+            # Swatch (RGB format)
+            cv2.rectangle(legend_image, (swatch_x, swatch_y), (swatch_x + swatch_w, swatch_y + swatch_h),
+                         (int(color.r), int(color.g), int(color.b)), -1)
+            cv2.rectangle(legend_image, (swatch_x, swatch_y), (swatch_x + swatch_w, swatch_y + swatch_h),
+                         (100, 100, 100), 2)
+
+            # Number and name
+            cv2.putText(legend_image, f"{color.number}", (swatch_x + swatch_w + 15, swatch_y + 28),
+                       cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 0, 0), 2)
+
+            name_text = color.name[:25] + "..." if len(color.name) > 25 else color.name
+            cv2.putText(legend_image, name_text, (swatch_x + swatch_w + 60, swatch_y + 28),
+                       cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 0), 1)
+
+            y_offset += row_height
+
+        # Resize if needed
+        if img_height != legend_height:
+            if img_height > legend_height:
+                legend_image = cv2.resize(legend_image, (legend_width, img_height))
+            else:
+                scale = legend_height / img_height
+                new_width = int(img_width * scale)
+                image = cv2.resize(image, (new_width, legend_height))
+
+        # Combine
+        combined = np.hstack([image, legend_image])
+        return combined
+
+    def save_image(self, image: np.ndarray, filepath: str, format: str):
+        """Save image in specified format"""
+        # Convert RGB to BGR for OpenCV
+        bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        if format == 'jpg':
+            cv2.imwrite(filepath, bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        else:
+            cv2.imwrite(filepath, bgr)
+
+        logger.info(f"Exported: {filepath}")
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts for selection tools and magnifier"""
