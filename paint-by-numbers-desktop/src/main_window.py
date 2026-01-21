@@ -417,6 +417,54 @@ class CanvasWidget(QWidget):
         mag_rect = QRectF(mag_x, mag_y, self.magnifier_size, self.magnifier_size)
         painter.drawImage(mag_rect, sample_qimage)
 
+        # Draw crosshair and center pixel indicator (BEFORE removing clip)
+        # Calculate center of magnifier (which represents the selected pixel)
+        center_x = mag_x + self.magnifier_size / 2
+        center_y = mag_y + self.magnifier_size / 2
+
+        # Calculate size of one pixel in the magnified view
+        pixel_size = self.magnifier_size / sample_width
+
+        # Draw center pixel box (highlight the exact pixel being sampled)
+        pixel_box_half = pixel_size / 2
+        painter.setPen(QPen(QColor(255, 255, 0), 2))  # Yellow outline
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(
+            int(center_x - pixel_box_half),
+            int(center_y - pixel_box_half),
+            int(pixel_size),
+            int(pixel_size)
+        )
+
+        # Draw crosshair lines
+        crosshair_length = self.magnifier_size / 3  # Length of crosshair arms
+
+        # Black shadow for contrast
+        painter.setPen(QPen(QColor(0, 0, 0), 3))
+        # Horizontal line
+        painter.drawLine(
+            int(center_x - crosshair_length / 2), int(center_y),
+            int(center_x + crosshair_length / 2), int(center_y)
+        )
+        # Vertical line
+        painter.drawLine(
+            int(center_x), int(center_y - crosshair_length / 2),
+            int(center_x), int(center_y + crosshair_length / 2)
+        )
+
+        # Bright crosshair on top
+        painter.setPen(QPen(QColor(0, 255, 0), 1))  # Neon green
+        # Horizontal line
+        painter.drawLine(
+            int(center_x - crosshair_length / 2), int(center_y),
+            int(center_x + crosshair_length / 2), int(center_y)
+        )
+        # Vertical line
+        painter.drawLine(
+            int(center_x), int(center_y - crosshair_length / 2),
+            int(center_x), int(center_y + crosshair_length / 2)
+        )
+
         # Remove clip for border
         painter.setClipping(False)
 
@@ -424,6 +472,34 @@ class CanvasWidget(QWidget):
         painter.setPen(QPen(QColor(0, 0, 0), 1))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(circle_center, self.magnifier_size / 2, self.magnifier_size / 2)
+
+        # Draw RGB value label below magnifier
+        if 0 <= img_y < self.original_image.shape[0] and 0 <= img_x < self.original_image.shape[1]:
+            r, g, b = self.original_image[img_y, img_x]
+            rgb_text = f"RGB: ({r}, {g}, {b})"
+
+            # Draw background for text
+            font = painter.font()
+            font.setPointSize(9)
+            font.setBold(True)
+            painter.setFont(font)
+
+            text_rect = painter.boundingRect(0, 0, 200, 30, Qt.AlignLeft, rgb_text)
+            text_x = int(circle_center.x() - text_rect.width() / 2)
+            text_y = int(mag_y + self.magnifier_size + 5)
+
+            # Draw semi-transparent background
+            painter.setBrush(QColor(0, 0, 0, 180))
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(
+                text_x - 4, text_y - 2,
+                text_rect.width() + 8, text_rect.height() + 4,
+                3, 3
+            )
+
+            # Draw text
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(text_x, text_y + text_rect.height() - 2, rgb_text)
 
         # Restore painter state
         painter.restore()
