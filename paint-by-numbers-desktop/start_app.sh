@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# JSPR Beamer Setup Launcher
-# Dit script start de applicatie automatisch met de juiste omgeving
+# JSPR Beamer Setup Launcher with Version Selector
+# This script shows a GUI to choose between Stable and Development version
 
 # Debug logging
 LOG_FILE="/tmp/jspr_app_launcher.log"
@@ -22,16 +22,7 @@ fi
 
 echo "venv found" >> "$LOG_FILE"
 
-# Check if main.py exists
-if [ ! -f "main.py" ]; then
-    echo "ERROR: main.py not found" >> "$LOG_FILE"
-    osascript -e 'display dialog "main.py niet gevonden in:\n'"$(pwd)"'" buttons {"OK"} default button "OK" with icon stop'
-    exit 1
-fi
-
-echo "main.py found" >> "$LOG_FILE"
-
-# Use direct Python path to avoid venv activation issues
+# Use direct Python path
 PYTHON_BIN="$SCRIPT_DIR/venv/bin/python"
 echo "Using Python: $PYTHON_BIN" >> "$LOG_FILE"
 
@@ -48,9 +39,9 @@ echo "Python binary found" >> "$LOG_FILE"
 PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1)
 echo "Python version: $PYTHON_VERSION" >> "$LOG_FILE"
 
-# Start the application with splash screen
-echo "Starting main.py..." >> "$LOG_FILE"
-"$PYTHON_BIN" main.py >> "$LOG_FILE" 2>&1
+# Start version selector GUI (which will then launch the app)
+echo "Starting version selector..." >> "$LOG_FILE"
+"$PYTHON_BIN" version_launcher.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "Exit code: $EXIT_CODE" >> "$LOG_FILE"

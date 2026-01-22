@@ -30,10 +30,10 @@ else
     exit 1
 fi
 
-# Start de app
-echo "✨ Starten JSPR Beamer Setup..."
+# Start de version selector (die dan de app start)
+echo "✨ Starten Version Selector..."
 echo ""
-python main.py
+python version_launcher.py
 
 # Houd terminal open als er een error is
 if [ $? -ne 0 ]; then
