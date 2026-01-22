@@ -5,8 +5,8 @@ Keyboard-controlled interface for beamer projection
 
 import numpy as np
 from typing import Optional
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QInputDialog
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QInputDialog, QGesture
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QEvent
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QFont, QPen
 import logging
 
@@ -71,6 +71,9 @@ class PresentationMode(QWidget):
 
         # Enable mouse tracking for hover effects
         self.setMouseTracking(True)
+
+        # Enable pinch gesture for trackpad zoom
+        self.grabGesture(Qt.PinchGesture)
 
         # Start fade timer (fade out after 3 seconds)
         self.fade_timer.start(3000)
@@ -321,6 +324,32 @@ class PresentationMode(QWidget):
         elif key == Qt.Key_0:
             self.reset_zoom()
 
+        # 1-6: Set grid size directly
+        elif key == Qt.Key_1:
+            self.grid_size = 1
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+        elif key == Qt.Key_2:
+            self.grid_size = 2
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+        elif key == Qt.Key_3:
+            self.grid_size = 3
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+        elif key == Qt.Key_4:
+            self.grid_size = 4
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+        elif key == Qt.Key_5:
+            self.grid_size = 5
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+        elif key == Qt.Key_6:
+            self.grid_size = 6
+            logger.info(f"Grid: {self.grid_size}x{self.grid_size}")
+            self.update()
+
         # Arrow keys: Pan
         elif key == Qt.Key_Left:
             self.pan(50, 0)
@@ -430,7 +459,7 @@ class PresentationMode(QWidget):
 
         # Semi-transparent background - adjusted for new layout
         bg_color = QColor(0, 0, 0, int(180 * self.shortcuts_opacity))
-        painter.fillRect(10, 10, 420, 520, bg_color)
+        painter.fillRect(10, 10, 420, 570, bg_color)
 
         # Title
         font = QFont("Arial", 14, QFont.Bold)
@@ -453,6 +482,7 @@ class PresentationMode(QWidget):
             ("📐 Grid", [
                 ("G", "Grid aan/uit"),
                 ("C", "Grid kleur wisselen"),
+                ("1-6", "Grid: 1x1 tot 6x6"),
                 ("[ / ]", "Grid grootte +/-"),
             ]),
             ("🔍 Zoom & Navigatie", [
@@ -461,6 +491,7 @@ class PresentationMode(QWidget):
                 ("0", "Reset zoom"),
                 ("←↑→↓", "Pan beeld"),
                 ("Muiswiel", "Zoom in/uit"),
+                ("Pinch", "Trackpad zoom"),
                 ("Sleep", "Pan beeld"),
             ]),
         ]
@@ -569,6 +600,47 @@ class PresentationMode(QWidget):
             logger.info(f"Zoom set to {zoom_value}%")
             self.check_quality_change(self.zoom_level)
             self.update()
+
+    def event(self, event):
+        """Handle events including gestures"""
+        if event.type() == QEvent.Gesture:
+            return self.gestureEvent(event)
+        return super().event(event)
+
+    def gestureEvent(self, event):
+        """Handle gesture events (pinch to zoom)"""
+        gesture = event.gesture(Qt.PinchGesture)
+        if gesture:
+            return self.pinchTriggered(gesture)
+        return False
+
+    def pinchTriggered(self, gesture):
+        """Handle pinch gesture for trackpad zoom"""
+        # Get the scale factor
+        scale_factor = gesture.scaleFactor()
+
+        # Only process if we have a valid scale factor
+        if scale_factor > 0 and scale_factor != 1.0:
+            # Apply zoom based on pinch scale
+            old_zoom = self.zoom_level
+            self.zoom_level *= scale_factor
+
+            # Clamp zoom level
+            self.zoom_level = max(0.1, min(5.0, self.zoom_level))
+
+            # Only update if zoom actually changed
+            if abs(self.zoom_level - old_zoom) > 0.01:
+                # Check if we need to re-render at different quality
+                self.check_quality_change(self.zoom_level)
+
+                # Update display
+                self.update()
+
+                # Log on finish
+                if gesture.state() == Qt.GestureFinished:
+                    logger.info(f"Pinch zoom: {int(self.zoom_level * 100)}%")
+
+        return True
 
     def closeEvent(self, event):
         """Handle window close"""
