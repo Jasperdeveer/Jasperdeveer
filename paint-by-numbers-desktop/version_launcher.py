@@ -128,66 +128,94 @@ class VersionSelectorDialog(QDialog):
 
 def main():
     """Main entry point"""
+    print("=" * 60)
+    print("VERSION SELECTOR STARTING")
+    print("=" * 60)
+
     # Get the project directory
     project_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(project_dir)
 
-    app = QApplication(sys.argv)
+    print(f"Working directory: {project_dir}")
+    print(f"DISPLAY env: {os.environ.get('DISPLAY', 'NOT SET')}")
+    print("")
 
-    # Set application style
-    app.setStyle('Fusion')
+    try:
+        print("Creating QApplication...")
+        app = QApplication(sys.argv)
+        print("✓ QApplication created")
 
-    # Show version selector
-    dialog = VersionSelectorDialog()
-    result = dialog.exec_()
+        # Set application style
+        app.setStyle('Fusion')
+        print("✓ Style set to Fusion")
 
-    if result == QDialog.Accepted and dialog.selected_version:
-        # Switch to selected branch
-        if dialog.selected_version == "stable":
-            print("🚀 Starting Stable version...")
-            branch = "stable"
-        else:
-            print("⚡ Starting Development version...")
-            print("⚠️  Warning: This is the development version with untested features!")
-            branch = "dev"
+        # Show version selector
+        print("Creating dialog...")
+        dialog = VersionSelectorDialog()
+        print("✓ Dialog created")
 
-        # Close the dialog first
-        app.quit()
-        del dialog
-        del app
+        print("Showing dialog...")
+        result = dialog.exec_()
+        print(f"Dialog result: {result}")
 
-        # Switch git branch (silent, ignore errors)
-        try:
-            subprocess.run(["git", "checkout", branch],
-                         capture_output=True,
-                         cwd=project_dir,
-                         timeout=5)
-        except Exception:
-            pass  # Continue even if git checkout fails
+        if result == QDialog.Accepted and dialog.selected_version:
+            # Switch to selected branch
+            if dialog.selected_version == "stable":
+                print("🚀 User selected: Stable version")
+                branch = "stable"
+            else:
+                print("⚡ User selected: Development version")
+                print("⚠️  Warning: This is the development version with untested features!")
+                branch = "dev"
 
-        # Launch main.py directly
-        try:
-            print(f"📌 Branch: {branch}")
-            print("🚀 Launching application...")
+            # Close the dialog first
+            app.quit()
+            del dialog
+            del app
+
+            # Switch git branch (silent, ignore errors)
+            print(f"\n📌 Switching to branch: {branch}")
+            try:
+                result = subprocess.run(["git", "checkout", branch],
+                             capture_output=True,
+                             cwd=project_dir,
+                             timeout=5)
+                if result.returncode == 0:
+                    print(f"✓ Switched to {branch} branch")
+                else:
+                    print(f"⚠️  Could not switch branch (may already be on {branch})")
+            except Exception as e:
+                print(f"⚠️  Git checkout error: {e}")
+
+            # Launch main.py as subprocess instead of importing
+            print("\n🚀 Launching application...")
             print("")
 
-            # Execute main.py in the same process
-            sys.argv = ["main.py"]  # Reset argv
+            try:
+                # Run main.py as a subprocess
+                os.execvp("python3", ["python3", "main.py"])
+            except Exception as e:
+                print(f"Error launching application: {e}")
+                import traceback
+                traceback.print_exc()
+                sys.exit(1)
+        else:
+            print("Launch cancelled by user")
+            sys.exit(0)
 
-            # Import and run main.py
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("main", os.path.join(project_dir, "main.py"))
-            main_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(main_module)
+    except Exception as e:
+        print(f"\n❌ ERROR in version selector: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\n⚠️  Falling back to stable version...")
 
-        except Exception as e:
-            print(f"Error launching application: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-    else:
-        print("Launch cancelled")
-        sys.exit(0)
+        # Fallback: just launch stable
+        try:
+            subprocess.run(["git", "checkout", "stable"], capture_output=True)
+        except:
+            pass
+        os.execvp("python3", ["python3", "main.py"])
+        sys.exit(1)
 
 
 if __name__ == "__main__":
