@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# JSPR Beamer Setup Launcher
-# This script launches the app from anywhere
+# JSPR Beamer Setup Launcher with Version Selector
+# This script shows a GUI to choose between Stable and Development version
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -21,5 +21,5 @@ else
     source venv/bin/activate
 fi
 
-# Run the app
-python main.py
+# Run the version selector GUI
+python3 version_launcher.py
