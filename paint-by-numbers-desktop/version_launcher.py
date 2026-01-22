@@ -128,6 +128,10 @@ class VersionSelectorDialog(QDialog):
 
 def main():
     """Main entry point"""
+    # Get the project directory
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(project_dir)
+
     app = QApplication(sys.argv)
 
     # Set application style
@@ -138,26 +142,48 @@ def main():
     result = dialog.exec_()
 
     if result == QDialog.Accepted and dialog.selected_version:
-        # Get the project directory
-        project_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Launch the selected version
+        # Switch to selected branch
         if dialog.selected_version == "stable":
-            script_path = os.path.join(project_dir, "run_stable.sh")
             print("🚀 Starting Stable version...")
+            branch = "stable"
         else:
-            script_path = os.path.join(project_dir, "run_dev.sh")
             print("⚡ Starting Development version...")
+            print("⚠️  Warning: This is the development version with untested features!")
+            branch = "dev"
 
-        # Close the dialog
+        # Close the dialog first
         app.quit()
+        del dialog
+        del app
 
-        # Execute the launch script
+        # Switch git branch (silent, ignore errors)
         try:
-            # Run in the same terminal
-            subprocess.run(["bash", script_path], cwd=project_dir)
+            subprocess.run(["git", "checkout", branch],
+                         capture_output=True,
+                         cwd=project_dir,
+                         timeout=5)
+        except Exception:
+            pass  # Continue even if git checkout fails
+
+        # Launch main.py directly
+        try:
+            print(f"📌 Branch: {branch}")
+            print("🚀 Launching application...")
+            print("")
+
+            # Execute main.py in the same process
+            sys.argv = ["main.py"]  # Reset argv
+
+            # Import and run main.py
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("main", os.path.join(project_dir, "main.py"))
+            main_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(main_module)
+
         except Exception as e:
             print(f"Error launching application: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
     else:
         print("Launch cancelled")

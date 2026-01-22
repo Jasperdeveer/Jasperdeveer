@@ -35,7 +35,7 @@ fi
 # Run the application
 echo "🚀 Launching application..."
 echo ""
-cd src && python3 main_window.py
+python3 main.py
 
 # Deactivate venv on exit
 deactivate
