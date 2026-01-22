@@ -37,12 +37,40 @@ High-performance Python desktop application for paint-by-numbers generation with
 
 ## Installation
 
+### Quick Install (Recommended) 🚀
+
+**Nieuw op een laptop? Gebruik de automatische installer:**
+
+```bash
+# Clone de repository
+git clone https://github.com/[JOUW-USERNAME]/Jasperdeveer.git
+cd Jasperdeveer/paint-by-numbers-desktop
+
+# Run automatische setup (installeert alles)
+chmod +x setup.sh
+./setup.sh
+```
+
+De `setup.sh` installer doet alles automatisch:
+- ✓ Checkt Python versie
+- ✓ Maakt virtual environment aan
+- ✓ Installeert alle dependencies
+- ✓ Configureert launchers voor je OS
+- ✓ Verifieert de installatie
+
+**📖 Volledige installatiehandleiding:** Zie [INSTALL.md](INSTALL.md)
+
+**🔀 Git workflow (stable/dev branches):** Zie [README_WORKFLOW.md](README_WORKFLOW.md)
+
 ### Requirements
 
-- Python 3.9 or later
-- macOS 10.14 or later (Intel or Apple Silicon)
+- Python 3.8 or later
+- macOS 10.14+ (Intel or Apple Silicon) or Linux
+- Git (aanbevolen voor updates)
 
-### Install Dependencies
+### Manual Install
+
+Als je het handmatig wilt doen:
 
 ```bash
 cd paint-by-numbers-desktop
@@ -51,7 +79,7 @@ cd paint-by-numbers-desktop
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# Install dependencies (duurt 5-10 minuten)
 pip install -r requirements.txt
 ```
 
