@@ -22,8 +22,8 @@ echo "📌 Switching to dev branch..."
 git checkout dev
 
 echo "⬇️  Pulling latest development version..."
-git pull origin dev || {
-    echo "⚠️  Could not pull from origin (using local dev)"
+timeout 10 git pull origin dev || {
+    echo "⚠️  Could not pull from origin (offline or timeout - using local dev)"
 }
 
 # Restore stashed changes if any

@@ -36,10 +36,10 @@ fi
 
 echo "✓ venv found"
 
-# Git pull (stil, geen error als het mislukt)
+# Git pull (stil, met timeout, geen error als het mislukt)
 echo ""
-echo "Updating from git..."
-git pull origin claude/enhance-line-drawing-precision-kyhzU 2>&1 || echo "Git pull failed (continuing anyway)"
+echo "Checking for updates..."
+timeout 3 git pull origin claude/enhance-line-drawing-precision-kyhzU 2>&1 || echo "Skipped update (offline or timeout)"
 
 # Gebruik direct het Python pad uit venv (geen activate nodig)
 PYTHON_BIN="$PROJECT_DIR/venv/bin/python"

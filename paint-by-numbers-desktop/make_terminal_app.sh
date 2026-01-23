@@ -27,7 +27,7 @@ osacompile -o "$APP_NAME.app" << 'APPLESCRIPT'
 on run
     tell application "Terminal"
         activate
-        do script "cd ~/Documents/GitHub/Jasperdeveer/paint-by-numbers-desktop && echo '🚀 JSPR Beamer Setup' && echo '===================' && echo '' && echo '📥 Updating to latest version...' && git pull origin claude/enhance-line-drawing-precision-kyhzU 2>/dev/null && echo '' && echo '✅ Starting app...' && echo '' && source venv/bin/activate && python main.py; echo ''; echo '✅ App closed'; sleep 2; exit"
+        do script "cd ~/Documents/GitHub/Jasperdeveer/paint-by-numbers-desktop && echo '🚀 JSPR Beamer Setup' && echo '===================' && echo '' && echo '📥 Checking for updates...' && timeout 5 git pull origin claude/enhance-line-drawing-precision-kyhzU 2>/dev/null || echo '(Offline - using local version)' && echo '' && echo '✅ Starting app...' && echo '' && source venv/bin/activate && python main.py; echo ''; echo '✅ App closed'; sleep 2; exit"
     end tell
 end run
 APPLESCRIPT

@@ -9,14 +9,14 @@ cd "$(dirname "$0")"
 echo "🚀 JSPR Beamer Setup wordt gestart..."
 echo ""
 
-# Check of we op de juiste branch zitten en pull de nieuwste versie
+# Check of we op de juiste branch zitten en pull de nieuwste versie (met timeout)
 echo "📥 Ophalen nieuwste versie..."
-git fetch origin
-git checkout claude/enhance-line-drawing-precision-kyhzU
-git pull origin claude/enhance-line-drawing-precision-kyhzU
+timeout 3 git fetch origin 2>/dev/null || echo "(Offline - using local version)"
+git checkout claude/enhance-line-drawing-precision-kyhzU 2>/dev/null || true
+timeout 5 git pull origin claude/enhance-line-drawing-precision-kyhzU 2>/dev/null || echo "(Offline - using local version)"
 
 echo ""
-echo "✅ Code bijgewerkt naar nieuwste versie"
+echo "✅ Code klaar"
 echo ""
 
 # Activeer virtual environment

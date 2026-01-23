@@ -22,8 +22,8 @@ echo "📌 Switching to stable branch..."
 git checkout stable
 
 echo "⬇️  Pulling latest stable version..."
-git pull origin stable || {
-    echo "⚠️  Could not pull from origin (using local stable)"
+timeout 10 git pull origin stable || {
+    echo "⚠️  Could not pull from origin (offline or timeout - using local stable)"
 }
 
 # Restore stashed changes if any
