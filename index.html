@@ -84,7 +84,6 @@
       z-index: 100;
       padding: 1.5rem 0;
       background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 100%);
-      backdrop-filter: blur(0px);
     }
 
     header .wrapper {
@@ -94,15 +93,14 @@
     }
 
     .logo {
-      font-family: var(--font-jspr);
-      font-size: 1.4rem;
-      letter-spacing: 0.08em;
-      color: var(--white);
+      display: block;
+      height: 36px;
+      width: auto;
       text-decoration: none;
-      text-transform: uppercase;
-      transition: color 0.2s;
+      transition: opacity 0.2s, filter 0.2s;
     }
-    .logo:hover { color: var(--teal); }
+    .logo img { height: 100%; width: auto; display: block; }
+    .logo:hover { opacity: 0.7; }
 
     .nav-dot {
       width: 8px; height: 8px;
@@ -121,13 +119,21 @@
     .hero {
       min-height: 100vh;
       display: flex;
-      flex-direction: column;
-      justify-content: center;
+      align-items: center;
       padding: 8rem 0 4rem;
     }
 
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4rem;
+      align-items: center;
+      width: 100%;
+    }
+
+    .hero-text { display: flex; flex-direction: column; }
+
     .hero-eyebrow {
-      font-family: var(--font-sans);
       font-size: 0.75rem;
       letter-spacing: 0.25em;
       text-transform: uppercase;
@@ -146,7 +152,7 @@
 
     .hero-name {
       font-family: var(--font-jspr);
-      font-size: clamp(3.5rem, 10vw, 9rem);
+      font-size: clamp(3rem, 8vw, 7.5rem);
       line-height: 0.9;
       letter-spacing: -0.01em;
       text-transform: uppercase;
@@ -157,12 +163,12 @@
     .hero-name .teal { color: var(--teal); }
 
     .hero-tagline {
-      font-size: clamp(0.9rem, 2vw, 1.1rem);
+      font-size: clamp(0.85rem, 1.5vw, 1rem);
       color: var(--gray-lt);
-      letter-spacing: 0.06em;
-      max-width: 480px;
-      line-height: 1.7;
-      margin-bottom: 3.5rem;
+      letter-spacing: 0.04em;
+      max-width: 400px;
+      line-height: 1.8;
+      margin-bottom: 3rem;
     }
 
     .hero-cta {
@@ -179,6 +185,7 @@
       transition: all 0.3s ease;
       position: relative;
       overflow: hidden;
+      align-self: flex-start;
     }
 
     .hero-cta::before {
@@ -200,6 +207,82 @@
     }
     .hero-cta:hover .arrow { transform: translateX(4px); }
 
+    /* ─── Portrait ───────────────────────────────────────────────────────────── */
+    .hero-portrait {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .portrait-frame {
+      position: relative;
+      width: clamp(220px, 28vw, 360px);
+    }
+
+    .portrait-frame::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border: 1px solid var(--border);
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* teal corner accents */
+    .portrait-frame::after {
+      content: '';
+      position: absolute;
+      top: -6px; left: -6px;
+      width: 24px; height: 24px;
+      border-top: 2px solid var(--teal);
+      border-left: 2px solid var(--teal);
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .corner-br {
+      position: absolute;
+      bottom: -6px; right: -6px;
+      width: 24px; height: 24px;
+      border-bottom: 2px solid var(--teal);
+      border-right: 2px solid var(--teal);
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .portrait-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 4/5;
+      object-fit: cover;
+      object-position: center top;
+      filter: grayscale(100%) contrast(1.05);
+      transition: filter 0.5s ease;
+    }
+
+    .portrait-frame:hover img {
+      filter: grayscale(60%) contrast(1.05);
+    }
+
+    /* teal scan line on hover */
+    .portrait-scan {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, transparent 40%, rgba(0,153,153,0.08) 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* offset shadow box */
+    .portrait-shadow {
+      position: absolute;
+      inset: 0;
+      transform: translate(10px, 10px);
+      background: var(--teal-dim);
+      opacity: 0.15;
+      z-index: -1;
+    }
+
     /* ─── Scroll indicator ───────────────────────────────────────────────────── */
     .scroll-hint {
       position: absolute;
@@ -210,7 +293,7 @@
       flex-direction: column;
       align-items: center;
       gap: 0.5rem;
-      opacity: 0.4;
+      opacity: 0.35;
       font-size: 0.65rem;
       letter-spacing: 0.2em;
       text-transform: uppercase;
@@ -256,7 +339,7 @@
 
     .contact-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -274,7 +357,6 @@
       position: relative;
       overflow: hidden;
       transition: background 0.3s ease;
-      group: true;
     }
 
     .contact-card::before {
@@ -381,12 +463,14 @@
     }
 
     .footer-logo {
-      font-family: var(--font-jspr);
-      font-size: 1rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--gray);
+      display: block;
+      height: 28px;
+      width: auto;
+      opacity: 0.35;
+      transition: opacity 0.2s;
     }
+    .footer-logo:hover { opacity: 0.6; }
+    .footer-logo img { height: 100%; width: auto; display: block; }
 
     .footer-copy {
       font-size: 0.7rem;
@@ -394,13 +478,21 @@
       letter-spacing: 0.1em;
     }
 
-    /* ─── Hover glow on teal ─────────────────────────────────────────────────── */
     a { cursor: crosshair; }
 
     /* ─── Responsive ─────────────────────────────────────────────────────────── */
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
+      .hero-inner {
+        grid-template-columns: 1fr;
+        gap: 3rem;
+      }
+      .hero-portrait { order: -1; }
+      .portrait-frame { width: clamp(180px, 60vw, 280px); margin: 0 auto; }
       .hero { padding: 7rem 0 3rem; }
-      .hero-name { font-size: clamp(3rem, 15vw, 5rem); }
+      .hero-name { font-size: clamp(2.8rem, 13vw, 5rem); }
+    }
+
+    @media (max-width: 480px) {
       .contact-grid { grid-template-columns: 1fr; }
       .biz-strip { padding: 1.25rem 1.5rem; gap: 1.25rem; }
       footer .wrapper { flex-direction: column; align-items: flex-start; }
@@ -426,26 +518,51 @@
   <!-- Header -->
   <header>
     <div class="wrapper">
-      <a href="#" class="logo">jspr</a>
+      <a href="#" class="logo">
+        <img src="assets/img/jspr-logo.svg" alt="JSPR" />
+      </a>
       <div class="nav-dot" title="Beschikbaar voor opdrachten"></div>
     </div>
   </header>
 
   <!-- Hero -->
   <section class="hero">
-    <div class="wrapper" style="position:relative;">
-      <p class="hero-eyebrow">Creatief professional</p>
-      <h1 class="hero-name">
-        Jasper<br>de<br><span class="teal">Veer</span>
-      </h1>
-      <p class="hero-tagline">
-        Ontwerper, mediamaker &amp; creatief strateeg.<br>
-        Gebaseerd in Nederland, werkzaam wereldwijd.
-      </p>
-      <a href="#contact" class="hero-cta">
-        <span>Neem contact op</span>
-        <span class="arrow">→</span>
-      </a>
+    <div class="wrapper" style="position:relative; width:100%;">
+      <div class="hero-inner">
+
+        <!-- Text -->
+        <div class="hero-text">
+          <p class="hero-eyebrow">Creatief professional</p>
+          <h1 class="hero-name">
+            Jasper<br>de<br><span class="teal">Veer</span>
+          </h1>
+          <p class="hero-tagline">
+            Ontwerper, mediamaker &amp; creatief strateeg.<br>
+            Gebaseerd in Nederland, werkzaam wereldwijd.
+          </p>
+          <a href="#contact" class="hero-cta">
+            <span>Neem contact op</span>
+            <span class="arrow">→</span>
+          </a>
+        </div>
+
+        <!-- Portrait -->
+        <div class="hero-portrait">
+          <div class="portrait-frame">
+            <img
+              src="assets/img/jasper.png"
+              alt="Jasper de Veer"
+              width="576"
+              height="720"
+            />
+            <div class="portrait-scan"></div>
+            <div class="corner-br"></div>
+          </div>
+          <div class="portrait-shadow"></div>
+        </div>
+
+      </div>
+
       <div class="scroll-hint">
         <div class="scroll-line"></div>
         <span>scroll</span>
@@ -538,13 +655,14 @@
   <!-- Footer -->
   <footer>
     <div class="wrapper">
-      <span class="footer-logo">jspr</span>
+      <a href="#" class="footer-logo">
+        <img src="assets/img/jspr-logo.svg" alt="JSPR" />
+      </a>
       <span class="footer-copy">&copy; 2026 Jasper de Veer</span>
     </div>
   </footer>
 
   <script>
-    // Reveal on scroll
     const reveals = document.querySelectorAll('.reveal');
     const io = new IntersectionObserver((entries) => {
       entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
