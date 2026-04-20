@@ -1,3 +1,15 @@
+/* ── Timeout-balk ────────────────────────────────────────────────────────── */
+.timeout-bar {
+  background: #fff3cd;
+  border-bottom: 1px solid #ffc107;
+  padding: .5rem 1rem;
+  text-align: center;
+  font-size: .85rem;
+  position: sticky;
+  top: 56px;   /* onder de navbar */
+  z-index: 1030;
+}
+
 /* ── Algemeen ────────────────────────────────────────────────────────────── */
 body {
   background-color: #f3f4f6;

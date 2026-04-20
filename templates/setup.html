@@ -3,142 +3,152 @@
 
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-7">
+<div class="col-lg-7">
 
-    {% if configured %}
-    {# ── App is geconfigureerd: toon login-knop ─────────────────────────── #}
-    <div class="card shadow-sm mb-4">
-      <div class="card-body text-center p-5">
-        <i class="bi bi-envelope-x-fill text-primary" style="font-size:3rem;"></i>
-        <h2 class="mt-3 mb-1">Spam Uitschrijver</h2>
-        <p class="text-muted mb-4">
-          Log in met je <strong>@live.nl</strong> account om nieuwsbrieven en spam snel te beheren.
-        </p>
-        <a href="{{ url_for('authorize') }}" class="btn btn-primary btn-lg w-100">
-          <i class="bi bi-microsoft me-2"></i>Inloggen met Microsoft
-        </a>
-        <hr class="my-4"/>
-        <small class="text-muted">
-          <i class="bi bi-shield-check me-1"></i>
-          Je gegevens worden alleen gebruikt om je inbox te lezen en afmeldingen te verwerken.
-          Er wordt niets opgeslagen.
-        </small>
-      </div>
+{% if configured %}
+{# ── Geconfigureerd: login-knop ──────────────────────────────────────────── #}
+<div class="card shadow-sm">
+  <div class="card-body text-center p-5">
+    <i class="bi bi-envelope-x-fill text-primary" style="font-size:3rem;"></i>
+    <h2 class="mt-3 mb-1">Spam Uitschrijver</h2>
+    <p class="text-muted mb-4">
+      Log in met je <strong>@live.nl</strong> account.<br>
+      <small>Je wachtwoord gaat rechtstreeks naar Microsoft — de app ziet het nooit.</small>
+    </p>
+    <a href="{{ url_for('authorize') }}" class="btn btn-primary btn-lg w-100">
+      <i class="bi bi-microsoft me-2"></i>Inloggen met Microsoft
+    </a>
+    <div class="mt-4 text-start bg-light rounded p-3">
+      <p class="small fw-semibold mb-2"><i class="bi bi-shield-check text-success me-1"></i>Wat deze app wel en niet doet:</p>
+      <ul class="small text-muted mb-0">
+        <li>Leest alleen je inbox om nieuwsbrieven te vinden</li>
+        <li>Blokkeert afzenders via jouw eigen Microsoft-instellingen</li>
+        <li>Slaat <strong>geen</strong> e-mails op — alles blijft bij Microsoft</li>
+        <li>Sessie verloopt automatisch na 8 uur</li>
+        <li>Draait alleen op jouw eigen netwerk (via Tailscale)</li>
+      </ul>
     </div>
+  </div>
+</div>
 
-    {% else %}
-    {# ── App nog niet geconfigureerd: stap-voor-stap gids ──────────────── #}
-    <div class="alert alert-warning">
-      <i class="bi bi-exclamation-triangle-fill me-2"></i>
-      De app is nog niet geconfigureerd. Volg de stappen hieronder.
-    </div>
+{% else %}
+{# ── Niet geconfigureerd: installatiegids ────────────────────────────────── #}
+<div class="alert alert-warning">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  De app is nog niet geconfigureerd. Volg de stappen hieronder — het duurt ~10 minuten.
+</div>
 
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-primary text-white fw-semibold">
-        <i class="bi bi-gear-fill me-2"></i>Eenmalige instelling — Azure App Registratie
-      </div>
-      <div class="card-body">
+{# Stap 1: Tailscale #}
+<div class="card mb-3 shadow-sm">
+  <div class="card-header bg-dark text-white fw-semibold">
+    <span class="badge bg-primary me-2">1</span>
+    Tailscale installeren — veilige verbinding thuis↔iPhone
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">
+      Tailscale maakt een privénetwerk tussen jouw computer en iPhone.
+      Je e-mail verlaat nooit je thuisnetwerk. Gratis voor persoonlijk gebruik.
+    </p>
+    <ol class="small text-muted ps-3">
+      <li>
+        Ga naar <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>
+        en installeer Tailscale op je <strong>computer</strong> (Mac of Windows).
+      </li>
+      <li>
+        Installeer de <strong>Tailscale-app</strong> op je iPhone via de App Store.
+      </li>
+      <li>
+        Log in op beide apparaten met hetzelfde Tailscale-account (gratis via Google of GitHub).
+      </li>
+      <li>
+        Zet op je computer in de terminal (Mac) of Command Prompt (Windows):
+        <pre class="bg-light rounded p-2 mt-1"><code>tailscale serve --bg 5000</code></pre>
+        Dit geeft je een veilige HTTPS-adres, bijv.:
+        <code>https://mijnpc.staart-xyz.ts.net</code>
+      </li>
+      <li>Noteer dat adres — je hebt het nodig bij stap 2 en 3.</li>
+    </ol>
+  </div>
+</div>
 
-        <p class="text-muted small">
-          De app gebruikt Microsofts officiële OAuth-dienst om toegang te krijgen
-          tot je inbox. Je moet éénmalig een gratis "App Registratie" aanmaken in
-          Azure. Dat kost ongeveer 3 minuten.
-        </p>
+{# Stap 2: Azure #}
+<div class="card mb-3 shadow-sm">
+  <div class="card-header bg-dark text-white fw-semibold">
+    <span class="badge bg-primary me-2">2</span>
+    Azure App Registratie — toegang tot jouw inbox
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">
+      Microsoft vereist dat je een gratis "App Registratie" aanmaakt zodat de app
+      namens jou je inbox mag lezen. Jij beslist zelf welke rechten je geeft.
+    </p>
+    <ol class="small text-muted ps-3">
+      <li>
+        Ga naar <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
+        → zoek op <em>"App registraties"</em> → <strong>+ Nieuwe registratie</strong>.
+      </li>
+      <li>
+        Naam: bijv. <code>Spam Uitschrijver</code><br>
+        Accounttype: <strong>"Persoonlijke Microsoft-accounts"</strong>
+      </li>
+      <li>
+        Redirect URI (plak jouw Tailscale-adres in):<br>
+        <code>https://&lt;jouw-tailscale-adres&gt;/callback</code>
+      </li>
+      <li>Klik op <strong>Registreren</strong>.</li>
+      <li>Kopieer de <strong>Toepassings-ID (Client ID)</strong> van de overzichtspagina.</li>
+      <li>
+        Ga naar <em>Certificaten en geheimen</em> → <strong>+ Nieuw clientgeheim</strong> →
+        kopieer de <strong>Waarde</strong> (niet de ID!).
+      </li>
+    </ol>
+  </div>
+</div>
 
-        {# Stap 1 #}
-        <div class="d-flex gap-3 mb-4">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">1</div>
-          <div>
-            <div class="fw-semibold">Open de Azure-portal</div>
-            <p class="text-muted small mb-1">
-              Ga naar <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
-              en log in met <strong>hetzelfde</strong> Microsoft-account als je @live.nl adres,
-              of met een los Microsoft-account (gratis).
-            </p>
-          </div>
-        </div>
-
-        {# Stap 2 #}
-        <div class="d-flex gap-3 mb-4">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">2</div>
-          <div>
-            <div class="fw-semibold">Nieuwe App Registratie aanmaken</div>
-            <ol class="text-muted small ps-3 mb-0">
-              <li>Zoek bovenaan op <em>"App registraties"</em> en open het.</li>
-              <li>Klik op <strong>+ Nieuwe registratie</strong>.</li>
-              <li>Geef een naam, bijv. <code>Spam Uitschrijver</code>.</li>
-              <li>Kies bij <em>Ondersteunde accounttypen</em>:
-                <strong>"Persoonlijke Microsoft-accounts"</strong>.</li>
-              <li>Vul bij Redirect URI in:
-                <code class="user-select-all">{{ redirect_uri }}</code>
-              </li>
-              <li>Klik op <strong>Registreren</strong>.</li>
-            </ol>
-          </div>
-        </div>
-
-        {# Stap 3 #}
-        <div class="d-flex gap-3 mb-4">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">3</div>
-          <div>
-            <div class="fw-semibold">Kopieer de Client ID</div>
-            <p class="text-muted small mb-0">
-              Kopieer op de overzichtspagina de <strong>Toepassings-ID (client)</strong>.
-              Dit is je <code>AZURE_CLIENT_ID</code>.
-            </p>
-          </div>
-        </div>
-
-        {# Stap 4 #}
-        <div class="d-flex gap-3 mb-4">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">4</div>
-          <div>
-            <div class="fw-semibold">Maak een Client Secret aan</div>
-            <ol class="text-muted small ps-3 mb-0">
-              <li>Ga in het linkermenu naar <em>Certificaten en geheimen</em>.</li>
-              <li>Klik op <strong>+ Nieuw clientgeheim</strong>.</li>
-              <li>Kies een beschrijving en verloopdatum (bijv. 24 maanden).</li>
-              <li>Kopieer de <strong>Waarde</strong> (niet de Secret-ID!)
-                  — dit is je <code>AZURE_CLIENT_SECRET</code>.</li>
-            </ol>
-          </div>
-        </div>
-
-        {# Stap 5 #}
-        <div class="d-flex gap-3 mb-4">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">5</div>
-          <div>
-            <div class="fw-semibold">Vul het <code>.env</code>-bestand in</div>
-            <pre class="bg-light border rounded p-3 small mb-0"><code>AZURE_CLIENT_ID=&lt;jouw client-id&gt;
+{# Stap 3: .env #}
+<div class="card mb-3 shadow-sm">
+  <div class="card-header bg-dark text-white fw-semibold">
+    <span class="badge bg-primary me-2">3</span>
+    .env bestand invullen
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-2">
+      Maak een bestand <code>.env</code> aan in de map van de app met deze inhoud:
+    </p>
+    <pre class="bg-light rounded p-3 small"><code>AZURE_CLIENT_ID=&lt;jouw client-id&gt;
 AZURE_CLIENT_SECRET=&lt;jouw client-secret&gt;
 AZURE_TENANT_ID=common
-REDIRECT_URI={{ redirect_uri }}
-FLASK_SECRET_KEY=&lt;willekeurige lange string&gt;</code></pre>
-          </div>
-        </div>
-
-        {# Stap 6 #}
-        <div class="d-flex gap-3 mb-2">
-          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-               style="width:2rem;height:2rem;font-weight:bold;">6</div>
-          <div>
-            <div class="fw-semibold">Herstart de app</div>
-            <p class="text-muted small mb-0">
-              Stop de app (<kbd>Ctrl+C</kbd>) en start opnieuw met <code>python app.py</code>.
-              Ververs daarna deze pagina — de inlogknop verschijnt automatisch.
-            </p>
-          </div>
-        </div>
-
-      </div>
-    </div>
-    {% endif %}
-
+REDIRECT_URI=https://&lt;jouw-tailscale-adres&gt;/callback
+FLASK_SECRET_KEY=&lt;een lange willekeurige string, bijv. 40+ tekens&gt;
+HTTPS_ONLY=true
+SESSION_HOURS=8</code></pre>
+    <p class="text-muted small mt-2 mb-0">
+      <i class="bi bi-lightbulb me-1 text-warning"></i>
+      Genereer een veilige sleutel via: <code>python -c "import secrets; print(secrets.token_hex(32))"</code>
+    </p>
   </div>
+</div>
+
+{# Stap 4: starten #}
+<div class="card mb-3 shadow-sm">
+  <div class="card-header bg-dark text-white fw-semibold">
+    <span class="badge bg-primary me-2">4</span>
+    App starten
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-1"><strong>Mac / Linux:</strong></p>
+    <pre class="bg-light rounded p-2 small"><code>./start.sh</code></pre>
+    <p class="text-muted small mb-1 mt-2"><strong>Windows:</strong></p>
+    <pre class="bg-light rounded p-2 small"><code>start.bat</code></pre>
+    <p class="text-muted small mb-0 mt-2">
+      Open daarna je Tailscale-adres in Safari op je iPhone en klik op
+      <strong>Inloggen met Microsoft</strong>.<br>
+      Installeer de app via het Deel-icoon → <strong>"Zet op beginscherm"</strong>.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+</div>
 </div>
 {% endblock %}

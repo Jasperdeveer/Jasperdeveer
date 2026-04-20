@@ -1,19 +1,36 @@
 import os
-import re
+import time
 import requests
 from collections import Counter
+from datetime import timedelta
 from flask import (
     Flask, session, redirect, url_for, request,
     render_template, jsonify,
 )
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 import msal
 from spam_scorer import score_email
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
+
+# ── Achter Tailscale serve / reverse proxy ────────────────────────────────────
+# ProxyFix zorgt dat Flask het echte protocol (HTTPS) ziet vanuit Tailscale.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# ── Sessie-instellingen ───────────────────────────────────────────────────────
+SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
+_on_https = os.getenv("HTTPS_ONLY", "false").lower() == "true"
+
+app.config.update(
+    SECRET_KEY=os.getenv("FLASK_SECRET_KEY", os.urandom(32)),
+    SESSION_COOKIE_HTTPONLY=True,          # JS kan session-cookie niet lezen
+    SESSION_COOKIE_SAMESITE="Lax",         # Blokkeert cross-site requests
+    SESSION_COOKIE_SECURE=_on_https,       # True achter Tailscale (HTTPS)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
+)
 
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
@@ -29,6 +46,44 @@ SCOPES = [
 ]
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
+# ── Beveiligingsheaders ───────────────────────────────────────────────────────
+
+@app.after_request
+def set_security_headers(response):
+    # Voorkomt dat de browser content "raadt" (bijv. JS in een afbeelding)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    # Voorkomt dat de app in een iframe geladen wordt (clickjacking)
+    response.headers["X-Frame-Options"] = "DENY"
+    # Stuur zo min mogelijk info mee in de Referer-header
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Schakel onnodige browser-API's uit
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    # Sta alleen resources van eigen domein toe (strict maar veilig)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+        "font-src cdn.jsdelivr.net; "
+        "img-src 'self' data:; "
+        "connect-src 'self';"
+    )
+    return response
+
+
+# ── Session-timeout check ─────────────────────────────────────────────────────
+
+@app.before_request
+def enforce_session_timeout():
+    """Gooi de sessie weg als die ouder is dan SESSION_HOURS."""
+    open_endpoints = {"setup", "authorize", "callback", "static"}
+    if request.endpoint in open_endpoints:
+        return
+    login_time = session.get("login_time")
+    if login_time and time.time() - login_time > SESSION_HOURS * 3600:
+        session.clear()
+        return redirect(url_for("setup"))
 
 
 # ── MSAL helpers ─────────────────────────────────────────────────────────────
@@ -97,10 +152,6 @@ def graph_post(path, body):
 # ── E-mail ophalen & analyseren ───────────────────────────────────────────────
 
 def _fetch_newsletter_emails():
-    """
-    Haalt berichten op die een List-Unsubscribe header bevatten,
-    berekent een spamscore per afzender en sorteert op score (hoog → laag).
-    """
     params = {
         "$top": 150,
         "$select": (
@@ -116,7 +167,6 @@ def _fetch_newsletter_emails():
 
     all_msgs = data.get("value", [])
 
-    # Tel hoe vaak elke afzender voorkomt in de opgehaalde set
     sender_counts: Counter = Counter(
         msg.get("from", {}).get("emailAddress", {}).get("address", "").lower()
         for msg in all_msgs
@@ -141,7 +191,6 @@ def _fetch_newsletter_emails():
             continue
         seen_senders.add(sender_addr.lower())
 
-        # Uitschrijflinks extraheren
         mailto_link = https_link = None
         for part in unsubscribe.split(","):
             part = part.strip().strip("<>")
@@ -152,13 +201,11 @@ def _fetch_newsletter_emails():
 
         one_click = "list-unsubscribe-post" in raw_headers
 
-        body_preview = msg.get("bodyPreview", "")
-
         spam = score_email(
             subject=msg.get("subject", ""),
             sender_email=sender_addr,
             headers=raw_headers,
-            body_preview=body_preview,
+            body_preview=msg.get("bodyPreview", ""),
             sender_count=sender_counts[sender_addr.lower()],
         )
 
@@ -174,7 +221,6 @@ def _fetch_newsletter_emails():
             "spam":         spam,
         })
 
-    # Sorteer: hoogste spamscore bovenaan
     newsletters.sort(key=lambda e: e["spam"]["score"], reverse=True)
     return newsletters
 
@@ -187,41 +233,45 @@ def index():
         return redirect(url_for("setup"))
 
     user = graph_get("/me", params={"$select": "displayName,mail,userPrincipalName"})
-    display_name = (user or {}).get("displayName", "")
     email = (user or {}).get("mail") or (user or {}).get("userPrincipalName", "")
 
     emails = _fetch_newsletter_emails()
 
     stats = {
-        "total":    len(emails),
-        "spam":     sum(1 for e in emails if e["spam"]["score"] >= 68),
-        "likely":   sum(1 for e in emails if 42 <= e["spam"]["score"] < 68),
-        "promo":    sum(1 for e in emails if 18 <= e["spam"]["score"] < 42),
-        "legit":    sum(1 for e in emails if e["spam"]["score"] < 18),
+        "total":  len(emails),
+        "spam":   sum(1 for e in emails if e["spam"]["score"] >= 68),
+        "likely": sum(1 for e in emails if 42 <= e["spam"]["score"] < 68),
+        "promo":  sum(1 for e in emails if 18 <= e["spam"]["score"] < 42),
+        "legit":  sum(1 for e in emails if e["spam"]["score"] < 18),
     }
+
+    # Hoe lang heeft de gebruiker nog voordat de sessie verloopt?
+    login_time = session.get("login_time", time.time())
+    seconds_left = max(0, int(SESSION_HOURS * 3600 - (time.time() - login_time)))
 
     return render_template(
         "index.html",
         emails=emails,
-        display_name=display_name,
         user_email=email,
         stats=stats,
+        session_seconds=seconds_left,
     )
 
 
 @app.route("/setup")
 def setup():
     configured = bool(CLIENT_ID and CLIENT_SECRET)
-    return render_template("setup.html", configured=configured, redirect_uri=REDIRECT_URI)
-
-
-@app.route("/login")
-def login():
-    return redirect(url_for("authorize"))
+    return render_template(
+        "setup.html",
+        configured=configured,
+        redirect_uri=REDIRECT_URI,
+    )
 
 
 @app.route("/authorize")
 def authorize():
+    if not (CLIENT_ID and CLIENT_SECRET):
+        return redirect(url_for("setup"))
     cca = _build_msal_app()
     auth_url = cca.get_authorization_request_url(
         SCOPES,
@@ -244,24 +294,36 @@ def callback():
     )
     if "error" in result:
         return f"Token fout: {result.get('error_description')}", 400
+    session.permanent = True
     session["token_cache"] = cache.serialize()
+    session["login_time"] = time.time()
     return redirect(url_for("index"))
 
 
 @app.route("/logout")
 def logout():
     session.clear()
-    logout_url = (
+    return redirect(
         f"{AUTHORITY}/oauth2/v2.0/logout"
         f"?post_logout_redirect_uri={url_for('setup', _external=True)}"
     )
-    return redirect(logout_url)
 
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
+def _require_session():
+    """Geeft 401 terug als de gebruiker niet ingelogd is."""
+    if not _get_token_from_cache():
+        return jsonify({"error": "Niet ingelogd"}), 401
+    return None
+
+
 @app.route("/api/unsubscribe-mailto", methods=["POST"])
 def unsubscribe_mailto():
+    err = _require_session()
+    if err:
+        return err
+
     data = request.get_json()
     mailto = data.get("mailto", "")
     if not mailto.startswith("mailto:"):
@@ -295,10 +357,14 @@ def unsubscribe_mailto():
 
 @app.route("/api/block-sender", methods=["POST"])
 def block_sender():
+    err = _require_session()
+    if err:
+        return err
+
     data = request.get_json()
     sender_email = data.get("email", "").strip().lower()
     if not sender_email:
-        return jsonify({"error": "Geen e-mailadres opgegeven"}), 400
+        return jsonify({"error": "Geen e-mailadres"}), 400
     try:
         settings = graph_get("/me/mailboxSettings") or {}
         current  = settings.get("junkEmailConfiguration", {}).get("blockedSenders", [])
@@ -315,6 +381,10 @@ def block_sender():
 
 @app.route("/api/move-to-junk", methods=["POST"])
 def move_to_junk():
+    err = _require_session()
+    if err:
+        return err
+
     data = request.get_json()
     msg_id = data.get("id", "")
     if not msg_id:
@@ -328,12 +398,12 @@ def move_to_junk():
 
 @app.route("/api/bulk-block", methods=["POST"])
 def bulk_block():
-    """
-    Blokkeert alle opgegeven afzenders in één keer en verplaatst
-    hun meest recente bericht naar Ongewenste e-mail.
-    """
+    err = _require_session()
+    if err:
+        return err
+
     data    = request.get_json()
-    entries = data.get("entries", [])   # [{email, id}, ...]
+    entries = data.get("entries", [])
     if not entries:
         return jsonify({"error": "Geen afzenders opgegeven"}), 400
 
@@ -360,7 +430,7 @@ def bulk_block():
             try:
                 graph_post(f"/me/messages/{msg_id}/move", {"destinationId": "junkemail"})
             except Exception as e:
-                errors.append(f"Verplaatsen mislukt voor {entry.get('email')}: {e}")
+                errors.append(f"Verplaatsen mislukt ({entry.get('email')}): {e}")
 
     if errors:
         return jsonify({"ok": False, "errors": errors}), 207
@@ -368,4 +438,6 @@ def bulk_block():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # Nooit debug=True in productie
+    debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    app.run(host="127.0.0.1", port=5000, debug=debug)
