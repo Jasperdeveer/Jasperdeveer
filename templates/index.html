@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Nieuwsbrieven — Spam Uitschrijver{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="mb-0">Gevonden nieuwsbrieven &amp; spam</h4>
+    <small class="text-muted">Ingelogd als <strong>{{ user_email }}</strong></small>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-clockwise me-1"></i>Vernieuwen
+  </a>
+</div>
+
+{% if emails %}
+<div class="mb-2 text-muted small">
+  <i class="bi bi-info-circle me-1"></i>
+  {{ emails|length }} unieke afzender(s) gevonden in je inbox met een uitschrijfoptie.
+</div>
+
+<div id="email-list">
+  {% for email in emails %}
+  <div class="card mb-3 email-card" id="card-{{ loop.index }}" data-index="{{ loop.index }}">
+    <div class="card-body">
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <div class="fw-semibold">{{ email.sender_name }}</div>
+          <div class="text-muted small">{{ email.sender_email }}</div>
+          <div class="text-muted small mt-1">
+            <i class="bi bi-envelope me-1"></i>
+            <span class="text-truncate d-inline-block" style="max-width: 300px;">{{ email.subject }}</span>
+          </div>
+          <div class="text-muted small">
+            <i class="bi bi-calendar3 me-1"></i>{{ email.received }}
+            {% if email.one_click %}
+            <span class="badge bg-success ms-2"><i class="bi bi-lightning-fill me-1"></i>1-klik uitschrijven</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="col-md-6 d-flex flex-wrap gap-2 justify-content-md-end mt-3 mt-md-0">
+          {% if email.https_link %}
+          <a href="{{ email.https_link }}" target="_blank" rel="noopener noreferrer"
+             class="btn btn-outline-primary btn-sm"
+             title="Uitschrijven via website">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Uitschrijven
+          </a>
+          {% endif %}
+
+          {% if email.mailto_link %}
+          <button class="btn btn-outline-primary btn-sm"
+                  onclick="sendUnsubscribeEmail('{{ email.mailto_link | e }}', {{ loop.index }})"
+                  title="Uitschrijven via e-mail">
+            <i class="bi bi-send me-1"></i>E-mail uitschrijven
+          </button>
+          {% endif %}
+
+          <button class="btn btn-outline-danger btn-sm"
+                  onclick="blockSender('{{ email.sender_email | e }}', '{{ email.id | e }}', {{ loop.index }})"
+                  title="Afzender blokkeren en naar ongewenste mail verplaatsen">
+            <i class="bi bi-slash-circle me-1"></i>Blokkeren
+          </button>
+        </div>
+      </div>
+
+      <div id="status-{{ loop.index }}" class="mt-2" style="display:none;"></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="alert alert-success">
+  <i class="bi bi-check-circle-fill me-2"></i>
+  Geen nieuwsbrieven of spam gevonden in je inbox. Je inbox ziet er goed uit!
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function sendUnsubscribeEmail(mailto, index) {
+  const statusEl = document.getElementById(`status-${index}`);
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Uitschrijfmail wordt verzonden...</span>';
+
+  try {
+    const resp = await fetch('/api/unsubscribe-mailto', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ mailto }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Uitschrijfmail verzonden!</span>';
+    } else {
+      statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Fout: ${data.error}</span>`;
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Netwerkfout</span>`;
+  }
+}
+
+async function blockSender(email, msgId, index) {
+  const statusEl = document.getElementById(`status-${index}`);
+  const card = document.getElementById(`card-${index}`);
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<span class="text-muted"><i class="bi bi-hourglass-split me-1"></i>Afzender blokkeren...</span>';
+
+  try {
+    const [blockResp, moveResp] = await Promise.all([
+      fetch('/api/block-sender', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email }),
+      }),
+      fetch('/api/move-to-junk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ id: msgId }),
+      }),
+    ]);
+
+    const blockData = await blockResp.json();
+    const moveData = await moveResp.json();
+
+    if (blockData.ok && moveData.ok) {
+      statusEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Geblokkeerd en naar ongewenste mail verplaatst!</span>';
+      setTimeout(() => {
+        card.style.transition = 'opacity 0.5s';
+        card.style.opacity = '0';
+        setTimeout(() => card.remove(), 500);
+      }, 1500);
+    } else {
+      const err = blockData.error || moveData.error || 'Onbekende fout';
+      statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Fout: ${err}</span>`;
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle me-1"></i>Netwerkfout</span>`;
+  }
+}
+</script>
+{% endblock %}
