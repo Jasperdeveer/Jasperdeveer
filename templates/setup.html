@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Instellen — Spam Uitschrijver{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+
+    {% if configured %}
+    {# ── App is geconfigureerd: toon login-knop ─────────────────────────── #}
+    <div class="card shadow-sm mb-4">
+      <div class="card-body text-center p-5">
+        <i class="bi bi-envelope-x-fill text-primary" style="font-size:3rem;"></i>
+        <h2 class="mt-3 mb-1">Spam Uitschrijver</h2>
+        <p class="text-muted mb-4">
+          Log in met je <strong>@live.nl</strong> account om nieuwsbrieven en spam snel te beheren.
+        </p>
+        <a href="{{ url_for('authorize') }}" class="btn btn-primary btn-lg w-100">
+          <i class="bi bi-microsoft me-2"></i>Inloggen met Microsoft
+        </a>
+        <hr class="my-4"/>
+        <small class="text-muted">
+          <i class="bi bi-shield-check me-1"></i>
+          Je gegevens worden alleen gebruikt om je inbox te lezen en afmeldingen te verwerken.
+          Er wordt niets opgeslagen.
+        </small>
+      </div>
+    </div>
+
+    {% else %}
+    {# ── App nog niet geconfigureerd: stap-voor-stap gids ──────────────── #}
+    <div class="alert alert-warning">
+      <i class="bi bi-exclamation-triangle-fill me-2"></i>
+      De app is nog niet geconfigureerd. Volg de stappen hieronder.
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-gear-fill me-2"></i>Eenmalige instelling — Azure App Registratie
+      </div>
+      <div class="card-body">
+
+        <p class="text-muted small">
+          De app gebruikt Microsofts officiële OAuth-dienst om toegang te krijgen
+          tot je inbox. Je moet éénmalig een gratis "App Registratie" aanmaken in
+          Azure. Dat kost ongeveer 3 minuten.
+        </p>
+
+        {# Stap 1 #}
+        <div class="d-flex gap-3 mb-4">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">1</div>
+          <div>
+            <div class="fw-semibold">Open de Azure-portal</div>
+            <p class="text-muted small mb-1">
+              Ga naar <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
+              en log in met <strong>hetzelfde</strong> Microsoft-account als je @live.nl adres,
+              of met een los Microsoft-account (gratis).
+            </p>
+          </div>
+        </div>
+
+        {# Stap 2 #}
+        <div class="d-flex gap-3 mb-4">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">2</div>
+          <div>
+            <div class="fw-semibold">Nieuwe App Registratie aanmaken</div>
+            <ol class="text-muted small ps-3 mb-0">
+              <li>Zoek bovenaan op <em>"App registraties"</em> en open het.</li>
+              <li>Klik op <strong>+ Nieuwe registratie</strong>.</li>
+              <li>Geef een naam, bijv. <code>Spam Uitschrijver</code>.</li>
+              <li>Kies bij <em>Ondersteunde accounttypen</em>:
+                <strong>"Persoonlijke Microsoft-accounts"</strong>.</li>
+              <li>Vul bij Redirect URI in:
+                <code class="user-select-all">{{ redirect_uri }}</code>
+              </li>
+              <li>Klik op <strong>Registreren</strong>.</li>
+            </ol>
+          </div>
+        </div>
+
+        {# Stap 3 #}
+        <div class="d-flex gap-3 mb-4">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">3</div>
+          <div>
+            <div class="fw-semibold">Kopieer de Client ID</div>
+            <p class="text-muted small mb-0">
+              Kopieer op de overzichtspagina de <strong>Toepassings-ID (client)</strong>.
+              Dit is je <code>AZURE_CLIENT_ID</code>.
+            </p>
+          </div>
+        </div>
+
+        {# Stap 4 #}
+        <div class="d-flex gap-3 mb-4">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">4</div>
+          <div>
+            <div class="fw-semibold">Maak een Client Secret aan</div>
+            <ol class="text-muted small ps-3 mb-0">
+              <li>Ga in het linkermenu naar <em>Certificaten en geheimen</em>.</li>
+              <li>Klik op <strong>+ Nieuw clientgeheim</strong>.</li>
+              <li>Kies een beschrijving en verloopdatum (bijv. 24 maanden).</li>
+              <li>Kopieer de <strong>Waarde</strong> (niet de Secret-ID!)
+                  — dit is je <code>AZURE_CLIENT_SECRET</code>.</li>
+            </ol>
+          </div>
+        </div>
+
+        {# Stap 5 #}
+        <div class="d-flex gap-3 mb-4">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">5</div>
+          <div>
+            <div class="fw-semibold">Vul het <code>.env</code>-bestand in</div>
+            <pre class="bg-light border rounded p-3 small mb-0"><code>AZURE_CLIENT_ID=&lt;jouw client-id&gt;
+AZURE_CLIENT_SECRET=&lt;jouw client-secret&gt;
+AZURE_TENANT_ID=common
+REDIRECT_URI={{ redirect_uri }}
+FLASK_SECRET_KEY=&lt;willekeurige lange string&gt;</code></pre>
+          </div>
+        </div>
+
+        {# Stap 6 #}
+        <div class="d-flex gap-3 mb-2">
+          <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:2rem;height:2rem;font-weight:bold;">6</div>
+          <div>
+            <div class="fw-semibold">Herstart de app</div>
+            <p class="text-muted small mb-0">
+              Stop de app (<kbd>Ctrl+C</kbd>) en start opnieuw met <code>python app.py</code>.
+              Ververs daarna deze pagina — de inlogknop verschijnt automatisch.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

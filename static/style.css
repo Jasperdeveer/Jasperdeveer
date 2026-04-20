@@ -3,15 +3,24 @@ body {
 }
 
 .email-card {
-  border-left: 4px solid #0d6efd;
-  transition: box-shadow 0.2s;
+  border-left-width: 4px;
+  transition: box-shadow 0.2s, opacity 0.5s;
 }
 
 .email-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.progress {
+  border-radius: 3px;
 }
 
 .navbar-brand {
   font-size: 1.1rem;
   letter-spacing: 0.02em;
+}
+
+pre code {
+  white-space: pre-wrap;
+  word-break: break-all;
 }
