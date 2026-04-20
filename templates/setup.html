@@ -25,7 +25,7 @@
         <li>Blokkeert afzenders via jouw eigen Microsoft-instellingen</li>
         <li>Slaat <strong>geen</strong> e-mails op — alles blijft bij Microsoft</li>
         <li>Sessie verloopt automatisch na 8 uur</li>
-        <li>Draait alleen op jouw eigen netwerk (via Tailscale)</li>
+        <li>Verbinding altijd beveiligd via HTTPS</li>
       </ul>
     </div>
   </div>
@@ -35,120 +35,130 @@
 {# ── Niet geconfigureerd: installatiegids ────────────────────────────────── #}
 <div class="alert alert-warning">
   <i class="bi bi-exclamation-triangle-fill me-2"></i>
-  De app is nog niet geconfigureerd. Volg de stappen hieronder — het duurt ~10 minuten.
+  De app is nog niet ingesteld. Volg de stappen hieronder — het duurt ongeveer 10 minuten.
 </div>
 
-{# Stap 1: Tailscale #}
+{# Veiligheidsnoot #}
+<div class="card mb-3 border-info">
+  <div class="card-body py-2 px-3 small text-muted">
+    <i class="bi bi-shield-check text-info me-1"></i>
+    <strong>Veiligheid:</strong> de app draait op Railway (betrouwbare hostingdienst) en
+    communiceert via HTTPS. Je e-mails worden <strong>niet opgeslagen</strong> — de app leest ze
+    direct van Microsoft en gooit ze daarna weg. Je wachtwoord ziet de app nooit.
+  </div>
+</div>
+
+{# ── Stap 1: Railway ─────────────────────────────────────────────────────── #}
 <div class="card mb-3 shadow-sm">
-  <div class="card-header bg-dark text-white fw-semibold">
+  <div class="card-header fw-semibold bg-dark text-white">
     <span class="badge bg-primary me-2">1</span>
-    Tailscale installeren — veilige verbinding thuis↔iPhone
+    Railway account aanmaken en app deployen
   </div>
   <div class="card-body">
-    <p class="text-muted small mb-2">
-      Tailscale maakt een privénetwerk tussen jouw computer en iPhone.
-      Je e-mail verlaat nooit je thuisnetwerk. Gratis voor persoonlijk gebruik.
-    </p>
-    <ol class="small text-muted ps-3">
+    <ol class="small text-muted ps-3 mb-0">
       <li>
-        Ga naar <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>
-        en installeer Tailscale op je <strong>computer</strong> (Mac of Windows).
+        Ga naar <a href="https://railway.app" target="_blank" rel="noopener">railway.app</a>
+        en maak een gratis account aan via GitHub.
       </li>
       <li>
-        Installeer de <strong>Tailscale-app</strong> op je iPhone via de App Store.
+        Klik op <strong>New Project → Deploy from GitHub repo</strong> en selecteer
+        <code>Jasperdeveer/Jasperdeveer</code>.
       </li>
       <li>
-        Log in op beide apparaten met hetzelfde Tailscale-account (gratis via Google of GitHub).
+        Railway geeft je een URL, bijv.:<br>
+        <code>https://jasperdeveer-production.up.railway.app</code><br>
+        <em>Noteer dit adres.</em>
       </li>
-      <li>
-        Zet op je computer in de terminal (Mac) of Command Prompt (Windows):
-        <pre class="bg-light rounded p-2 mt-1"><code>tailscale serve --bg 5000</code></pre>
-        Dit geeft je een veilige HTTPS-adres, bijv.:
-        <code>https://mijnpc.staart-xyz.ts.net</code>
-      </li>
-      <li>Noteer dat adres — je hebt het nodig bij stap 2 en 3.</li>
     </ol>
   </div>
 </div>
 
-{# Stap 2: Azure #}
+{# ── Stap 2: Azure ───────────────────────────────────────────────────────── #}
 <div class="card mb-3 shadow-sm">
-  <div class="card-header bg-dark text-white fw-semibold">
+  <div class="card-header fw-semibold bg-dark text-white">
     <span class="badge bg-primary me-2">2</span>
-    Azure App Registratie — toegang tot jouw inbox
+    Azure App Registratie aanmaken
   </div>
   <div class="card-body">
-    <p class="text-muted small mb-2">
-      Microsoft vereist dat je een gratis "App Registratie" aanmaakt zodat de app
-      namens jou je inbox mag lezen. Jij beslist zelf welke rechten je geeft.
+    <p class="small text-muted mb-2">
+      Microsoft vereist dit zodat de app namens jou je inbox mag lezen.
+      Jij geeft zelf toestemming — en je kunt die altijd intrekken.
     </p>
-    <ol class="small text-muted ps-3">
+    <ol class="small text-muted ps-3 mb-0">
       <li>
         Ga naar <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>
-        → zoek op <em>"App registraties"</em> → <strong>+ Nieuwe registratie</strong>.
+        en log in met je Microsoft-account.
       </li>
       <li>
-        Naam: bijv. <code>Spam Uitschrijver</code><br>
-        Accounttype: <strong>"Persoonlijke Microsoft-accounts"</strong>
+        Zoek bovenaan op <em>"App registraties"</em> → <strong>+ Nieuwe registratie</strong>.
       </li>
       <li>
-        Redirect URI (plak jouw Tailscale-adres in):<br>
-        <code>https://&lt;jouw-tailscale-adres&gt;/callback</code>
+        Naam: <code>Spam Uitschrijver</code><br>
+        Accounttype: <strong>"Persoonlijke Microsoft-accounts"</strong><br>
+        Redirect URI (vul jouw Railway-URL in):
+        <code>https://&lt;jouw-railway-url&gt;/callback</code>
       </li>
       <li>Klik op <strong>Registreren</strong>.</li>
-      <li>Kopieer de <strong>Toepassings-ID (Client ID)</strong> van de overzichtspagina.</li>
+      <li>
+        Kopieer de <strong>Toepassings-ID (Client ID)</strong> van de overzichtspagina.
+      </li>
       <li>
         Ga naar <em>Certificaten en geheimen</em> → <strong>+ Nieuw clientgeheim</strong> →
-        kopieer de <strong>Waarde</strong> (niet de ID!).
+        kies 24 maanden → kopieer de <strong>Waarde</strong>.
       </li>
     </ol>
   </div>
 </div>
 
-{# Stap 3: .env #}
+{# ── Stap 3: Omgevingsvariabelen in Railway ──────────────────────────────── #}
 <div class="card mb-3 shadow-sm">
-  <div class="card-header bg-dark text-white fw-semibold">
+  <div class="card-header fw-semibold bg-dark text-white">
     <span class="badge bg-primary me-2">3</span>
-    .env bestand invullen
+    Omgevingsvariabelen instellen in Railway
   </div>
   <div class="card-body">
-    <p class="text-muted small mb-2">
-      Maak een bestand <code>.env</code> aan in de map van de app met deze inhoud:
+    <p class="small text-muted mb-2">
+      Ga in Railway naar je project → tabblad <strong>Variables</strong> en voeg toe:
     </p>
-    <pre class="bg-light rounded p-3 small"><code>AZURE_CLIENT_ID=&lt;jouw client-id&gt;
-AZURE_CLIENT_SECRET=&lt;jouw client-secret&gt;
-AZURE_TENANT_ID=common
-REDIRECT_URI=https://&lt;jouw-tailscale-adres&gt;/callback
-FLASK_SECRET_KEY=&lt;een lange willekeurige string, bijv. 40+ tekens&gt;
-HTTPS_ONLY=true
-SESSION_HOURS=8</code></pre>
-    <p class="text-muted small mt-2 mb-0">
-      <i class="bi bi-lightbulb me-1 text-warning"></i>
-      Genereer een veilige sleutel via: <code>python -c "import secrets; print(secrets.token_hex(32))"</code>
+    <table class="table table-sm table-bordered small mb-2">
+      <thead class="table-light"><tr><th>Naam</th><th>Waarde</th></tr></thead>
+      <tbody>
+        <tr><td><code>AZURE_CLIENT_ID</code></td><td>jouw Client ID</td></tr>
+        <tr><td><code>AZURE_CLIENT_SECRET</code></td><td>jouw Client Secret</td></tr>
+        <tr><td><code>AZURE_TENANT_ID</code></td><td><code>common</code></td></tr>
+        <tr><td><code>REDIRECT_URI</code></td><td><code>https://&lt;jouw-railway-url&gt;/callback</code></td></tr>
+        <tr><td><code>FLASK_SECRET_KEY</code></td><td>een willekeurige lange string (50+ tekens)</td></tr>
+        <tr><td><code>HTTPS_ONLY</code></td><td><code>true</code></td></tr>
+      </tbody>
+    </table>
+    <p class="small text-muted mb-0">
+      <i class="bi bi-lightbulb text-warning me-1"></i>
+      Gebruik <a href="https://passwordsgenerator.net" target="_blank" rel="noopener">passwordsgenerator.net</a>
+      om een veilige <code>FLASK_SECRET_KEY</code> te genereren (sla hem op, je hebt hem niet meer nodig na de setup).
     </p>
   </div>
 </div>
 
-{# Stap 4: starten #}
+{# ── Stap 4: Klaar ───────────────────────────────────────────────────────── #}
 <div class="card mb-3 shadow-sm">
-  <div class="card-header bg-dark text-white fw-semibold">
-    <span class="badge bg-primary me-2">4</span>
-    App starten
+  <div class="card-header fw-semibold bg-dark text-white">
+    <span class="badge bg-success me-2"><i class="bi bi-check-lg"></i></span>
+    Klaar — installeer als app op je iPhone
   </div>
   <div class="card-body">
-    <p class="text-muted small mb-1"><strong>Mac / Linux:</strong></p>
-    <pre class="bg-light rounded p-2 small"><code>./start.sh</code></pre>
-    <p class="text-muted small mb-1 mt-2"><strong>Windows:</strong></p>
-    <pre class="bg-light rounded p-2 small"><code>start.bat</code></pre>
-    <p class="text-muted small mb-0 mt-2">
-      Open daarna je Tailscale-adres in Safari op je iPhone en klik op
-      <strong>Inloggen met Microsoft</strong>.<br>
-      Installeer de app via het Deel-icoon → <strong>"Zet op beginscherm"</strong>.
-    </p>
+    <ol class="small text-muted ps-3 mb-0">
+      <li>Open je Railway-URL in <strong>Safari</strong> op je iPhone.</li>
+      <li>Log in met je Microsoft-account.</li>
+      <li>
+        Tik op het <strong>Deel-icoon</strong>
+        <i class="bi bi-box-arrow-up"></i> → <strong>"Zet op beginscherm"</strong>.
+      </li>
+      <li>De app staat nu als icoon op je beginscherm — klaar voor gebruik!</li>
+    </ol>
   </div>
 </div>
-{% endif %}
 
+{% endif %}
 </div>
 </div>
 {% endblock %}
