@@ -1,0 +1,13 @@
+{
+  "name": "Spam Uitschrijver",
+  "short_name": "Spam",
+  "description": "Nieuwsbrieven en spam snel blokkeren vanuit je @live.nl inbox",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#0d6efd",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/static/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
