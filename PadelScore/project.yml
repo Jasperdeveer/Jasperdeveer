@@ -1,0 +1,47 @@
+name: PadelScore
+options:
+  bundleIdPrefix: com.jasperdeveer
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  PadelScore:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: PadelScore
+      - path: Shared
+    resources:
+      - path: PadelScore/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jasperdeveer.padelscore
+        INFOPLIST_FILE: PadelScore/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: PadelScore Watch App
+
+  PadelScore Watch App:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: PadelScore Watch App
+      - path: Shared
+    resources:
+      - path: PadelScore Watch App/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jasperdeveer.padelscore.watchkitapp
+        INFOPLIST_FILE: PadelScore Watch App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
