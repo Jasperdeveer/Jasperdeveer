@@ -5,6 +5,7 @@ final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = ConnectivityManager()
 
     @Published var receivedState: MatchState? = nil
+    @Published var receivedThemeId: String? = nil
 
     private override init() {
         super.init()
@@ -28,20 +29,35 @@ final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         try? WCSession.default.updateApplicationContext(["state": data])
     }
 
+    func sendTheme(id: String) {
+        guard WCSession.default.activationState == .activated else { return }
+        try? WCSession.default.updateApplicationContext(["themeId": id])
+    }
+
     // MARK: - WCSessionDelegate
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        guard let data = message["state"] as? Data,
-              let state = try? JSONDecoder().decode(MatchState.self, from: data)
-        else { return }
-        DispatchQueue.main.async { self.receivedState = state }
+        DispatchQueue.main.async {
+            if let data = message["state"] as? Data,
+               let state = try? JSONDecoder().decode(MatchState.self, from: data) {
+                self.receivedState = state
+            }
+            if let themeId = message["themeId"] as? String {
+                self.receivedThemeId = themeId
+            }
+        }
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let data = applicationContext["state"] as? Data,
-              let state = try? JSONDecoder().decode(MatchState.self, from: data)
-        else { return }
-        DispatchQueue.main.async { self.receivedState = state }
+        DispatchQueue.main.async {
+            if let data = applicationContext["state"] as? Data,
+               let state = try? JSONDecoder().decode(MatchState.self, from: data) {
+                self.receivedState = state
+            }
+            if let themeId = applicationContext["themeId"] as? String {
+                self.receivedThemeId = themeId
+            }
+        }
     }
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
