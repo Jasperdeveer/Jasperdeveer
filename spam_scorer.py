@@ -98,6 +98,8 @@ def score_email(
     headers: dict,
     body_preview: str = "",
     sender_count: int = 1,
+    spamhaus_listed: bool = False,
+    user_feedback: int | None = None,
 ) -> dict:
     """
     Geeft een dict terug:
@@ -223,6 +225,24 @@ def score_email(
     elif sender_count >= 7:
         score += 6
         reasons.append(f"Hoge verzendfrequentie ({sender_count} e-mails in inbox)")
+
+    # ── Spamhaus DBL ──────────────────────────────────────────────────────────
+
+    if spamhaus_listed:
+        score += 35
+        reasons.append("Domein staat op Spamhaus-blokkeerlijst")
+
+    # ── Gebruikersfeedback overschrijft de score ──────────────────────────────
+    # Jouw eigen keuzes zijn betrouwbaarder dan alle andere signalen.
+
+    score = max(0, min(score, 100))
+
+    if user_feedback == 0:
+        score = min(score, 15)
+        reasons = ["Jij hebt deze afzender eerder als vertrouwd gemarkeerd"]
+    elif user_feedback == 1:
+        score = max(score, 72)
+        reasons.append("Jij hebt deze afzender eerder geblokkeerd")
 
     # ── Eindoordeel ───────────────────────────────────────────────────────────
 
