@@ -179,6 +179,7 @@
     {% endif %}
 
     {# ── Acties ── #}
+    {% set domain = email.sender_email.split('@')[1] if '@' in email.sender_email else '' %}
     <div class="action-row mt-2">
       {% if email.https_link %}
       <a href="{{ email.https_link }}" target="_blank" rel="noopener noreferrer"
@@ -200,6 +201,21 @@
       <button class="btn btn-outline-success"
               onclick="trustSender('{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
         <i class="bi bi-check-circle me-1"></i>Vertrouwen
+      </button>
+    </div>
+    {# Slimme blokkeeropties #}
+    <div class="d-flex gap-1 mt-1">
+      {% if domain %}
+      <button class="btn btn-outline-secondary flex-fill"
+              style="font-size:.72rem;padding:.25rem .4rem;border-radius:.5rem;"
+              onclick="blockDomain('{{ domain | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-globe2 me-1"></i>@{{ domain }}
+      </button>
+      {% endif %}
+      <button class="btn btn-outline-secondary flex-fill"
+              style="font-size:.72rem;padding:.25rem .4rem;border-radius:.5rem;"
+              onclick="blockKeyword('{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-tag me-1"></i>Op naam blokkeren
       </button>
     </div>
 
@@ -455,6 +471,62 @@ async function bulkBlock() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-slash-circle me-2"></i><span id="bulk-label">Selectie blokkeren</span>';
+  }
+}
+
+// ── Domein blokkeren ──────────────────────────────────────────────────────────
+async function blockDomain(domain, name, index) {
+  if (!confirm(`Alle e-mails van @${domain} blokkeren?\n\nDit blokkeert alle afzenders van dit domein, ook toekomstige.`)) return;
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Domein blokkeren…');
+  try {
+    const r = await fetch('/api/block-domain', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ domain, name }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      // Verwijder alle kaarten van dit domein
+      document.querySelectorAll('.email-card').forEach(card => {
+        if (card.dataset.email.endsWith('@' + domain)) {
+          removeCard(card.dataset.index);
+        }
+      });
+      showUndo(`@${domain} geblokkeerd`, { email: '@' + domain, msg_id: '' });
+    } else {
+      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
+    }
+  } catch {
+    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
+  }
+}
+
+// ── Op naam blokkeren ─────────────────────────────────────────────────────────
+async function blockKeyword(senderName, index) {
+  // Extraheer het kortste herkenbare deel van de afzendernaam
+  const suggested = senderName.split(/[\s\-_|,]/)[0].trim() || senderName;
+  const keyword = prompt(
+    `Welk woord uit de afzendernaam wil je blokkeren?\n\nAlle toekomstige e-mails die dit woord bevatten worden automatisch naar Ongewenste mail gestuurd.`,
+    suggested
+  );
+  if (!keyword || keyword.trim().length < 2) return;
+
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Naamregel aanmaken…');
+  try {
+    const r = await fetch('/api/block-keyword', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ keyword: keyword.trim() }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setStatus(index, `<i class="bi bi-check-circle-fill text-success me-1"></i>Alles van "${keyword.trim()}" wordt voortaan geblokkeerd`);
+      setTimeout(() => removeCard(index), 1500);
+    } else {
+      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
+    }
+  } catch {
+    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
   }
 }
 

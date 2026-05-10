@@ -231,18 +231,27 @@ def _fetch_from_folder(folder_id: str, max_messages: int = 500) -> list:
 
 
 def _get_microsoft_blocked_emails() -> set:
-    """Leest geblokkeerde afzenders uit Microsoft inbox rules (blijven na herstart)."""
+    """Leest geblokkeerde afzenders/domeinen uit Microsoft inbox rules."""
     try:
         rules = graph_get("/me/mailFolders/inbox/messageRules") or {}
         result = set()
         for rule in rules.get("value", []):
-            if not rule.get("displayName", "").lower().startswith("blokkeer "):
+            name = rule.get("displayName", "").lower()
+            if not name.startswith("blokkeer "):
                 continue
-            for addr in rule.get("conditions", {}).get("senderContains", []):
-                result.add(addr.strip().lower())
+            for val in rule.get("conditions", {}).get("senderContains", []):
+                result.add(val.strip().lower())
         return result
     except Exception:
         return set()
+
+
+def _is_blocked(sender_lower: str, blocked_set: set) -> bool:
+    """Controleert of een afzender of zijn domein geblokkeerd is."""
+    if sender_lower in blocked_set:
+        return True
+    domain = sender_lower.split("@")[-1] if "@" in sender_lower else ""
+    return f"@{domain}" in blocked_set
 
 
 def _fetch_newsletter_emails() -> list:
@@ -278,7 +287,7 @@ def _fetch_newsletter_emails() -> list:
         sender_name = msg.get("from", {}).get("emailAddress", {}).get("name", sender_addr)
         sender_lower = sender_addr.lower()
 
-        if sender_lower in seen_senders or sender_lower in whitelisted_set or sender_lower in blocked_set:
+        if sender_lower in seen_senders or sender_lower in whitelisted_set or _is_blocked(sender_lower, blocked_set):
             continue
         seen_senders.add(sender_lower)
 
@@ -487,6 +496,53 @@ def block_sender():
             "actions": {"moveToFolder": "junkemail", "stopProcessingRules": True},
         })
         database.add_blocked(email, name)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/block-domain", methods=["POST"])
+def block_domain():
+    err = _require_session()
+    if err:
+        return err
+    data   = request.get_json()
+    domain = data.get("domain", "").strip().lower().lstrip("@")
+    name   = data.get("name", "")
+    if not domain or "." not in domain:
+        return jsonify({"error": "Ongeldig domein"}), 400
+    try:
+        graph_post("/me/mailFolders/inbox/messageRules", {
+            "displayName": f"Blokkeer domein @{domain}",
+            "sequence":    1,
+            "isEnabled":   True,
+            "conditions":  {"senderContains": [f"@{domain}"]},
+            "actions":     {"moveToFolder": "junkemail", "stopProcessingRules": True},
+        })
+        database.add_blocked(f"@{domain}", name)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/block-keyword", methods=["POST"])
+def block_keyword():
+    err = _require_session()
+    if err:
+        return err
+    data    = request.get_json()
+    keyword = data.get("keyword", "").strip()
+    if not keyword or len(keyword) < 2:
+        return jsonify({"error": "Zoekwoord te kort"}), 400
+    try:
+        graph_post("/me/mailFolders/inbox/messageRules", {
+            "displayName": f"Blokkeer naam '{keyword}'",
+            "sequence":    1,
+            "isEnabled":   True,
+            "conditions":  {"senderContains": [keyword]},
+            "actions":     {"moveToFolder": "junkemail", "stopProcessingRules": True},
+        })
+        database.add_blocked(f"~naam:{keyword.lower()}", keyword)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
