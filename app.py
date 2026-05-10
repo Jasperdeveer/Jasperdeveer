@@ -203,15 +203,31 @@ def graph_post(path, body):
 
 # ── E-mail ophalen ─────────────────────────────────────────────────────────────
 
-def _fetch_from_folder(folder_id: str) -> list:
+def _fetch_from_folder(folder_id: str, max_messages: int = 500) -> list:
+    """Haalt berichten op met paginering totdat max_messages bereikt is."""
     params = {
-        "$top": 100,
+        "$top": min(max_messages, 999),
         "$select": "id,subject,from,receivedDateTime,bodyPreview,internetMessageHeaders",
         "$filter": "isDraft eq false",
         "$orderby": "receivedDateTime desc",
     }
-    data = graph_get(f"/me/mailFolders/{folder_id}/messages", params=params)
-    return (data or {}).get("value", [])
+    messages = []
+    url = f"{GRAPH_BASE}/me/mailFolders/{folder_id}/messages"
+    hdrs = _auth_headers()
+    if not hdrs:
+        return []
+
+    while url and len(messages) < max_messages:
+        r = requests.get(url, headers=hdrs, params=params)
+        if not r.ok:
+            break
+        data = r.json()
+        messages.extend(data.get("value", []))
+        # Volgende pagina (params alleen bij eerste aanroep meegeven)
+        url = data.get("@odata.nextLink")
+        params = None
+
+    return messages[:max_messages]
 
 
 def _fetch_newsletter_emails() -> list:
