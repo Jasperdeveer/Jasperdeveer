@@ -1,8 +1,10 @@
 import os
 import time
+import uuid
 import requests
 from collections import Counter
 from datetime import timedelta
+from pathlib import Path
 from flask import (
     Flask, session, redirect, url_for, request,
     render_template, jsonify,
@@ -31,6 +33,48 @@ app.config.update(
     SESSION_COOKIE_SECURE=_on_https,
     PERMANENT_SESSION_LIFETIME=timedelta(hours=SESSION_HOURS),
 )
+
+# ── Server-side token opslag ──────────────────────────────────────────────────
+# De Microsoft-toegangstoken wordt NIET in de cookie opgeslagen.
+# De cookie bevat alleen een willekeurige sessie-ID.
+# De token staat in een bestand op de server, bereikbaar via die ID.
+
+SESSION_DIR = Path(os.getenv("SESSION_DIR", "sessions"))
+SESSION_DIR.mkdir(mode=0o700, exist_ok=True)
+
+
+def _sid() -> str:
+    """Geeft de sessie-ID terug; maakt er een aan als die er nog niet is."""
+    if "sid" not in session:
+        session["sid"] = uuid.uuid4().hex
+    return session["sid"]
+
+
+def _cache_path(sid: str) -> Path:
+    # Alleen hexadecimale tekens toestaan (voorkomt path traversal)
+    safe = "".join(c for c in sid if c in "0123456789abcdef")
+    return SESSION_DIR / f"{safe}.cache"
+
+
+def _load_cache(sid: str) -> msal.SerializableTokenCache:
+    cache = msal.SerializableTokenCache()
+    path = _cache_path(sid)
+    if path.exists():
+        cache.deserialize(path.read_text(encoding="utf-8"))
+    return cache
+
+
+def _save_cache(sid: str, cache: msal.SerializableTokenCache) -> None:
+    if cache.has_state_changed:
+        path = _cache_path(sid)
+        path.write_text(cache.serialize(), encoding="utf-8")
+        path.chmod(0o600)  # alleen eigenaar mag lezen/schrijven
+
+
+def _delete_cache(sid: str) -> None:
+    path = _cache_path(sid)
+    if path.exists():
+        path.unlink(missing_ok=True)
 
 CLIENT_ID     = os.getenv("AZURE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
@@ -79,8 +123,20 @@ def enforce_session_timeout():
         return
     login_time = session.get("login_time")
     if login_time and time.time() - login_time > SESSION_HOURS * 3600:
+        _delete_cache(_sid())
         session.clear()
         return redirect(url_for("setup"))
+
+
+def _cleanup_old_sessions() -> None:
+    """Verwijder sessiebestanden die ouder zijn dan SESSION_HOURS."""
+    cutoff = time.time() - SESSION_HOURS * 3600
+    for path in SESSION_DIR.glob("*.cache"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 # ── MSAL helpers ──────────────────────────────────────────────────────────────
@@ -95,14 +151,13 @@ def _build_msal_app(cache=None):
 
 
 def _get_token_from_cache():
-    cache = msal.SerializableTokenCache()
-    if session.get("token_cache"):
-        cache.deserialize(session["token_cache"])
-    cca = _build_msal_app(cache=cache)
+    sid   = _sid()
+    cache = _load_cache(sid)
+    cca   = _build_msal_app(cache=cache)
     accounts = cca.get_accounts()
     if accounts:
         result = cca.acquire_token_silent(SCOPES, account=accounts[0])
-        session["token_cache"] = cache.serialize()
+        _save_cache(sid, cache)
         return result
     return None
 
@@ -292,21 +347,36 @@ def authorize():
 def callback():
     if request.args.get("error"):
         return f"Login fout: {request.args.get('error_description')}", 400
+
     cache = msal.SerializableTokenCache()
-    cca = _build_msal_app(cache=cache)
+    cca   = _build_msal_app(cache=cache)
     result = cca.acquire_token_by_authorization_code(
         request.args["code"], scopes=SCOPES, redirect_uri=REDIRECT_URI
     )
     if "error" in result:
         return f"Token fout: {result.get('error_description')}", 400
-    session.permanent = True
-    session["token_cache"] = cache.serialize()
-    session["login_time"]  = time.time()
+
+    # Nieuwe sessie-ID na elke login (voorkomt session fixation)
+    session.clear()
+    session.permanent    = True
+    session["sid"]       = uuid.uuid4().hex
+    session["login_time"] = time.time()
+
+    # Token opslaan op server — NIET in de cookie
+    _save_cache(session["sid"], cache)
+
+    # Ruim verlopen sessies op (stil, op de achtergrond)
+    try:
+        _cleanup_old_sessions()
+    except Exception:
+        pass
+
     return redirect(url_for("index"))
 
 
 @app.route("/logout")
 def logout():
+    _delete_cache(_sid())   # token van schijf verwijderen
     session.clear()
     return redirect(
         f"{AUTHORITY}/oauth2/v2.0/logout"
