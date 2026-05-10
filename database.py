@@ -5,7 +5,7 @@ Slaat op: geblokkeerde afzenders, whitelist, gebruikersfeedback en actiegeschied
 
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 DB_PATH = os.getenv("DATABASE_PATH", "spam_memory.db")
 
@@ -40,6 +40,11 @@ def init_db():
                 name         TEXT,
                 action       TEXT NOT NULL,
                 performed_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS snoozed_senders (
+                email        TEXT PRIMARY KEY,
+                name         TEXT,
+                snooze_until TEXT NOT NULL
             );
         """)
 
@@ -115,6 +120,25 @@ def get_feedback(email: str) -> int | None:
             "SELECT is_spam FROM spam_feedback WHERE email=?", (email.lower().strip(),)
         ).fetchone()
     return row["is_spam"] if row else None
+
+
+def snooze_sender(email: str, name: str = "", days: int = 30) -> None:
+    email = email.lower().strip()
+    snooze_until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    with _conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO snoozed_senders (email, name, snooze_until) VALUES (?,?,?)",
+            (email, name, snooze_until),
+        )
+
+
+def get_snoozed_emails() -> set:
+    with _conn() as c:
+        return {
+            r["email"] for r in c.execute(
+                "SELECT email FROM snoozed_senders WHERE snooze_until > datetime('now')"
+            )
+        }
 
 
 def add_unsubscribed(email: str, name: str = "") -> None:

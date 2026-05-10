@@ -3,227 +3,98 @@
 
 {% block content %}
 
-{# ── Statistieken ─────────────────────────────────────────────────────────── #}
-<div class="stats-bar d-flex gap-2 mb-3 overflow-auto pb-1">
+{# ── Statistieken (worden via AJAX bijgewerkt) ─────────────────────────────── #}
+<div class="stats-bar d-flex gap-2 mb-3 overflow-auto pb-1" id="stats-bar">
   <div class="stat-chip border-danger text-danger">
-    <span class="num">{{ inbox_stats.spam }}</span>
+    <span class="num" id="stat-spam">·</span>
     <span class="label">Zeker spam</span>
   </div>
   <div class="stat-chip border-warning text-warning">
-    <span class="num">{{ inbox_stats.likely }}</span>
+    <span class="num" id="stat-likely">·</span>
     <span class="label">Waarsch. spam</span>
   </div>
   <div class="stat-chip border-info text-info">
-    <span class="num">{{ inbox_stats.promo }}</span>
+    <span class="num" id="stat-promo">·</span>
     <span class="label">Reclame</span>
   </div>
   <div class="stat-chip border-success text-success">
-    <span class="num">{{ inbox_stats.legit }}</span>
+    <span class="num" id="stat-legit">·</span>
     <span class="label">Legitiem</span>
   </div>
   <div class="stat-chip border-secondary text-secondary">
     <span class="num">{{ db_stats.total_blocked }}</span>
     <span class="label">Geblokkeerd</span>
   </div>
-  <a href="{{ url_for('index') }}" class="stat-chip border-primary text-primary text-decoration-none">
-    <i class="bi bi-arrow-clockwise num"></i>
+  <div class="stat-chip border-primary text-primary" style="cursor:pointer;" onclick="loadEmails()">
+    <i class="bi bi-arrow-clockwise num" id="refresh-icon"></i>
     <span class="label">Verversen</span>
-  </a>
+  </div>
 </div>
 
 {# ── Filter-tabs ──────────────────────────────────────────────────────────── #}
-<div class="filter-tabs mb-3">
+<div class="filter-tabs mb-2" id="filter-tabs">
   <div class="filter-tab f-all active" data-filter="all" onclick="setFilter(this,'all')">
-    Alle <span class="tab-count">{{ inbox_stats.total }}</span>
+    Alle <span class="tab-count" id="tab-all">—</span>
   </div>
   <div class="filter-tab f-spam" data-filter="spam" onclick="setFilter(this,'spam')">
     <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-    Spam <span class="tab-count">{{ inbox_stats.spam + inbox_stats.likely }}</span>
+    Spam <span class="tab-count" id="tab-spam">—</span>
   </div>
   <div class="filter-tab f-promo" data-filter="promo" onclick="setFilter(this,'promo')">
     <i class="bi bi-megaphone-fill" style="color:#fd7e14"></i>
-    Reclame <span class="tab-count">{{ inbox_stats.promo }}</span>
+    Reclame <span class="tab-count" id="tab-promo">—</span>
   </div>
   <div class="filter-tab f-legit" data-filter="legit" onclick="setFilter(this,'legit')">
     <i class="bi bi-check-circle-fill text-success"></i>
-    Legitiem <span class="tab-count">{{ inbox_stats.legit }}</span>
+    Legitiem <span class="tab-count" id="tab-legit">—</span>
   </div>
 </div>
 
-{# ── Swipe-hint (eenmalig) ───────────────────────────────────────────────── #}
-{% if emails %}
+{# ── Auto-opruimen balk (verschijnt na laden) ─────────────────────────────── #}
+<div id="auto-clean-bar" class="d-none mb-2">
+  <button id="btn-auto-clean" class="btn btn-sm w-100 btn-outline-danger fw-semibold"
+          onclick="autoClean()">
+    <i class="bi bi-stars me-1"></i>Alles blokkeren met score ≥ 80%
+    <span id="auto-clean-count" class="badge bg-danger ms-1"></span>
+  </button>
+</div>
+
+{# ── Swipe-hint ───────────────────────────────────────────────────────────── #}
 <div id="swipe-hint" class="alert alert-light py-2 small text-center text-muted mb-3" style="display:none;">
   <i class="bi bi-arrow-left-right me-1"></i>
   Veeg <strong>links</strong> om te blokkeren · <strong>rechts</strong> om te vertrouwen
 </div>
 
-{# ── Kaarten ──────────────────────────────────────────────────────────────── #}
-<div id="email-list">
-{% for email in emails %}
-
-{# Avatar kleur gebaseerd op spamscore #}
-{% set av_bg = {
-  'danger':  'rgba(220,53,69,.12)',
-  'warning': 'rgba(255,193,7,.15)',
-  'info':    'rgba(13,202,240,.12)',
-  'success': 'rgba(25,135,84,.12)',
-}[email.spam.color] %}
-{% set av_color = {
-  'danger':  '#dc3545',
-  'warning': '#856404',
-  'info':    '#055160',
-  'success': '#0f5132',
-}[email.spam.color] %}
-
-<div class="email-card card mb-2 border-start border-4 border-{{ email.spam.color }}"
-     id="card-{{ loop.index }}"
-     data-index="{{ loop.index }}"
-     data-score="{{ email.spam.score }}"
-     data-category="{% if email.spam.score >= 68 %}spam{% elif email.spam.score >= 42 %}likely{% elif email.spam.score >= 18 %}promo{% else %}legit{% endif %}"
-     data-email="{{ email.sender_email | e }}"
-     data-msg-id="{{ email.id | e }}"
-     data-name="{{ email.sender_name | e }}">
-
-  {# Swipe-overlays #}
-  <div class="swipe-overlay swipe-left">
-    <i class="bi bi-slash-circle-fill fs-4 text-danger"></i>
-    <span class="ms-2 fw-semibold text-danger small">Blokkeren</span>
+{# ── Laadskelet ───────────────────────────────────────────────────────────── #}
+<div id="loading-skeleton">
+  {% for _ in range(4) %}
+  <div class="card mb-2 border-start border-4 border-secondary" style="opacity:.5;">
+    <div class="card-body py-3 px-3">
+      <div class="d-flex align-items-center gap-2">
+        <div style="width:1.15rem;height:1.15rem;border-radius:3px;background:#ddd;flex-shrink:0;"></div>
+        <div style="width:2.4rem;height:2.4rem;border-radius:50%;background:#ddd;flex-shrink:0;"></div>
+        <div class="flex-grow-1">
+          <div style="height:.75rem;background:#ddd;border-radius:4px;width:55%;margin-bottom:.4rem;"></div>
+          <div style="height:.6rem;background:#eee;border-radius:4px;width:80%;"></div>
+        </div>
+        <div style="width:3rem;height:3rem;border-radius:50%;background:#ddd;flex-shrink:0;"></div>
+      </div>
+      <div style="height:.65rem;background:#eee;border-radius:4px;width:70%;margin-top:.75rem;"></div>
+      <div class="d-flex gap-2 mt-2">
+        <div style="height:2rem;background:#eee;border-radius:.5rem;flex:1;"></div>
+        <div style="height:2rem;background:#eee;border-radius:.5rem;flex:1;"></div>
+        <div style="height:2rem;background:#eee;border-radius:.5rem;flex:1;"></div>
+      </div>
+    </div>
   </div>
-  <div class="swipe-overlay swipe-right">
-    <span class="me-2 fw-semibold text-success small">Vertrouwen</span>
-    <i class="bi bi-check-circle-fill fs-4 text-success"></i>
-  </div>
-
-  <div class="card-body py-3 px-3">
-
-    {# ── Rij 1: checkbox + avatar + info + score ── #}
-    <div class="d-flex align-items-center gap-2">
-
-      <input class="form-check-input flex-shrink-0 email-check" type="checkbox"
-             style="width:1.15rem;height:1.15rem;"
-             data-email="{{ email.sender_email | e }}"
-             data-id="{{ email.id | e }}"
-             data-name="{{ email.sender_name | e }}"
-             onchange="updateBulkBtn()">
-
-      {# Avatar #}
-      <div class="sender-avatar flex-shrink-0"
-           style="background:{{ av_bg }};color:{{ av_color }};">
-        {{ (email.sender_name or email.sender_email)[0] | upper }}
-      </div>
-
-      {# Naam + e-mailadres #}
-      <div class="flex-grow-1 min-w-0" style="overflow:hidden;">
-        <div class="fw-semibold text-truncate" style="font-size:.88rem;line-height:1.2;">
-          {{ email.sender_name }}
-        </div>
-        <div class="text-truncate" style="font-size:.72rem;color:var(--bs-secondary-color);">
-          {{ email.sender_email }}
-        </div>
-      </div>
-
-      {# Score-cirkel #}
-      <div class="score-badge border-{{ email.spam.color }} text-{{ email.spam.color }} flex-shrink-0">
-        <span class="score-num">{{ email.spam.score }}</span>
-        <span class="score-pct">%</span>
-      </div>
-
-    </div>
-
-    {# ── Onderwerp + datum ── #}
-    <div class="mt-2 text-truncate d-flex align-items-center gap-1" style="font-size:.78rem;color:var(--bs-secondary-color);">
-      <i class="bi bi-envelope flex-shrink-0"></i>
-      <span class="text-truncate">{{ email.subject }}</span>
-      <span class="flex-shrink-0 ms-1">· {{ email.received }}</span>
-      {% if email.one_click %}
-      <span class="badge bg-success flex-shrink-0 ms-1" style="font-size:.6rem;">
-        <i class="bi bi-lightning-fill"></i> 1-klik
-      </span>
-      {% endif %}
-    </div>
-
-    {# ── Spam-label ── #}
-    <div class="mt-1" style="font-size:.72rem;">
-      <i class="bi {{ email.spam.icon }} text-{{ email.spam.color }} me-1"></i>
-      <span class="text-{{ email.spam.color }}">{{ email.spam.label }}</span>
-      {% if email.spam.reasons %}
-      <button class="btn btn-link btn-sm p-0 ms-2 text-muted border-0"
-              style="font-size:.68rem;vertical-align:baseline;"
-              type="button" data-bs-toggle="collapse"
-              data-bs-target="#reasons-{{ loop.index }}">
-        {{ email.spam.reasons | length }} signalen <i class="bi bi-chevron-down"></i>
-      </button>
-      <div class="collapse mt-1" id="reasons-{{ loop.index }}">
-        <div class="px-2 py-1 rounded" style="background:rgba(0,0,0,.04);font-size:.7rem;">
-          {% for r in email.spam.reasons %}
-          <div class="text-muted"><i class="bi bi-dot"></i>{{ r }}</div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-    </div>
-
-    {# ── E-mailpreview (uitklapbaar) ── #}
-    {% if email.body_preview %}
-    <button class="btn btn-link btn-sm p-0 mt-1 text-muted border-0"
-            type="button" data-bs-toggle="collapse"
-            data-bs-target="#preview-{{ loop.index }}"
-            style="font-size:.72rem;">
-      <i class="bi bi-eye me-1"></i>Berichtpreview <i class="bi bi-chevron-down"></i>
-    </button>
-    <div class="collapse" id="preview-{{ loop.index }}">
-      <div class="mt-1 p-2 rounded" style="font-size:.72rem;color:var(--bs-secondary-color);background:rgba(0,0,0,.04);">
-        {{ email.body_preview }}
-      </div>
-    </div>
-    {% endif %}
-
-    {# ── Acties ── #}
-    {% set domain = email.sender_email.split('@')[1] if '@' in email.sender_email else '' %}
-    <div class="action-row mt-2">
-      {% if email.https_link %}
-      <a href="{{ email.https_link }}" target="_blank" rel="noopener noreferrer"
-         class="btn btn-outline-primary"
-         onclick="markUnsubscribed('{{ email.sender_email | e }}','{{ email.sender_name | e }}')">
-        <i class="bi bi-box-arrow-up-right me-1"></i>Uitschrijven
-      </a>
-      {% endif %}
-      {% if email.mailto_link %}
-      <button class="btn btn-outline-primary"
-              onclick="sendUnsubscribeEmail('{{ email.mailto_link | e }}','{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
-        <i class="bi bi-send me-1"></i>E-mail
-      </button>
-      {% endif %}
-      <button class="btn btn-danger"
-              onclick="blockOne('{{ email.sender_email | e }}','{{ email.id | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
-        <i class="bi bi-slash-circle me-1"></i>Blokkeren
-      </button>
-      <button class="btn btn-outline-success"
-              onclick="trustSender('{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
-        <i class="bi bi-check-circle me-1"></i>Vertrouwen
-      </button>
-    </div>
-    {# Slimme blokkeeropties #}
-    <div class="d-flex gap-1 mt-1">
-      {% if domain %}
-      <button class="btn btn-outline-secondary flex-fill"
-              style="font-size:.72rem;padding:.25rem .4rem;border-radius:.5rem;"
-              onclick="blockDomain('{{ domain | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
-        <i class="bi bi-globe2 me-1"></i>@{{ domain }}
-      </button>
-      {% endif %}
-      <button class="btn btn-outline-secondary flex-fill"
-              style="font-size:.72rem;padding:.25rem .4rem;border-radius:.5rem;"
-              onclick="blockKeyword('{{ email.sender_name | e }}',{{ loop.index }})">
-        <i class="bi bi-tag me-1"></i>Op naam blokkeren
-      </button>
-    </div>
-
-    <div id="status-{{ loop.index }}" class="mt-1" style="display:none;font-size:.75rem;"></div>
+  {% endfor %}
+  <div class="text-center text-muted small py-2">
+    <span class="spinner-border spinner-border-sm me-2"></span>E-mails ophalen…
   </div>
 </div>
-{% endfor %}
-</div>
+
+{# ── Echte kaarten (ingevuld via AJAX) ───────────────────────────────────── #}
+<div id="email-list" style="display:none;"></div>
 
 {# ── Vaste bulk-balk ──────────────────────────────────────────────────────── #}
 <div class="bulk-bar" id="bulk-bar" style="display:none;">
@@ -245,32 +116,79 @@
   <div class="undo-progress" id="undo-progress"></div>
 </div>
 
-{% else %}
-{# ── Lege staat ───────────────────────────────────────────────────────────── #}
-<div class="empty-state">
-  <span class="empty-icon">🎉</span>
-  <h5 class="fw-semibold mb-1">Je inbox is schoon!</h5>
-  <p class="small mb-3">Geen nieuwsbrieven of spam gevonden.</p>
-  <a href="{{ url_for('index') }}" class="btn btn-primary btn-sm">
-    <i class="bi bi-arrow-clockwise me-1"></i>Opnieuw controleren
-  </a>
-</div>
-{% endif %}
-
 {% endblock %}
 
 {% block scripts %}
 <script>
-// ── Swipe-hint eenmalig tonen ─────────────────────────────────────────────────
-if (!localStorage.getItem('swipe-hint-seen') && window.matchMedia('(pointer: coarse)').matches) {
-  document.getElementById('swipe-hint').style.display = 'block';
-  localStorage.setItem('swipe-hint-seen', '1');
+// ── AJAX laden ────────────────────────────────────────────────────────────────
+let _currentFilter = 'all';
+
+async function loadEmails() {
+  document.getElementById('loading-skeleton').style.display = 'block';
+  document.getElementById('email-list').style.display = 'none';
+  document.getElementById('auto-clean-bar').classList.add('d-none');
+
+  const icon = document.getElementById('refresh-icon');
+  icon.classList.add('spin');
+
+  try {
+    const r = await fetch('/api/emails');
+    if (r.status === 401) { location.href = '/setup'; return; }
+    const data = await r.json();
+
+    document.getElementById('email-list').innerHTML = data.html;
+    updateStats(data.stats);
+    applyFilter(_currentFilter);
+    setupSwipeHandlers();
+    setupAutoClean();
+
+    document.getElementById('loading-skeleton').style.display = 'none';
+    document.getElementById('email-list').style.display = 'block';
+
+    if (!localStorage.getItem('swipe-hint-seen') && window.matchMedia('(pointer: coarse)').matches) {
+      document.getElementById('swipe-hint').style.display = 'block';
+      localStorage.setItem('swipe-hint-seen', '1');
+    }
+  } catch (err) {
+    document.getElementById('loading-skeleton').innerHTML =
+      '<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>Laden mislukt — <a href="/" class="alert-link">probeer opnieuw</a></div>';
+  } finally {
+    icon.classList.remove('spin');
+  }
+}
+
+function updateStats(s) {
+  document.getElementById('stat-spam').textContent   = s.spam;
+  document.getElementById('stat-likely').textContent = s.likely;
+  document.getElementById('stat-promo').textContent  = s.promo;
+  document.getElementById('stat-legit').textContent  = s.legit;
+  document.getElementById('tab-all').textContent     = s.total;
+  document.getElementById('tab-spam').textContent    = s.spam + s.likely;
+  document.getElementById('tab-promo').textContent   = s.promo;
+  document.getElementById('tab-legit').textContent   = s.legit;
+}
+
+function setupAutoClean() {
+  const high = [...document.querySelectorAll('.email-card')]
+    .filter(c => parseInt(c.dataset.score) >= 80);
+  const bar = document.getElementById('auto-clean-bar');
+  if (high.length > 0) {
+    document.getElementById('auto-clean-count').textContent = high.length;
+    bar.classList.remove('d-none');
+  } else {
+    bar.classList.add('d-none');
+  }
 }
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 function setFilter(el, val) {
+  _currentFilter = val;
   document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
+  applyFilter(val);
+}
+
+function applyFilter(val) {
   document.querySelectorAll('.email-card').forEach(card => {
     const cat = card.dataset.category;
     const show = val === 'all'
@@ -282,17 +200,44 @@ function setFilter(el, val) {
   updateBulkBtn();
 }
 
+// ── Auto-opruimen ─────────────────────────────────────────────────────────────
+async function autoClean() {
+  const cards = [...document.querySelectorAll('.email-card')]
+    .filter(c => parseInt(c.dataset.score) >= 80 && c.style.display !== 'none');
+  if (!cards.length) return;
+  if (!confirm(`${cards.length} afzender${cards.length > 1 ? 's' : ''} blokkeren (score ≥ 80%)?`)) return;
+
+  const btn = document.getElementById('btn-auto-clean');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Bezig…';
+
+  const entries = cards.map(c => ({ email: c.dataset.email, id: c.dataset.msgId, name: c.dataset.name }));
+  try {
+    const resp = await fetch('/api/bulk-block', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ entries }),
+    });
+    const data = await resp.json();
+    if (data.ok || data.blocked) {
+      cards.forEach((c, n) => setTimeout(() => removeCard(c.dataset.index), n * 50));
+      document.getElementById('auto-clean-bar').classList.add('d-none');
+    }
+  } catch { alert('Netwerkfout.'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-stars me-1"></i>Alles blokkeren met score ≥ 80% <span id="auto-clean-count" class="badge bg-danger ms-1"></span>';
+  }
+}
+
 // ── Bulk-selectie ─────────────────────────────────────────────────────────────
 function updateBulkBtn() {
   const n = visibleChecked().length;
   const bar = document.getElementById('bulk-bar');
   if (!bar) return;
-  if (n > 0) {
-    bar.style.display = 'block';
+  bar.style.display = n > 0 ? 'block' : 'none';
+  if (n > 0)
     document.getElementById('bulk-label').textContent = `${n} afzender${n > 1 ? 's' : ''} blokkeren`;
-  } else {
-    bar.style.display = 'none';
-  }
 }
 function visibleChecked() {
   return [...document.querySelectorAll('.email-check:checked')]
@@ -310,40 +255,25 @@ function removeCard(index) {
   card.style.transition = 'opacity .3s, max-height .35s, margin .35s, padding .35s';
   card.style.opacity = '0';
   setTimeout(() => {
-    card.style.maxHeight = '0';
-    card.style.overflow  = 'hidden';
+    card.style.maxHeight = '0'; card.style.overflow = 'hidden';
     card.style.marginBottom = '0';
     setTimeout(() => card.remove(), 350);
   }, 300);
 }
 
 // ── Undo ──────────────────────────────────────────────────────────────────────
-let _undoTimer = null;
-let _undoProgress = null;
-let _pendingUndo = null;
+let _undoTimer = null, _pendingUndo = null;
 
 function showUndo(label, undoData) {
   _pendingUndo = undoData;
   clearTimeout(_undoTimer);
-  if (_undoProgress) clearInterval(_undoProgress);
-
   const toast = document.getElementById('undo-toast');
   document.getElementById('undo-msg').textContent = label;
   toast.style.display = 'flex';
-
   const bar = document.getElementById('undo-progress');
-  let pct = 100;
-  bar.style.transition = 'none';
-  bar.style.width = '100%';
-  requestAnimationFrame(() => {
-    bar.style.transition = 'width 30s linear';
-    bar.style.width = '0%';
-  });
-
-  _undoTimer = setTimeout(() => {
-    toast.style.display = 'none';
-    _pendingUndo = null;
-  }, 30000);
+  bar.style.transition = 'none'; bar.style.width = '100%';
+  requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '0%'; });
+  _undoTimer = setTimeout(() => { toast.style.display = 'none'; _pendingUndo = null; }, 30000);
 }
 
 async function undoLastAction() {
@@ -352,17 +282,11 @@ async function undoLastAction() {
   clearTimeout(_undoTimer);
   document.getElementById('undo-toast').style.display = 'none';
   _pendingUndo = null;
-
-  try {
-    await fetch('/api/undo-block', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ email, msg_id }),
-    });
-    location.reload();
-  } catch {
-    alert('Ongedaan maken mislukt.');
-  }
+  await fetch('/api/undo-block', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ email, msg_id }),
+  });
+  loadEmails();
 }
 
 // ── Uitschrijven via e-mail ───────────────────────────────────────────────────
@@ -370,27 +294,44 @@ async function sendUnsubscribeEmail(mailto, senderEmail, senderName, index) {
   setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Verzenden…');
   try {
     const r = await fetch('/api/unsubscribe-mailto', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ mailto, sender_email: senderEmail, sender_name: senderName }),
     });
     const d = await r.json();
-    if (d.ok) {
-      setStatus(index, '<i class="bi bi-check-circle-fill text-success me-1"></i>Afmeldmail verzonden!');
-    } else {
-      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
-    }
-  } catch {
-    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
-  }
+    setStatus(index, d.ok
+      ? '<i class="bi bi-check-circle-fill text-success me-1"></i>Afmeldmail verzonden!'
+      : `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
 }
 
 function markUnsubscribed(email, name) {
   fetch('/api/unsubscribe-mailto', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ mailto: 'mailto:_track@only', sender_email: email, sender_name: name }),
   }).catch(() => {});
+}
+
+// ── Uitschrijven + blokkeren in één ──────────────────────────────────────────
+async function blockAndUnsubscribe(email, msgId, name, mailto, httpsLink, index) {
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Bezig…');
+  if (httpsLink) window.open(httpsLink, '_blank', 'noopener,noreferrer');
+
+  const calls = [
+    fetch('/api/block-sender', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email, name }) }),
+    fetch('/api/move-to-junk', { method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ id: msgId }) }),
+  ];
+  if (mailto) calls.push(fetch('/api/unsubscribe-mailto', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ mailto, sender_email: email, sender_name: name }),
+  }));
+
+  try {
+    await Promise.all(calls);
+    showUndo(`${name || email} uitgeschreven & geblokkeerd`, { email, msg_id: msgId });
+    setTimeout(() => removeCard(index), 300);
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
 }
 
 // ── Eén afzender blokkeren ────────────────────────────────────────────────────
@@ -398,16 +339,10 @@ async function blockOne(email, msgId, name, index) {
   setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Blokkeren…');
   try {
     const [br, mr] = await Promise.all([
-      fetch('/api/block-sender', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ email, name }),
-      }),
-      fetch('/api/move-to-junk', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ id: msgId }),
-      }),
+      fetch('/api/block-sender', { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email, name }) }),
+      fetch('/api/move-to-junk', { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ id: msgId }) }),
     ]);
     const bd = await br.json(), md = await mr.json();
     if (bd.ok && md.ok) {
@@ -416,30 +351,80 @@ async function blockOne(email, msgId, name, index) {
     } else {
       setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${bd.error || md.error}`);
     }
-  } catch {
-    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
-  }
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
 }
 
-// ── Afzender vertrouwen (whitelist) ───────────────────────────────────────────
+// ── Vertrouwen ────────────────────────────────────────────────────────────────
 async function trustSender(email, name, index) {
   setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Opslaan…');
   try {
     const r = await fetch('/api/whitelist-sender', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ email, name }),
     });
     const d = await r.json();
     if (d.ok) {
       setStatus(index, '<i class="bi bi-check-circle-fill text-success me-1"></i>Vertrouwd — verschijnt niet meer');
       setTimeout(() => removeCard(index), 1200);
-    } else {
-      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
-    }
-  } catch {
-    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
-  }
+    } else { setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`); }
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
+}
+
+// ── Domein blokkeren ──────────────────────────────────────────────────────────
+async function blockDomain(domain, name, index) {
+  if (!confirm(`Alle e-mails van @${domain} blokkeren?\n\nDit blokkeert ook toekomstige afzenders van dit domein.`)) return;
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Domein blokkeren…');
+  try {
+    const r = await fetch('/api/block-domain', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ domain, name }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.querySelectorAll('.email-card').forEach(card => {
+        if (card.dataset.email.endsWith('@' + domain)) removeCard(card.dataset.index);
+      });
+      showUndo(`@${domain} geblokkeerd`, { email: '@' + domain, msg_id: '' });
+    } else { setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`); }
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
+}
+
+// ── Op naam blokkeren ─────────────────────────────────────────────────────────
+async function blockKeyword(senderName, index) {
+  const suggested = senderName.split(/[\s\-_|,]/)[0].trim() || senderName;
+  const keyword = prompt(
+    'Welk woord wil je blokkeren?\n\nAlle e-mails waarbij de afzendernaam dit woord bevat worden geblokkeerd.',
+    suggested
+  );
+  if (!keyword || keyword.trim().length < 2) return;
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Naamregel aanmaken…');
+  try {
+    const r = await fetch('/api/block-keyword', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ keyword: keyword.trim() }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setStatus(index, `<i class="bi bi-check-circle-fill text-success me-1"></i>Alles van "${keyword.trim()}" wordt geblokkeerd`);
+      setTimeout(() => removeCard(index), 1500);
+    } else { setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`); }
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
+}
+
+// ── Snoozen ───────────────────────────────────────────────────────────────────
+async function snoozeSender(email, name, index) {
+  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Snoozen…');
+  try {
+    const r = await fetch('/api/snooze-sender', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email, name, days: 30 }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      setStatus(index, '<i class="bi bi-clock text-warning me-1"></i>Gesnoozed — verschijnt over 30 dagen weer');
+      setTimeout(() => removeCard(index), 1200);
+    } else { setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`); }
+  } catch { setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout'); }
 }
 
 // ── Bulk blokkeren ────────────────────────────────────────────────────────────
@@ -452,135 +437,67 @@ async function bulkBlock() {
 
   const entries = checked.map(cb => ({ email: cb.dataset.email, id: cb.dataset.id, name: cb.dataset.name }));
   const indices = checked.map(cb => cb.closest('.email-card').dataset.index);
-
   try {
     const resp = await fetch('/api/bulk-block', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ entries }),
     });
     const data = await resp.json();
-    if (data.ok) {
+    if (data.ok || data.blocked) {
       indices.forEach((i, n) => setTimeout(() => removeCard(i), n * 60));
       document.getElementById('bulk-bar').style.display = 'none';
-    } else {
-      alert('Sommige items konden niet worden geblokkeerd.');
-    }
-  } catch {
-    alert('Netwerkfout.');
-  } finally {
+    } else { alert('Sommige items konden niet worden geblokkeerd.'); }
+  } catch { alert('Netwerkfout.'); }
+  finally {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-slash-circle me-2"></i><span id="bulk-label">Selectie blokkeren</span>';
   }
 }
 
-// ── Domein blokkeren ──────────────────────────────────────────────────────────
-async function blockDomain(domain, name, index) {
-  if (!confirm(`Alle e-mails van @${domain} blokkeren?\n\nDit blokkeert alle afzenders van dit domein, ook toekomstige.`)) return;
-  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Domein blokkeren…');
-  try {
-    const r = await fetch('/api/block-domain', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ domain, name }),
-    });
-    const d = await r.json();
-    if (d.ok) {
-      // Verwijder alle kaarten van dit domein
-      document.querySelectorAll('.email-card').forEach(card => {
-        if (card.dataset.email.endsWith('@' + domain)) {
-          removeCard(card.dataset.index);
-        }
-      });
-      showUndo(`@${domain} geblokkeerd`, { email: '@' + domain, msg_id: '' });
-    } else {
-      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
-    }
-  } catch {
-    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
-  }
-}
-
-// ── Op naam blokkeren ─────────────────────────────────────────────────────────
-async function blockKeyword(senderName, index) {
-  // Extraheer het kortste herkenbare deel van de afzendernaam
-  const suggested = senderName.split(/[\s\-_|,]/)[0].trim() || senderName;
-  const keyword = prompt(
-    `Welk woord uit de afzendernaam wil je blokkeren?\n\nAlle toekomstige e-mails die dit woord bevatten worden automatisch naar Ongewenste mail gestuurd.`,
-    suggested
-  );
-  if (!keyword || keyword.trim().length < 2) return;
-
-  setStatus(index, '<i class="bi bi-hourglass-split text-muted me-1"></i>Naamregel aanmaken…');
-  try {
-    const r = await fetch('/api/block-keyword', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ keyword: keyword.trim() }),
-    });
-    const d = await r.json();
-    if (d.ok) {
-      setStatus(index, `<i class="bi bi-check-circle-fill text-success me-1"></i>Alles van "${keyword.trim()}" wordt voortaan geblokkeerd`);
-      setTimeout(() => removeCard(index), 1500);
-    } else {
-      setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
-    }
-  } catch {
-    setStatus(index, '<i class="bi bi-x-circle text-danger me-1"></i>Netwerkfout');
-  }
-}
-
 // ── Swipe-acties ──────────────────────────────────────────────────────────────
-document.querySelectorAll('.email-card').forEach(card => {
-  let startX = 0, startY = 0, dragging = false;
-  const THRESHOLD = 72;
+function setupSwipeHandlers() {
+  document.querySelectorAll('.email-card').forEach(card => {
+    if (card.dataset.swipe) return; // al ingesteld
+    card.dataset.swipe = '1';
+    let startX = 0, startY = 0, dragging = false;
+    const THRESHOLD = 72;
+    const overlayLeft  = card.querySelector('.swipe-left');
+    const overlayRight = card.querySelector('.swipe-right');
+    const inner        = card.querySelector('.card-body');
 
-  const overlayLeft  = card.querySelector('.swipe-left');
-  const overlayRight = card.querySelector('.swipe-right');
-  const inner        = card.querySelector('.card-body');
+    card.addEventListener('touchstart', e => {
+      startX = e.touches[0].clientX; startY = e.touches[0].clientY; dragging = false;
+    }, { passive: true });
 
-  card.addEventListener('touchstart', e => {
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    dragging = false;
-  }, { passive: true });
+    card.addEventListener('touchmove', e => {
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (!dragging && Math.abs(dy) > Math.abs(dx)) return;
+      dragging = true; e.preventDefault();
+      const clamped = Math.max(-THRESHOLD * 1.5, Math.min(THRESHOLD * 1.5, dx));
+      inner.style.transform = `translateX(${clamped}px)`;
+      const ratio = Math.min(Math.abs(dx) / THRESHOLD, 1);
+      overlayLeft.style.opacity  = dx < 0 ? ratio : 0;
+      overlayRight.style.opacity = dx > 0 ? ratio : 0;
+    }, { passive: false });
 
-  card.addEventListener('touchmove', e => {
-    const dx = e.touches[0].clientX - startX;
-    const dy = e.touches[0].clientY - startY;
-    if (!dragging && Math.abs(dy) > Math.abs(dx)) return;
-    dragging = true;
-    e.preventDefault();
-
-    const clamped = Math.max(-THRESHOLD * 1.5, Math.min(THRESHOLD * 1.5, dx));
-    inner.style.transform = `translateX(${clamped}px)`;
-
-    const ratio = Math.min(Math.abs(dx) / THRESHOLD, 1);
-    if (dx < 0) {
-      overlayLeft.style.opacity  = ratio;
-      overlayRight.style.opacity = 0;
-    } else {
-      overlayRight.style.opacity = ratio;
-      overlayLeft.style.opacity  = 0;
-    }
-  }, { passive: false });
-
-  card.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - startX;
-    inner.style.transform = '';
-    overlayLeft.style.opacity  = 0;
-    overlayRight.style.opacity = 0;
-
-    if (!dragging) return;
-
-    const idx   = card.dataset.index;
-    const email = card.dataset.email;
-    const msgId = card.dataset.msgId;
-    const name  = card.dataset.name;
-
-    if (dx < -THRESHOLD) blockOne(email, msgId, name, idx);
-    else if (dx > THRESHOLD) trustSender(email, name, idx);
+    card.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - startX;
+      inner.style.transform = '';
+      overlayLeft.style.opacity = overlayRight.style.opacity = 0;
+      if (!dragging) return;
+      if (dx < -THRESHOLD) blockOne(card.dataset.email, card.dataset.msgId, card.dataset.name, card.dataset.index);
+      else if (dx > THRESHOLD) trustSender(card.dataset.email, card.dataset.name, card.dataset.index);
+    });
   });
-});
+}
+
+// ── Spinner animatie ──────────────────────────────────────────────────────────
+const style = document.createElement('style');
+style.textContent = '.spin { animation: spin .7s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }';
+document.head.appendChild(style);
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+loadEmails();
 </script>
 {% endblock %}

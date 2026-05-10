@@ -1,0 +1,188 @@
+{% for email in emails %}
+
+{% set av_bg = {
+  'danger':  'rgba(220,53,69,.12)',
+  'warning': 'rgba(255,193,7,.15)',
+  'info':    'rgba(13,202,240,.12)',
+  'success': 'rgba(25,135,84,.12)',
+}[email.spam.color] %}
+{% set av_color = {
+  'danger':  '#dc3545',
+  'warning': '#856404',
+  'info':    '#055160',
+  'success': '#0f5132',
+}[email.spam.color] %}
+{% set domain = email.sender_email.split('@')[1] if '@' in email.sender_email else '' %}
+
+<div class="email-card card mb-2 border-start border-4 border-{{ email.spam.color }}"
+     id="card-{{ loop.index }}"
+     data-index="{{ loop.index }}"
+     data-score="{{ email.spam.score }}"
+     data-category="{% if email.spam.score >= 68 %}spam{% elif email.spam.score >= 42 %}likely{% elif email.spam.score >= 18 %}promo{% else %}legit{% endif %}"
+     data-email="{{ email.sender_email | e }}"
+     data-msg-id="{{ email.id | e }}"
+     data-name="{{ email.sender_name | e }}">
+
+  <div class="swipe-overlay swipe-left">
+    <i class="bi bi-slash-circle-fill fs-4 text-danger"></i>
+    <span class="ms-2 fw-semibold text-danger small">Blokkeren</span>
+  </div>
+  <div class="swipe-overlay swipe-right">
+    <span class="me-2 fw-semibold text-success small">Vertrouwen</span>
+    <i class="bi bi-check-circle-fill fs-4 text-success"></i>
+  </div>
+
+  <div class="card-body py-3 px-3">
+
+    {# ── Rij 1: checkbox + avatar + info + score ── #}
+    <div class="d-flex align-items-center gap-2">
+      <input class="form-check-input flex-shrink-0 email-check" type="checkbox"
+             style="width:1.15rem;height:1.15rem;"
+             data-email="{{ email.sender_email | e }}"
+             data-id="{{ email.id | e }}"
+             data-name="{{ email.sender_name | e }}"
+             onchange="updateBulkBtn()">
+      <div class="sender-avatar flex-shrink-0"
+           style="background:{{ av_bg }};color:{{ av_color }};">
+        {{ (email.sender_name or email.sender_email)[0] | upper }}
+      </div>
+      <div class="flex-grow-1 min-w-0" style="overflow:hidden;">
+        <div class="fw-semibold text-truncate" style="font-size:.88rem;line-height:1.2;">
+          {{ email.sender_name }}
+        </div>
+        <div class="text-truncate" style="font-size:.72rem;color:var(--bs-secondary-color);">
+          {{ email.sender_email }}
+        </div>
+      </div>
+      <div class="score-badge border-{{ email.spam.color }} text-{{ email.spam.color }} flex-shrink-0">
+        <span class="score-num">{{ email.spam.score }}</span>
+        <span class="score-pct">%</span>
+      </div>
+    </div>
+
+    {# ── Onderwerp + datum ── #}
+    <div class="mt-2 d-flex align-items-center gap-1 text-truncate"
+         style="font-size:.78rem;color:var(--bs-secondary-color);">
+      <i class="bi bi-envelope flex-shrink-0"></i>
+      <span class="text-truncate">{{ email.subject }}</span>
+      <span class="flex-shrink-0 ms-1">· {{ email.received }}</span>
+      {% if email.one_click %}
+      <span class="badge bg-success flex-shrink-0 ms-1" style="font-size:.6rem;">
+        <i class="bi bi-lightning-fill"></i> 1-klik
+      </span>
+      {% endif %}
+    </div>
+
+    {# ── Spam-label + signalen ── #}
+    <div class="mt-1" style="font-size:.72rem;">
+      <i class="bi {{ email.spam.icon }} text-{{ email.spam.color }} me-1"></i>
+      <span class="text-{{ email.spam.color }}">{{ email.spam.label }}</span>
+      {% if email.spam.reasons %}
+      <button class="btn btn-link btn-sm p-0 ms-2 text-muted border-0"
+              style="font-size:.68rem;vertical-align:baseline;"
+              type="button" data-bs-toggle="collapse"
+              data-bs-target="#reasons-{{ loop.index }}">
+        {{ email.spam.reasons | length }} signalen <i class="bi bi-chevron-down"></i>
+      </button>
+      <div class="collapse mt-1" id="reasons-{{ loop.index }}">
+        <div class="px-2 py-1 rounded" style="background:rgba(0,0,0,.04);font-size:.7rem;">
+          {% for r in email.spam.reasons %}
+          <div class="text-muted"><i class="bi bi-dot"></i>{{ r }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── E-mailpreview ── #}
+    {% if email.body_preview %}
+    <button class="btn btn-link btn-sm p-0 mt-1 text-muted border-0"
+            style="font-size:.72rem;"
+            type="button" data-bs-toggle="collapse"
+            data-bs-target="#preview-{{ loop.index }}">
+      <i class="bi bi-eye me-1"></i>Berichtpreview <i class="bi bi-chevron-down"></i>
+    </button>
+    <div class="collapse" id="preview-{{ loop.index }}">
+      <div class="mt-1 p-2 rounded"
+           style="font-size:.72rem;color:var(--bs-secondary-color);background:rgba(0,0,0,.04);">
+        {{ email.body_preview }}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Primaire acties ── #}
+    <div class="action-row mt-2">
+      {% if email.https_link %}
+      <a href="{{ email.https_link }}" target="_blank" rel="noopener noreferrer"
+         class="btn btn-outline-primary"
+         onclick="markUnsubscribed('{{ email.sender_email | e }}','{{ email.sender_name | e }}')">
+        <i class="bi bi-box-arrow-up-right me-1"></i>Uitschrijven
+      </a>
+      {% endif %}
+      {% if email.mailto_link %}
+      <button class="btn btn-outline-primary"
+              onclick="sendUnsubscribeEmail('{{ email.mailto_link | e }}','{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-send me-1"></i>E-mail
+      </button>
+      {% endif %}
+      <button class="btn btn-danger"
+              onclick="blockOne('{{ email.sender_email | e }}','{{ email.id | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-slash-circle me-1"></i>Blokkeren
+      </button>
+      <button class="btn btn-outline-success"
+              onclick="trustSender('{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-check-circle me-1"></i>Vertrouwen
+      </button>
+    </div>
+
+    {# ── Alles in één (alleen als er een uitschrijflink is) ── #}
+    {% if email.https_link or email.mailto_link %}
+    <div class="mt-1">
+      <button class="btn btn-outline-danger w-100"
+              style="font-size:.76rem;padding:.3rem .5rem;border-radius:.5rem;"
+              onclick="blockAndUnsubscribe(
+                '{{ email.sender_email | e }}',
+                '{{ email.id | e }}',
+                '{{ email.sender_name | e }}',
+                '{{ (email.mailto_link or '') | e }}',
+                '{{ (email.https_link or '') | e }}',
+                {{ loop.index }})">
+        <i class="bi bi-stars me-1"></i>Uitschrijven + blokkeren
+      </button>
+    </div>
+    {% endif %}
+
+    {# ── Slimme blokkeropties ── #}
+    <div class="d-flex gap-1 mt-1">
+      {% if domain %}
+      <button class="btn btn-outline-secondary flex-fill"
+              style="font-size:.71rem;padding:.25rem .4rem;border-radius:.5rem;"
+              onclick="blockDomain('{{ domain | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-globe2 me-1"></i>@{{ domain }}
+      </button>
+      {% endif %}
+      <button class="btn btn-outline-secondary flex-fill"
+              style="font-size:.71rem;padding:.25rem .4rem;border-radius:.5rem;"
+              onclick="blockKeyword('{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-tag me-1"></i>Op naam
+      </button>
+      <button class="btn btn-outline-warning flex-fill"
+              style="font-size:.71rem;padding:.25rem .4rem;border-radius:.5rem;"
+              onclick="snoozeSender('{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
+        <i class="bi bi-clock me-1"></i>Snoozen
+      </button>
+    </div>
+
+    <div id="status-{{ loop.index }}" style="display:none;font-size:.75rem;" class="mt-1"></div>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <span class="empty-icon">🎉</span>
+  <h5 class="fw-semibold mb-1">Je inbox is schoon!</h5>
+  <p class="small mb-3">Geen nieuwsbrieven of spam gevonden.</p>
+  <button class="btn btn-primary btn-sm" onclick="loadEmails()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Opnieuw controleren
+  </button>
+</div>
+{% endfor %}

@@ -266,6 +266,7 @@ def _fetch_newsletter_emails() -> list:
     # Combineer lokale database met Microsoft inbox rules (persistent na herstart)
     blocked_set     = database.get_blocked_emails() | _get_microsoft_blocked_emails()
     whitelisted_set = database.get_whitelisted_emails()
+    snoozed_set     = database.get_snoozed_emails()
 
     sender_counts: Counter = Counter(
         msg.get("from", {}).get("emailAddress", {}).get("address", "").lower()
@@ -287,7 +288,8 @@ def _fetch_newsletter_emails() -> list:
         sender_name = msg.get("from", {}).get("emailAddress", {}).get("name", sender_addr)
         sender_lower = sender_addr.lower()
 
-        if sender_lower in seen_senders or sender_lower in whitelisted_set or _is_blocked(sender_lower, blocked_set):
+        if sender_lower in seen_senders or sender_lower in whitelisted_set \
+                or _is_blocked(sender_lower, blocked_set) or sender_lower in snoozed_set:
             continue
         seen_senders.add(sender_lower)
 
@@ -338,32 +340,34 @@ def _fetch_newsletter_emails() -> list:
 def index():
     if not _get_token_from_cache():
         return redirect(url_for("setup"))
-
     user = graph_get("/me", params={"$select": "displayName,mail,userPrincipalName"})
     user_email = (user or {}).get("mail") or (user or {}).get("userPrincipalName", "")
+    db_stats     = database.get_stats()
+    login_time   = session.get("login_time", time.time())
+    seconds_left = max(0, int(SESSION_HOURS * 3600 - (time.time() - login_time)))
+    return render_template(
+        "index.html",
+        user_email=user_email,
+        db_stats=db_stats,
+        session_seconds=seconds_left,
+    )
 
+
+@app.route("/api/emails")
+def api_emails():
+    err = _require_session()
+    if err:
+        return err
     emails = _fetch_newsletter_emails()
-
-    inbox_stats = {
+    stats  = {
         "total":  len(emails),
         "spam":   sum(1 for e in emails if e["spam"]["score"] >= 68),
         "likely": sum(1 for e in emails if 42 <= e["spam"]["score"] < 68),
         "promo":  sum(1 for e in emails if 18 <= e["spam"]["score"] < 42),
         "legit":  sum(1 for e in emails if e["spam"]["score"] < 18),
     }
-    db_stats = database.get_stats()
-
-    login_time   = session.get("login_time", time.time())
-    seconds_left = max(0, int(SESSION_HOURS * 3600 - (time.time() - login_time)))
-
-    return render_template(
-        "index.html",
-        emails=emails,
-        user_email=user_email,
-        inbox_stats=inbox_stats,
-        db_stats=db_stats,
-        session_seconds=seconds_left,
-    )
+    html = render_template("partials/cards.html", emails=emails)
+    return jsonify({"html": html, "stats": stats})
 
 
 @app.route("/setup")
@@ -657,6 +661,26 @@ def whitelist_sender():
         return jsonify({"error": "Geen e-mailadres"}), 400
     try:
         database.add_whitelisted(email, name)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Snoozen ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/snooze-sender", methods=["POST"])
+def snooze_sender():
+    err = _require_session()
+    if err:
+        return err
+    data  = request.get_json()
+    email = data.get("email", "").strip().lower()
+    name  = data.get("name", "")
+    days  = int(data.get("days", 30))
+    if not email:
+        return jsonify({"error": "Geen e-mailadres"}), 400
+    try:
+        database.snooze_sender(email, name, days)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
