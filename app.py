@@ -230,6 +230,21 @@ def _fetch_from_folder(folder_id: str, max_messages: int = 500) -> list:
     return messages[:max_messages]
 
 
+def _get_microsoft_blocked_emails() -> set:
+    """Leest geblokkeerde afzenders uit Microsoft inbox rules (blijven na herstart)."""
+    try:
+        rules = graph_get("/me/mailFolders/inbox/messageRules") or {}
+        result = set()
+        for rule in rules.get("value", []):
+            if not rule.get("displayName", "").lower().startswith("blokkeer "):
+                continue
+            for addr in rule.get("conditions", {}).get("senderContains", []):
+                result.add(addr.strip().lower())
+        return result
+    except Exception:
+        return set()
+
+
 def _fetch_newsletter_emails() -> list:
     # Haal berichten op uit alle geconfigureerde mappen
     all_msgs: list = []
@@ -239,8 +254,8 @@ def _fetch_newsletter_emails() -> list:
         except Exception:
             pass  # Map bestaat niet of toegang geweigerd — overslaan
 
-    # Laad geheugen één keer
-    blocked_set    = database.get_blocked_emails()
+    # Combineer lokale database met Microsoft inbox rules (persistent na herstart)
+    blocked_set     = database.get_blocked_emails() | _get_microsoft_blocked_emails()
     whitelisted_set = database.get_whitelisted_emails()
 
     sender_counts: Counter = Counter(
@@ -263,7 +278,7 @@ def _fetch_newsletter_emails() -> list:
         sender_name = msg.get("from", {}).get("emailAddress", {}).get("name", sender_addr)
         sender_lower = sender_addr.lower()
 
-        if sender_lower in seen_senders or sender_lower in whitelisted_set:
+        if sender_lower in seen_senders or sender_lower in whitelisted_set or sender_lower in blocked_set:
             continue
         seen_senders.add(sender_lower)
 
