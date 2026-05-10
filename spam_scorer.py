@@ -88,6 +88,17 @@ def _looks_random(local: str) -> bool:
     return digit_ratio > 0.4 or bool(re.search(r"[a-z]{2}\d{4,}", local))
 
 
+def _looks_random_domain(domain: str) -> bool:
+    """Heuristiek: domeinnaam ziet er willekeurig gegenereerd uit (weinig klinkers)."""
+    label = domain.split(".")[0]
+    if len(label) < 7:
+        return False
+    vowels = sum(1 for c in label if c in "aeiouAEIOU")
+    vowel_ratio = vowels / len(label)
+    consonant_run = bool(re.search(r"[bcdfghjklmnpqrstvwxyz]{5,}", label, re.I))
+    return vowel_ratio < 0.15 or consonant_run
+
+
 # ---------------------------------------------------------------------------
 # Hoofdfunctie
 # ---------------------------------------------------------------------------
@@ -171,6 +182,10 @@ def score_email(
     if _looks_random(local):
         score += 10
         reasons.append("Willekeurig ogend e-mailadres")
+
+    if _looks_random_domain(domain):
+        score += 18
+        reasons.append(f"Willekeurig ogend afzenderdomein ({domain})")
 
     reply_to = headers.get("reply-to", "")
     if reply_to and sender_email and sender_email not in reply_to.lower():
