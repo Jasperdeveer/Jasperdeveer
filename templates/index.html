@@ -6,46 +6,47 @@
 {# ── Statistieken ─────────────────────────────────────────────────────────── #}
 <div class="stats-bar d-flex gap-2 mb-3 overflow-auto pb-1">
   <div class="stat-chip border-danger text-danger">
-    <span class="fw-bold">{{ inbox_stats.spam }}</span>
+    <span class="num">{{ inbox_stats.spam }}</span>
     <span class="label">Zeker spam</span>
   </div>
   <div class="stat-chip border-warning text-warning">
-    <span class="fw-bold">{{ inbox_stats.likely }}</span>
+    <span class="num">{{ inbox_stats.likely }}</span>
     <span class="label">Waarsch. spam</span>
   </div>
   <div class="stat-chip border-info text-info">
-    <span class="fw-bold">{{ inbox_stats.promo }}</span>
+    <span class="num">{{ inbox_stats.promo }}</span>
     <span class="label">Reclame</span>
   </div>
   <div class="stat-chip border-success text-success">
-    <span class="fw-bold">{{ inbox_stats.legit }}</span>
+    <span class="num">{{ inbox_stats.legit }}</span>
     <span class="label">Legitiem</span>
   </div>
   <div class="stat-chip border-secondary text-secondary">
-    <span class="fw-bold">{{ db_stats.total_blocked }}</span>
-    <span class="label">Ooit geblokkeerd</span>
+    <span class="num">{{ db_stats.total_blocked }}</span>
+    <span class="label">Geblokkeerd</span>
   </div>
-  <div class="stat-chip border-secondary text-secondary">
-    <span class="fw-bold">{{ db_stats.month_unsubscribed }}</span>
-    <span class="label">Uitgeschreven (30d)</span>
-  </div>
-  <a href="{{ url_for('index') }}" class="stat-chip border-secondary text-secondary text-decoration-none">
-    <i class="bi bi-arrow-clockwise fw-bold"></i>
-    <span class="label">Vernieuwen</span>
+  <a href="{{ url_for('index') }}" class="stat-chip border-primary text-primary text-decoration-none">
+    <i class="bi bi-arrow-clockwise num"></i>
+    <span class="label">Verversen</span>
   </a>
 </div>
 
-{# ── Filter ───────────────────────────────────────────────────────────────── #}
-<div class="d-flex gap-2 mb-3">
-  <div class="btn-group btn-group-sm w-100">
-    <input type="radio" class="btn-check" name="filter" id="f-all"   value="all"   autocomplete="off" checked>
-    <label class="btn btn-outline-secondary" for="f-all">Alle</label>
-    <input type="radio" class="btn-check" name="filter" id="f-spam"  value="spam"  autocomplete="off">
-    <label class="btn btn-outline-danger"   for="f-spam">Spam</label>
-    <input type="radio" class="btn-check" name="filter" id="f-promo" value="promo" autocomplete="off">
-    <label class="btn btn-outline-warning"  for="f-promo">Reclame</label>
-    <input type="radio" class="btn-check" name="filter" id="f-legit" value="legit" autocomplete="off">
-    <label class="btn btn-outline-success"  for="f-legit">Legitiem</label>
+{# ── Filter-tabs ──────────────────────────────────────────────────────────── #}
+<div class="filter-tabs mb-3">
+  <div class="filter-tab f-all active" data-filter="all" onclick="setFilter(this,'all')">
+    Alle <span class="tab-count">{{ inbox_stats.total }}</span>
+  </div>
+  <div class="filter-tab f-spam" data-filter="spam" onclick="setFilter(this,'spam')">
+    <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+    Spam <span class="tab-count">{{ inbox_stats.spam + inbox_stats.likely }}</span>
+  </div>
+  <div class="filter-tab f-promo" data-filter="promo" onclick="setFilter(this,'promo')">
+    <i class="bi bi-megaphone-fill" style="color:#fd7e14"></i>
+    Reclame <span class="tab-count">{{ inbox_stats.promo }}</span>
+  </div>
+  <div class="filter-tab f-legit" data-filter="legit" onclick="setFilter(this,'legit')">
+    <i class="bi bi-check-circle-fill text-success"></i>
+    Legitiem <span class="tab-count">{{ inbox_stats.legit }}</span>
   </div>
 </div>
 
@@ -53,12 +54,27 @@
 {% if emails %}
 <div id="swipe-hint" class="alert alert-light py-2 small text-center text-muted mb-3" style="display:none;">
   <i class="bi bi-arrow-left-right me-1"></i>
-  Veeg een kaart <strong>links</strong> om te blokkeren · <strong>rechts</strong> om te vertrouwen
+  Veeg <strong>links</strong> om te blokkeren · <strong>rechts</strong> om te vertrouwen
 </div>
 
 {# ── Kaarten ──────────────────────────────────────────────────────────────── #}
 <div id="email-list">
 {% for email in emails %}
+
+{# Avatar kleur gebaseerd op spamscore #}
+{% set av_bg = {
+  'danger':  'rgba(220,53,69,.12)',
+  'warning': 'rgba(255,193,7,.15)',
+  'info':    'rgba(13,202,240,.12)',
+  'success': 'rgba(25,135,84,.12)',
+}[email.spam.color] %}
+{% set av_color = {
+  'danger':  '#dc3545',
+  'warning': '#856404',
+  'info':    '#055160',
+  'success': '#0f5132',
+}[email.spam.color] %}
+
 <div class="email-card card mb-2 border-start border-4 border-{{ email.spam.color }}"
      id="card-{{ loop.index }}"
      data-index="{{ loop.index }}"
@@ -71,111 +87,121 @@
   {# Swipe-overlays #}
   <div class="swipe-overlay swipe-left">
     <i class="bi bi-slash-circle-fill fs-4 text-danger"></i>
-    <span class="ms-2 fw-semibold text-danger">Blokkeren</span>
+    <span class="ms-2 fw-semibold text-danger small">Blokkeren</span>
   </div>
   <div class="swipe-overlay swipe-right">
-    <span class="me-2 fw-semibold text-success">Vertrouwen</span>
+    <span class="me-2 fw-semibold text-success small">Vertrouwen</span>
     <i class="bi bi-check-circle-fill fs-4 text-success"></i>
   </div>
 
-  <div class="card-body py-2 px-3">
+  <div class="card-body py-3 px-3">
 
-    {# ── Rij 1: checkbox + naam + badge ── #}
+    {# ── Rij 1: checkbox + avatar + info + score ── #}
     <div class="d-flex align-items-center gap-2">
+
       <input class="form-check-input flex-shrink-0 email-check" type="checkbox"
-             style="width:1.25rem;height:1.25rem;"
+             style="width:1.15rem;height:1.15rem;"
              data-email="{{ email.sender_email | e }}"
              data-id="{{ email.id | e }}"
              data-name="{{ email.sender_name | e }}"
              onchange="updateBulkBtn()">
-      <div class="flex-grow-1 min-width-0">
-        <div class="d-flex align-items-center justify-content-between gap-2">
-          <span class="fw-semibold text-truncate small">
-            {{ email.sender_name }}
-            {% if email.already_blocked %}
-            <span class="badge bg-secondary ms-1" style="font-size:.6rem;">eerder geblokkeerd</span>
-            {% endif %}
-          </span>
-          <span class="badge bg-{{ email.spam.color }} flex-shrink-0">{{ email.spam.score }}%</span>
-        </div>
-        <div class="text-muted" style="font-size:.72rem;">{{ email.sender_email }}</div>
-      </div>
-    </div>
 
-    {# ── Voortgangsbalk ── #}
-    <div class="progress my-1" style="height:4px;">
-      <div class="progress-bar bg-{{ email.spam.color }}" style="width:{{ email.spam.score }}%;"></div>
+      {# Avatar #}
+      <div class="sender-avatar flex-shrink-0"
+           style="background:{{ av_bg }};color:{{ av_color }};">
+        {{ (email.sender_name or email.sender_email)[0] | upper }}
+      </div>
+
+      {# Naam + e-mailadres #}
+      <div class="flex-grow-1 min-w-0" style="overflow:hidden;">
+        <div class="fw-semibold text-truncate" style="font-size:.88rem;line-height:1.2;">
+          {{ email.sender_name }}
+        </div>
+        <div class="text-truncate" style="font-size:.72rem;color:var(--bs-secondary-color);">
+          {{ email.sender_email }}
+        </div>
+      </div>
+
+      {# Score-cirkel #}
+      <div class="score-badge border-{{ email.spam.color }} text-{{ email.spam.color }} flex-shrink-0">
+        <span class="score-num">{{ email.spam.score }}</span>
+        <span class="score-pct">%</span>
+      </div>
+
     </div>
 
     {# ── Onderwerp + datum ── #}
-    <div class="text-muted text-truncate" style="font-size:.72rem;">
-      {{ email.subject }}
-      <span class="ms-1">· {{ email.received }}</span>
+    <div class="mt-2 text-truncate d-flex align-items-center gap-1" style="font-size:.78rem;color:var(--bs-secondary-color);">
+      <i class="bi bi-envelope flex-shrink-0"></i>
+      <span class="text-truncate">{{ email.subject }}</span>
+      <span class="flex-shrink-0 ms-1">· {{ email.received }}</span>
       {% if email.one_click %}
-      <span class="badge bg-success ms-1" style="font-size:.6rem;"><i class="bi bi-lightning-fill"></i> 1-klik</span>
+      <span class="badge bg-success flex-shrink-0 ms-1" style="font-size:.6rem;">
+        <i class="bi bi-lightning-fill"></i> 1-klik
+      </span>
+      {% endif %}
+    </div>
+
+    {# ── Spam-label ── #}
+    <div class="mt-1" style="font-size:.72rem;">
+      <i class="bi {{ email.spam.icon }} text-{{ email.spam.color }} me-1"></i>
+      <span class="text-{{ email.spam.color }}">{{ email.spam.label }}</span>
+      {% if email.spam.reasons %}
+      <button class="btn btn-link btn-sm p-0 ms-2 text-muted border-0"
+              style="font-size:.68rem;vertical-align:baseline;"
+              type="button" data-bs-toggle="collapse"
+              data-bs-target="#reasons-{{ loop.index }}">
+        {{ email.spam.reasons | length }} signalen <i class="bi bi-chevron-down"></i>
+      </button>
+      <div class="collapse mt-1" id="reasons-{{ loop.index }}">
+        <div class="px-2 py-1 rounded" style="background:rgba(0,0,0,.04);font-size:.7rem;">
+          {% for r in email.spam.reasons %}
+          <div class="text-muted"><i class="bi bi-dot"></i>{{ r }}</div>
+          {% endfor %}
+        </div>
+      </div>
       {% endif %}
     </div>
 
     {# ── E-mailpreview (uitklapbaar) ── #}
     {% if email.body_preview %}
-    <button class="btn btn-link btn-sm p-0 mt-1 text-muted"
+    <button class="btn btn-link btn-sm p-0 mt-1 text-muted border-0"
             type="button" data-bs-toggle="collapse"
             data-bs-target="#preview-{{ loop.index }}"
             style="font-size:.72rem;">
-      <i class="bi bi-chevron-down me-1"></i>Berichtpreview
+      <i class="bi bi-eye me-1"></i>Berichtpreview <i class="bi bi-chevron-down"></i>
     </button>
     <div class="collapse" id="preview-{{ loop.index }}">
-      <div class="mt-1 p-2 bg-body-secondary rounded" style="font-size:.72rem;color:var(--bs-secondary-color);">
+      <div class="mt-1 p-2 rounded" style="font-size:.72rem;color:var(--bs-secondary-color);background:rgba(0,0,0,.04);">
         {{ email.body_preview }}
       </div>
     </div>
     {% endif %}
 
     {# ── Acties ── #}
-    <div class="d-flex gap-2 mt-2 flex-wrap">
+    <div class="action-row mt-2">
       {% if email.https_link %}
       <a href="{{ email.https_link }}" target="_blank" rel="noopener noreferrer"
-         class="btn btn-outline-primary btn-sm flex-grow-1"
+         class="btn btn-outline-primary"
          onclick="markUnsubscribed('{{ email.sender_email | e }}','{{ email.sender_name | e }}')">
         <i class="bi bi-box-arrow-up-right me-1"></i>Uitschrijven
       </a>
       {% endif %}
       {% if email.mailto_link %}
-      <button class="btn btn-outline-primary btn-sm flex-grow-1"
+      <button class="btn btn-outline-primary"
               onclick="sendUnsubscribeEmail('{{ email.mailto_link | e }}','{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
         <i class="bi bi-send me-1"></i>E-mail
       </button>
       {% endif %}
-      <button class="btn btn-danger btn-sm flex-grow-1"
+      <button class="btn btn-danger"
               onclick="blockOne('{{ email.sender_email | e }}','{{ email.id | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
         <i class="bi bi-slash-circle me-1"></i>Blokkeren
       </button>
-      <button class="btn btn-outline-success btn-sm flex-grow-1"
+      <button class="btn btn-outline-success"
               onclick="trustSender('{{ email.sender_email | e }}','{{ email.sender_name | e }}',{{ loop.index }})">
         <i class="bi bi-check-circle me-1"></i>Vertrouwen
       </button>
     </div>
-
-    {# ── Spamredenen ── #}
-    {% if email.spam.reasons %}
-    <button class="btn btn-link btn-sm p-0 mt-1 text-muted"
-            type="button" data-bs-toggle="collapse"
-            data-bs-target="#reasons-{{ loop.index }}"
-            style="font-size:.72rem;">
-      <i class="bi bi-chevron-down me-1"></i>{{ email.spam.label }} · {{ email.spam.reasons | length }} signalen
-    </button>
-    <div class="collapse" id="reasons-{{ loop.index }}">
-      <ul class="list-unstyled mb-0 mt-1">
-        {% for r in email.spam.reasons %}
-        <li style="font-size:.7rem;" class="text-muted"><i class="bi bi-dot"></i>{{ r }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% else %}
-    <div class="text-muted mt-1" style="font-size:.72rem;">
-      <i class="bi bi-check-circle text-success me-1"></i>{{ email.spam.label }}
-    </div>
-    {% endif %}
 
     <div id="status-{{ loop.index }}" class="mt-1" style="display:none;font-size:.75rem;"></div>
   </div>
@@ -185,7 +211,7 @@
 
 {# ── Vaste bulk-balk ──────────────────────────────────────────────────────── #}
 <div class="bulk-bar" id="bulk-bar" style="display:none;">
-  <button class="btn btn-danger w-100" id="btn-bulk-block" onclick="bulkBlock()">
+  <button class="btn btn-danger w-100 fw-semibold" id="btn-bulk-block" onclick="bulkBlock()">
     <i class="bi bi-slash-circle me-2"></i>
     <span id="bulk-label">Selectie blokkeren</span>
   </button>
@@ -193,17 +219,25 @@
 
 {# ── Undo-toast ───────────────────────────────────────────────────────────── #}
 <div class="undo-toast" id="undo-toast" style="display:none;">
-  <span id="undo-msg">Geblokkeerd</span>
-  <button class="btn btn-sm btn-warning ms-3" onclick="undoLastAction()">
-    <i class="bi bi-arrow-counterclockwise me-1"></i>Ongedaan
-  </button>
+  <div>
+    <i class="bi bi-check-circle-fill text-success me-2"></i>
+    <span id="undo-msg">Geblokkeerd</span>
+    <button class="btn btn-sm btn-warning ms-auto" onclick="undoLastAction()">
+      <i class="bi bi-arrow-counterclockwise me-1"></i>Ongedaan
+    </button>
+  </div>
   <div class="undo-progress" id="undo-progress"></div>
 </div>
 
 {% else %}
-<div class="alert alert-success mt-3">
-  <i class="bi bi-check-circle-fill me-2"></i>
-  Geen nieuwsbrieven of spam gevonden. Je inbox ziet er goed uit!
+{# ── Lege staat ───────────────────────────────────────────────────────────── #}
+<div class="empty-state">
+  <span class="empty-icon">🎉</span>
+  <h5 class="fw-semibold mb-1">Je inbox is schoon!</h5>
+  <p class="small mb-3">Geen nieuwsbrieven of spam gevonden.</p>
+  <a href="{{ url_for('index') }}" class="btn btn-primary btn-sm">
+    <i class="bi bi-arrow-clockwise me-1"></i>Opnieuw controleren
+  </a>
 </div>
 {% endif %}
 
@@ -218,20 +252,19 @@ if (!localStorage.getItem('swipe-hint-seen') && window.matchMedia('(pointer: coa
 }
 
 // ── Filter ────────────────────────────────────────────────────────────────────
-document.querySelectorAll('input[name="filter"]').forEach(radio => {
-  radio.addEventListener('change', () => {
-    const val = radio.value;
-    document.querySelectorAll('.email-card').forEach(card => {
-      const cat = card.dataset.category;
-      const show = val === 'all'
-        || (val === 'spam'  && (cat === 'spam' || cat === 'likely'))
-        || (val === 'promo' && cat === 'promo')
-        || (val === 'legit' && cat === 'legit');
-      card.style.display = show ? '' : 'none';
-    });
-    updateBulkBtn();
+function setFilter(el, val) {
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.email-card').forEach(card => {
+    const cat = card.dataset.category;
+    const show = val === 'all'
+      || (val === 'spam'  && (cat === 'spam' || cat === 'likely'))
+      || (val === 'promo' && cat === 'promo')
+      || (val === 'legit' && cat === 'legit');
+    card.style.display = show ? '' : 'none';
   });
-});
+  updateBulkBtn();
+}
 
 // ── Bulk-selectie ─────────────────────────────────────────────────────────────
 function updateBulkBtn() {
@@ -258,12 +291,14 @@ function setStatus(index, html) {
 function removeCard(index) {
   const card = document.getElementById(`card-${index}`);
   if (!card) return;
-  card.style.transition = 'opacity .35s, max-height .35s, margin .35s';
+  card.style.transition = 'opacity .3s, max-height .35s, margin .35s, padding .35s';
   card.style.opacity = '0';
   setTimeout(() => {
-    card.style.maxHeight = '0'; card.style.overflow = 'hidden'; card.style.marginBottom = '0';
+    card.style.maxHeight = '0';
+    card.style.overflow  = 'hidden';
+    card.style.marginBottom = '0';
     setTimeout(() => card.remove(), 350);
-  }, 350);
+  }, 300);
 }
 
 // ── Undo ──────────────────────────────────────────────────────────────────────
@@ -274,7 +309,7 @@ let _pendingUndo = null;
 function showUndo(label, undoData) {
   _pendingUndo = undoData;
   clearTimeout(_undoTimer);
-  if (_undoProgress) { clearInterval(_undoProgress); }
+  if (_undoProgress) clearInterval(_undoProgress);
 
   const toast = document.getElementById('undo-toast');
   document.getElementById('undo-msg').textContent = label;
@@ -282,16 +317,16 @@ function showUndo(label, undoData) {
 
   const bar = document.getElementById('undo-progress');
   let pct = 100;
+  bar.style.transition = 'none';
   bar.style.width = '100%';
-  _undoProgress = setInterval(() => {
-    pct -= 100 / 30; // 30 seconden
-    bar.style.width = Math.max(0, pct) + '%';
-  }, 1000);
+  requestAnimationFrame(() => {
+    bar.style.transition = 'width 30s linear';
+    bar.style.width = '0%';
+  });
 
   _undoTimer = setTimeout(() => {
     toast.style.display = 'none';
     _pendingUndo = null;
-    clearInterval(_undoProgress);
   }, 30000);
 }
 
@@ -299,7 +334,6 @@ async function undoLastAction() {
   if (!_pendingUndo) return;
   const { email, msg_id } = _pendingUndo;
   clearTimeout(_undoTimer);
-  clearInterval(_undoProgress);
   document.getElementById('undo-toast').style.display = 'none';
   _pendingUndo = null;
 
@@ -362,7 +396,7 @@ async function blockOne(email, msgId, name, index) {
     const bd = await br.json(), md = await mr.json();
     if (bd.ok && md.ok) {
       showUndo(`${name || email} geblokkeerd`, { email, msg_id: msgId });
-      setTimeout(() => removeCard(index), 400);
+      setTimeout(() => removeCard(index), 300);
     } else {
       setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${bd.error || md.error}`);
     }
@@ -382,7 +416,7 @@ async function trustSender(email, name, index) {
     });
     const d = await r.json();
     if (d.ok) {
-      setStatus(index, '<i class="bi bi-check-circle-fill text-success me-1"></i>Vertrouwd — verschijnt niet meer in de lijst');
+      setStatus(index, '<i class="bi bi-check-circle-fill text-success me-1"></i>Vertrouwd — verschijnt niet meer');
       setTimeout(() => removeCard(index), 1200);
     } else {
       setStatus(index, `<i class="bi bi-x-circle text-danger me-1"></i>${d.error}`);
@@ -411,7 +445,7 @@ async function bulkBlock() {
     });
     const data = await resp.json();
     if (data.ok) {
-      indices.forEach(i => setTimeout(() => removeCard(i), 300));
+      indices.forEach((i, n) => setTimeout(() => removeCard(i), n * 60));
       document.getElementById('bulk-bar').style.display = 'none';
     } else {
       alert('Sommige items konden niet worden geblokkeerd.');
@@ -427,7 +461,7 @@ async function bulkBlock() {
 // ── Swipe-acties ──────────────────────────────────────────────────────────────
 document.querySelectorAll('.email-card').forEach(card => {
   let startX = 0, startY = 0, dragging = false;
-  const THRESHOLD = 72; // pixels voor actie
+  const THRESHOLD = 72;
 
   const overlayLeft  = card.querySelector('.swipe-left');
   const overlayRight = card.querySelector('.swipe-right');
@@ -442,7 +476,7 @@ document.querySelectorAll('.email-card').forEach(card => {
   card.addEventListener('touchmove', e => {
     const dx = e.touches[0].clientX - startX;
     const dy = e.touches[0].clientY - startY;
-    if (!dragging && Math.abs(dy) > Math.abs(dx)) return; // verticaal scrollen
+    if (!dragging && Math.abs(dy) > Math.abs(dx)) return;
     dragging = true;
     e.preventDefault();
 
@@ -472,11 +506,8 @@ document.querySelectorAll('.email-card').forEach(card => {
     const msgId = card.dataset.msgId;
     const name  = card.dataset.name;
 
-    if (dx < -THRESHOLD) {
-      blockOne(email, msgId, name, idx);
-    } else if (dx > THRESHOLD) {
-      trustSender(email, name, idx);
-    }
+    if (dx < -THRESHOLD) blockOne(email, msgId, name, idx);
+    else if (dx > THRESHOLD) trustSender(email, name, idx);
   });
 });
 </script>
