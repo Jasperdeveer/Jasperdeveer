@@ -462,13 +462,15 @@ def block_sender():
     if not email:
         return jsonify({"error": "Geen e-mailadres"}), 400
     try:
-        settings = graph_get("/me/mailboxSettings") or {}
-        current  = settings.get("junkEmailConfiguration", {}).get("blockedSenders", [])
-        if email not in current:
-            graph_patch(
-                "/me/mailboxSettings",
-                {"junkEmailConfiguration": {"blockedSenders": current + [email]}},
-            )
+        # Maak een inboxregel die toekomstige mails automatisch naar Ongewenste mail stuurt.
+        # Dit werkt voor persoonlijke @live.nl accounts (mailboxSettings.blockedSenders niet).
+        graph_post("/me/mailFolders/inbox/messageRules", {
+            "displayName": f"Blokkeer {email}",
+            "sequence": 1,
+            "isEnabled": True,
+            "conditions": {"senderContains": [email]},
+            "actions": {"moveToFolder": "junkemail", "stopProcessingRules": True},
+        })
         database.add_blocked(email, name)
         return jsonify({"ok": True})
     except Exception as e:
@@ -502,23 +504,22 @@ def bulk_block():
         return jsonify({"error": "Geen afzenders opgegeven"}), 400
 
     errors = []
-    try:
-        settings  = graph_get("/me/mailboxSettings") or {}
-        current   = settings.get("junkEmailConfiguration", {}).get("blockedSenders", [])
-        new_addrs = [
-            e["email"].strip().lower()
-            for e in entries
-            if e.get("email") and e["email"].strip().lower() not in current
-        ]
-        if new_addrs:
-            graph_patch(
-                "/me/mailboxSettings",
-                {"junkEmailConfiguration": {"blockedSenders": current + new_addrs}},
-            )
-        for e in entries:
-            database.add_blocked(e.get("email", ""), e.get("name", ""))
-    except Exception as e:
-        errors.append(f"Blokkeren mislukt: {e}")
+    for entry in entries:
+        email = entry.get("email", "").strip().lower()
+        name  = entry.get("name", "")
+        if not email:
+            continue
+        try:
+            graph_post("/me/mailFolders/inbox/messageRules", {
+                "displayName": f"Blokkeer {email}",
+                "sequence": 1,
+                "isEnabled": True,
+                "conditions": {"senderContains": [email]},
+                "actions": {"moveToFolder": "junkemail", "stopProcessingRules": True},
+            })
+            database.add_blocked(email, name)
+        except Exception as e:
+            errors.append(f"Regel aanmaken mislukt voor {email}: {e}")
 
     for entry in entries:
         msg_id = entry.get("id")
@@ -546,15 +547,18 @@ def undo_block():
     if not email:
         return jsonify({"error": "Geen e-mailadres"}), 400
     try:
-        # Verwijder uit Microsoft-blokkeerlijst
-        settings = graph_get("/me/mailboxSettings") or {}
-        current  = settings.get("junkEmailConfiguration", {}).get("blockedSenders", [])
-        updated  = [s for s in current if s.lower() != email]
-        if len(updated) != len(current):
-            graph_patch(
-                "/me/mailboxSettings",
-                {"junkEmailConfiguration": {"blockedSenders": updated}},
-            )
+        # Verwijder de inboxregel voor deze afzender
+        rules = graph_get("/me/mailFolders/inbox/messageRules") or {}
+        for rule in rules.get("value", []):
+            if email in rule.get("displayName", "").lower():
+                try:
+                    hdrs = _auth_headers()
+                    requests.delete(
+                        f"{GRAPH_BASE}/me/mailFolders/inbox/messageRules/{rule['id']}",
+                        headers=hdrs,
+                    )
+                except Exception:
+                    pass
         # Verplaats e-mail terug naar inbox
         if msg_id:
             try:
