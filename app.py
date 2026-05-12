@@ -562,7 +562,7 @@ def move_to_junk():
     if not msg_id:
         return jsonify({"error": "Geen bericht-ID"}), 400
     try:
-        graph_post(f"/me/messages/{msg_id}/move", {"destinationId": "junkemail"})
+        graph_post(f"/me/messages/{msg_id}/move", {"destinationId": "deleteditems"})
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -600,7 +600,7 @@ def bulk_block():
         msg_id = entry.get("id")
         if msg_id:
             try:
-                graph_post(f"/me/messages/{msg_id}/move", {"destinationId": "junkemail"})
+                graph_post(f"/me/messages/{msg_id}/move", {"destinationId": "deleteditems"})
             except Exception as e:
                 errors.append(str(e))
 
