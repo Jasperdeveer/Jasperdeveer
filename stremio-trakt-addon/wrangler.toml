@@ -1,0 +1,10 @@
+name = "stremio-trakt-episodes"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# Secrets worden gezet via de CLI (zie README):
+#   wrangler secret put TRAKT_CLIENT_ID
+#   wrangler secret put TMDB_API_KEY
+
+[observability]
+enabled = true
