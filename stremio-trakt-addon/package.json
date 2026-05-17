@@ -1,0 +1,19 @@
+{
+  "name": "stremio-trakt-episodes",
+  "version": "1.0.0",
+  "description": "Stremio metadata addon that loads correct seasons and episodes data from Trakt.tv",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
