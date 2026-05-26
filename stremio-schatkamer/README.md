@@ -1,51 +1,59 @@
 # Stremio – Beeld & Geluid Schatkamer
 
-Stremio addon voor [schatkamer.beeldengeluid.nl](https://schatkamer.beeldengeluid.nl) – het gratis online archief van het Nederlands Instituut voor Beeld en Geluid met 700.000+ Nederlandse radio- en tv-programma's (1920–2020).
+Stremio addon voor [schatkamer.beeldengeluid.nl](https://schatkamer.beeldengeluid.nl) – het gratis online archief van het Nederlands Instituut voor Beeld en Geluid met 700.000+ Nederlandse tv-programma's (1920–2020).
 
-## Functies
+## Installeren in Stremio
 
-- Bladeren door het Schatkamer-archief
-- Zoeken op trefwoord
-- Video's direct afspelen via de gevonden streamlinks
-- Automatische fallback naar de browser als geen directe stream gevonden wordt
+Voeg deze URL toe in Stremio → Addons:
 
-## Installatie
+```
+https://stremio-schatkamer.<jouw-subdomain>.workers.dev/manifest.json
+```
+
+## Deployen op Cloudflare Workers (gratis)
 
 ### 1. Vereisten
 
-- Node.js 18 of nieuwer
-- Google Chrome of Chromium (Puppeteer downloadt dit automatisch)
+- [Cloudflare account](https://dash.cloudflare.com/sign-up) (gratis)
+- Node.js 18+
 
-### 2. Addon starten
+### 2. Installeer Wrangler
+
+```bash
+npm install -g wrangler
+wrangler login
+```
+
+### 3. Deploy
 
 ```bash
 cd stremio-schatkamer
 npm install
-npm start
+npm run deploy
 ```
 
-De addon start op `http://127.0.0.1:7000`.
+Wrangler geeft na het deployen een URL terug zoals:
+```
+https://stremio-schatkamer.<jouw-account>.workers.dev
+```
 
-### 3. Toevoegen aan Stremio
+Voeg `/manifest.json` toe aan die URL en installeer hem in Stremio.
 
-1. Open Stremio
-2. Ga naar **Addons** → zoekbalk bovenin
-3. Typ: `http://127.0.0.1:7000/manifest.json`
-4. Klik op **Installeren**
+### Lokaal testen
 
-## Configuratie
+```bash
+npm run dev
+# Addon draait op http://localhost:8787/manifest.json
+```
 
-| Variabele | Standaard | Omschrijving |
-|-----------|-----------|--------------|
-| `PORT`    | `7000`    | Poort waarop de addon draait |
+## Hoe het werkt
 
-## Technische details
+De Worker haalt pagina's op van de Schatkamer met browser-achtige headers en parseert de HTML om:
+- **Catalog**: zoekresultaten en browse-overzicht
+- **Meta**: titel, poster, beschrijving per programma
+- **Stream**: directe video-URL's (HLS/MP4) uit de videospeler-HTML
 
-De addon gebruikt Puppeteer (headless Chrome) om de Schatkamer-website te doorzoeken en videostreams te onderscheppen. Elke aanvraag opent een browservenster op de achtergrond, haalt de data op, en sluit het venster weer. Resultaten worden 10 minuten gecached.
-
-### Streaming
-
-De addon onderschept netwerkrequests voor `.m3u8` (HLS) en `.mp4` bestanden terwijl de pagina laadt. Als geen directe stream gevonden wordt, wordt een link naar de browserversie aangeboden.
+Resultaten worden gecached via de Cloudflare Cache API (10 min voor catalogs, 1 uur voor metadata).
 
 ## Licentie
 

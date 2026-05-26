@@ -4,8 +4,12 @@
   "description": "Stremio addon voor de Beeld & Geluid Schatkamer – 700.000+ gratis Nederlandse radio- en tv-programma's",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "start": "node index.js"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   },
   "dependencies": {
     "stremio-addon-sdk": "^1.6.10",
