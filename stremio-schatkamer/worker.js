@@ -1,138 +1,147 @@
 'use strict';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 const BASE = 'https://schatkamer.beeldengeluid.nl';
 
-// Browser-achtige headers zodat Cloudflare de request niet blokkeert
 const NL_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  Accept:
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'nl-NL,nl;q=0.9,en;q=0.8',
   'Accept-Encoding': 'gzip, deflate, br',
   Referer: BASE + '/',
-  'Sec-Fetch-Dest': 'document',
-  'Sec-Fetch-Mode': 'navigate',
-  'Sec-Fetch-Site': 'same-origin',
 };
 
-function cors(body, status = 200, extra = {}) {
-  return new Response(body, {
+// ─── ID helpers ──────────────────────────────────────────────────────────────
+// ID = "bg:" + base64url(path)  →  veilig in alle URL-contexten
+
+function encodeId(path) {
+  const b64 = btoa(unescape(encodeURIComponent(path)));
+  return 'bg:' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeId(bgId) {
+  const b64 = bgId.replace(/^bg:/, '').replace(/-/g, '+').replace(/_/g, '/');
+  try {
+    return decodeURIComponent(escape(atob(b64)));
+  } catch {
+    return bgId.replace(/^bg:/, '').replace(/\|/g, '/');
+  }
+}
+
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
+
+function json(obj, status = 200) {
+  return new Response(JSON.stringify(obj), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': '*',
-      ...extra,
     },
   });
 }
 
-function json(obj, status = 200) {
-  return cors(JSON.stringify(obj), status);
-}
-
-// Cache via Cloudflare KV-ish wrapper (uses the Cache API)
-async function withCache(cacheKey, ttl, fn) {
-  const cache = caches.default;
-  const cached = await cache.match(new Request(`https://cache.local/${cacheKey}`));
-  if (cached) return cached.clone();
-
-  const result = await fn();
-  const resp = new Response(result, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': `public, max-age=${ttl}`,
-    },
-  });
-  await cache.put(new Request(`https://cache.local/${cacheKey}`), resp.clone());
-  return resp;
-}
-
-// ─── HTML scraping helpers ───────────────────────────────────────────────────
-
-/**
- * Haal een pagina op van de Schatkamer en geef de HTML terug als tekst.
- */
 async function fetchPage(url) {
-  const resp = await fetch(url, {
-    headers: NL_HEADERS,
-    cf: { cacheEverything: false },
-  });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
+  const resp = await fetch(url, { headers: NL_HEADERS });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.text();
 }
 
-/**
- * Verwerk de zoekpagina en geef een lijst van catalog-items terug.
- * Gebruikt een eenvoudige regex-parser (Workers hebben geen DOM).
- */
+function decodeHtml(s) {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+}
+
+// ─── Parsers ──────────────────────────────────────────────────────────────────
+
 function parseSearchResults(html, skip) {
   const items = [];
+  const seen = new Set();
 
-  // Probeer <article> of <li> tags te vinden met een href naar /programma/ of /item/
-  const cardPattern =
-    /<(?:article|li|div)[^>]*class="[^"]*(?:card|result|item|program)[^"]*"[^>]*>[\s\S]*?<\/(?:article|li|div)>/gi;
-  const hrefPattern = /href="(\/(?:programma|item|video|film|serie)[^"]+)"/i;
-  const titlePattern =
-    /<(?:h[1-4]|span)[^>]*class="[^"]*(?:title|naam|name)[^"]*"[^>]*>\s*([\s\S]*?)\s*<\/(?:h[1-4]|span)>/i;
-  const imgPattern = /<img[^>]+src="([^"]+(?:jpg|jpeg|png|webp)[^"]*)"[^>]*>/i;
-  const yearPattern = /\b(19[2-9]\d|20[0-2]\d)\b/;
-
-  let match;
-  while ((match = cardPattern.exec(html)) !== null) {
-    const block = match[0];
-    const hrefM = hrefPattern.exec(block);
-    if (!hrefM) continue;
-
-    const href = hrefM[1];
-    const titleM = titlePattern.exec(block);
-    const imgM = imgPattern.exec(block);
-    const yearM = yearPattern.exec(block);
-
-    const id = 'bg:' + href.replace(/^\//, '').replace(/\//g, '|');
-    items.push({
-      id,
-      type: 'movie',
-      name: titleM ? decodeHtml(titleM[1].replace(/<[^>]+>/g, '').trim()) : href.split('/').pop(),
-      poster: imgM ? imgM[1] : undefined,
-      year: yearM ? parseInt(yearM[1]) : undefined,
-    });
+  const nextDataM = /<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (nextDataM) {
+    try {
+      const data = JSON.parse(nextDataM[1]);
+      const hits =
+        data?.props?.pageProps?.results ||
+        data?.props?.pageProps?.items ||
+        data?.props?.pageProps?.hits ||
+        [];
+      for (const hit of hits) {
+        const href = hit.url || hit.slug || hit.path || hit.id;
+        if (!href || seen.has(href)) continue;
+        seen.add(href);
+        items.push({
+          id: encodeId(href.replace(/^\//, '')),
+          type: 'movie',
+          name: hit.title || hit.name || hit.label || href,
+          poster: hit.image || hit.thumbnail || hit.poster || undefined,
+          year: hit.year || hit.publicationYear || undefined,
+        });
+      }
+    } catch (_) {}
   }
 
-  // Fallback: zoek alle links naar programma-pagina's als er geen cards zijn
   if (items.length === 0) {
-    const linkPattern = /href="(\/(?:programma|item|video|film|serie)\/[^"]+)"/gi;
-    const seen = new Set();
-    let lm;
-    while ((lm = linkPattern.exec(html)) !== null) {
-      const href = lm[1];
-      if (seen.has(href)) continue;
+    const EXCLUDE = /^\/(zoeken|veelgestelde-vragen|over|contact|verhaal|collectie|#)/;
+    const linkRe = /href="(\/[a-z0-9][^"#?]{3,}?)"/gi;
+    let m;
+    while ((m = linkRe.exec(html)) !== null) {
+      const href = m[1];
+      if (EXCLUDE.test(href) || seen.has(href)) continue;
       seen.add(href);
-      const id = 'bg:' + href.replace(/^\//, '').replace(/\//g, '|');
-      items.push({ id, type: 'movie', name: href.split('/').pop().replace(/-/g, ' ') });
+
+      const start = Math.max(0, m.index - 400);
+      const block = html.slice(start, m.index + 600);
+
+      const titleM =
+        /<(?:h[1-4]|span|strong|p)[^>]*>\s*([^<]{3,80})\s*<\/(?:h[1-4]|span|strong|p)>/i.exec(block);
+      const imgM = /src="(https?:[^"]+\.(?:jpg|jpeg|png|webp)[^"]*?)"/i.exec(block);
+      const yearM = /\b(19[2-9]\d|20[0-2]\d)\b/.exec(block);
+
+      const slug = href.split('/').pop();
+      const name = titleM
+        ? decodeHtml(titleM[1].trim())
+        : slug.replace(/-/g, ' ').replace(/_/g, ' ');
+
+      if (name.length < 3) continue;
+
+      items.push({
+        id: encodeId(href.replace(/^\//, '')),
+        type: 'movie',
+        name,
+        poster: imgM ? imgM[1] : undefined,
+        year: yearM ? parseInt(yearM[1]) : undefined,
+      });
     }
   }
 
   return items.slice(skip, skip + 100);
 }
 
-/**
- * Haal metadata op van een individuele programmapagina.
- */
 function parseMeta(html, bgId, pageUrl) {
-  const titleM = /<h1[^>]*>\s*([\s\S]*?)\s*<\/h1>/i.exec(html);
-  const ogImage = /property="og:image"\s+content="([^"]+)"/i.exec(html);
-  const ogDesc = /property="og:description"\s+content="([^"]+)"/i.exec(html);
+  const ogTitle = /property="og:title"\s+content="([^"]+)"/i.exec(html)
+    || /name="twitter:title"\s+content="([^"]+)"/i.exec(html);
+  const ogImage = /property="og:image"\s+content="([^"]+)"/i.exec(html)
+    || /name="twitter:image"\s+content="([^"]+)"/i.exec(html);
+  const ogDesc = /property="og:description"\s+content="([^"]+)"/i.exec(html)
+    || /name="description"\s+content="([^"]+)"/i.exec(html);
+  const h1 = /<h1[^>]*>\s*([\s\S]*?)\s*<\/h1>/i.exec(html);
   const yearM = /\b(19[2-9]\d|20[0-2]\d)\b/.exec(html);
+
+  const name = ogTitle
+    ? decodeHtml(ogTitle[1])
+    : h1
+    ? decodeHtml(h1[1].replace(/<[^>]+>/g, '').trim())
+    : pageUrl.split('/').pop().replace(/-/g, ' ');
 
   return {
     id: bgId,
     type: 'movie',
-    name: titleM ? decodeHtml(titleM[1].replace(/<[^>]+>/g, '').trim()) : bgId,
+    name,
     poster: ogImage ? ogImage[1] : undefined,
+    background: ogImage ? ogImage[1] : undefined,
     description: ogDesc ? decodeHtml(ogDesc[1]) : undefined,
     year: yearM ? parseInt(yearM[1]) : undefined,
     genres: ['Archief', 'Nederland'],
@@ -140,43 +149,43 @@ function parseMeta(html, bgId, pageUrl) {
   };
 }
 
-/**
- * Zoek naar stream-URLs in de HTML (video tags, JSON-LD, script variabelen).
- */
 function parseStreams(html, pageUrl) {
   const streams = [];
 
-  // <video src="..."> of <source src="...">
-  const videoSrcPattern = /<(?:video|source)[^>]+src="([^"]+)"/gi;
+  const videoRe = /<(?:video|source)[^>]+src="([^"]+)"/gi;
   let m;
-  while ((m = videoSrcPattern.exec(html)) !== null) {
+  while ((m = videoRe.exec(html)) !== null) {
     const src = m[1];
-    if (src.match(/\.(m3u8|mp4|webm)/i) || src.includes('stream')) {
-      streams.push({ url: src, title: src.includes('m3u8') ? 'HLS' : 'Video' });
+    if (/\.(m3u8|mp4|webm)/i.test(src) || /stream/i.test(src)) {
+      streams.push({ url: src, title: /m3u8/i.test(src) ? 'HLS' : 'Video' });
     }
   }
 
-  // JSON in script tags: zoek naar "src":"..." of "url":"..." met stream-achtige URLs
-  const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi;
-  while ((m = scriptPattern.exec(html)) !== null) {
-    const script = m[1];
-    const urlMatches = script.matchAll(/"(?:src|url|hls|stream|file|source)":\s*"(https?[^"]+\.(?:m3u8|mp4)[^"]*)"/gi);
-    for (const um of urlMatches) {
-      streams.push({ url: um[1], title: um[1].includes('m3u8') ? 'HLS' : 'MP4' });
+  const nextDataM = /<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (nextDataM) {
+    const matches = nextDataM[1].matchAll(/"(https?[^"]+\.(?:m3u8|mp4)[^"]*)"/g);
+    for (const um of matches) {
+      streams.push({ url: um[1], title: /m3u8/i.test(um[1]) ? 'HLS' : 'MP4' });
     }
   }
 
-  // JSON-LD contentUrl
+  const scriptRe = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  while ((m = scriptRe.exec(html)) !== null) {
+    const matches = m[1].matchAll(/"(https?[^"]+\.(?:m3u8|mp4)[^"]*)"/g);
+    for (const um of matches) {
+      streams.push({ url: um[1], title: /m3u8/i.test(um[1]) ? 'HLS' : 'MP4' });
+    }
+  }
+
   const jsonLdM = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
   if (jsonLdM) {
     try {
-      const data = JSON.parse(jsonLdM[1]);
-      const url = data.contentUrl || data.embedUrl || data?.video?.contentUrl;
-      if (url) streams.push({ url, title: 'JSON-LD' });
+      const d = JSON.parse(jsonLdM[1]);
+      const u = d.contentUrl || d.embedUrl || d?.video?.contentUrl;
+      if (u) streams.push({ url: u, title: 'JSON-LD' });
     } catch (_) {}
   }
 
-  // De-dupliceer
   const seen = new Set();
   const unique = streams.filter((s) => {
     if (seen.has(s.url)) return false;
@@ -196,24 +205,14 @@ function parseStreams(html, pageUrl) {
   }));
 }
 
-function decodeHtml(str) {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ');
-}
-
-// ─── Manifest ────────────────────────────────────────────────────────────────
+// ─── Manifest ─────────────────────────────────────────────────────────────────
 
 const MANIFEST = {
   id: 'nl.beeldengeluid.schatkamer',
-  version: '1.0.0',
+  version: '1.1.0',
   name: 'Beeld & Geluid Schatkamer',
   description:
-    "Gratis toegang tot het archief van Beeld & Geluid – meer dan 700.000 Nederlandse radio- en tv-programma's (1920–2020).",
+    "Gratis toegang tot het archief van Beeld & Geluid – meer dan 700.000 Nederlandse tv-programma's (1920–2020).",
   logo: 'https://www.beeldengeluid.nl/favicon.ico',
   catalogs: [
     {
@@ -232,7 +231,21 @@ const MANIFEST = {
   behaviorHints: { adult: false, p2p: false },
 };
 
-// ─── Router ──────────────────────────────────────────────────────────────────
+// ─── Cache ────────────────────────────────────────────────────────────────────
+
+async function fromCache(key) {
+  const r = await caches.default.match(new Request(`https://cache.local/${key}`));
+  return r ? r.json() : null;
+}
+
+async function toCache(key, value, ttl) {
+  const r = new Response(JSON.stringify(value), {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}` },
+  });
+  await caches.default.put(new Request(`https://cache.local/${key}`), r);
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
 
 export default {
   async fetch(request) {
@@ -240,33 +253,25 @@ export default {
     const path = url.pathname;
 
     if (request.method === 'OPTIONS') {
-      return cors('', 204);
+      return new Response('', {
+        status: 204,
+        headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' },
+      });
     }
 
-    // /manifest.json
-    if (path === '/manifest.json') {
-      return json(MANIFEST);
-    }
+    if (path === '/manifest.json') return json(MANIFEST);
 
-    // /catalog/movie/bg-browse.json?extra=...
-    const catalogM = path.match(/^\/catalog\/movie\/bg-browse\.json$/);
-    if (catalogM) {
-      const extra = url.searchParams.get('extra') || '';
-      const extraDecoded = Object.fromEntries(
-        decodeURIComponent(extra)
-          .split('&')
-          .filter(Boolean)
-          .map((p) => p.split('='))
+    if (/^\/catalog\/movie\/bg-browse\.json$/.test(path)) {
+      const raw = url.searchParams.get('extra') || '';
+      const extra = Object.fromEntries(
+        decodeURIComponent(raw).split('&').filter(Boolean).map((p) => p.split('='))
       );
-      const query = extraDecoded.search || '';
-      const skip = parseInt(extraDecoded.skip || '0', 10);
+      const query = extra.search || '';
+      const skip = parseInt(extra.skip || '0', 10);
+      const cKey = `cat:${query}:${skip}`;
 
-      const cacheKey = `catalog:${query}:${skip}`;
-      const cached = await caches.default.match(new Request(`https://cache.local/${cacheKey}`));
-      if (cached) {
-        const data = await cached.json();
-        return json({ metas: data });
-      }
+      const cached = await fromCache(cKey);
+      if (cached) return json({ metas: cached });
 
       try {
         const pageUrl = query
@@ -274,77 +279,60 @@ export default {
           : `${BASE}/zoeken`;
         const html = await fetchPage(pageUrl);
         const metas = parseSearchResults(html, skip);
-
-        const resp = new Response(JSON.stringify(metas), {
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=600' },
-        });
-        await caches.default.put(new Request(`https://cache.local/${cacheKey}`), resp.clone());
-
+        await toCache(cKey, metas, 600);
         return json({ metas });
-      } catch (err) {
-        console.error('[catalog]', err.message);
+      } catch (e) {
+        console.error('[catalog]', e.message);
         return json({ metas: [] });
       }
     }
 
-    // /meta/movie/bg:....json
-    const metaM = path.match(/^\/meta\/movie\/(bg:[^.]+)\.json$/);
+    const metaM = path.match(/^\/meta\/movie\/([^/]+)\.json$/);
     if (metaM) {
       const bgId = decodeURIComponent(metaM[1]);
-      const pagePath = bgId.replace(/^bg:/, '').replace(/\|/g, '/');
-      const pageUrl = `${BASE}/${pagePath}`;
+      const itemPath = decodeId(bgId);
+      const pageUrl = `${BASE}/${itemPath}`;
+      const cKey = `meta:${bgId}`;
 
-      const cacheKey = `meta:${bgId}`;
-      const cached = await caches.default.match(new Request(`https://cache.local/${cacheKey}`));
-      if (cached) {
-        const data = await cached.json();
-        return json({ meta: data });
-      }
+      const cached = await fromCache(cKey);
+      if (cached) return json({ meta: cached });
 
       try {
         const html = await fetchPage(pageUrl);
         const meta = parseMeta(html, bgId, pageUrl);
-
-        const resp = new Response(JSON.stringify(meta), {
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=3600' },
-        });
-        await caches.default.put(new Request(`https://cache.local/${cacheKey}`), resp.clone());
-
+        await toCache(cKey, meta, 3600);
         return json({ meta });
-      } catch (err) {
-        console.error('[meta]', err.message);
-        return json({ meta: null });
+      } catch (e) {
+        console.error('[meta]', e.message, pageUrl);
+        const fallback = {
+          id: bgId,
+          type: 'movie',
+          name: itemPath.split('/').pop().replace(/-/g, ' '),
+          description: 'Beeld & Geluid Schatkamer',
+          genres: ['Archief'],
+        };
+        return json({ meta: fallback });
       }
     }
 
-    // /stream/movie/bg:....json
-    const streamM = path.match(/^\/stream\/movie\/(bg:[^.]+)\.json$/);
+    const streamM = path.match(/^\/stream\/movie\/([^/]+)\.json$/);
     if (streamM) {
       const bgId = decodeURIComponent(streamM[1]);
-      const pagePath = bgId.replace(/^bg:/, '').replace(/\|/g, '/');
-      const pageUrl = `${BASE}/${pagePath}`;
+      const itemPath = decodeId(bgId);
+      const pageUrl = `${BASE}/${itemPath}`;
+      const cKey = `stream:${bgId}`;
 
-      const cacheKey = `stream:${bgId}`;
-      const cached = await caches.default.match(new Request(`https://cache.local/${cacheKey}`));
-      if (cached) {
-        const data = await cached.json();
-        return json({ streams: data });
-      }
+      const cached = await fromCache(cKey);
+      if (cached) return json({ streams: cached });
 
       try {
         const html = await fetchPage(pageUrl);
         const streams = parseStreams(html, pageUrl);
-
-        const ttl = streams.some((s) => s.url) ? 1800 : 60;
-        const resp = new Response(JSON.stringify(streams), {
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}` },
-        });
-        await caches.default.put(new Request(`https://cache.local/${cacheKey}`), resp.clone());
-
+        await toCache(cKey, streams, streams.some(s => s.url) ? 1800 : 60);
         return json({ streams });
-      } catch (err) {
-        console.error('[stream]', err.message);
-        return json({ streams: [] });
+      } catch (e) {
+        console.error('[stream]', e.message);
+        return json({ streams: [{ externalUrl: pageUrl, name: 'Open in browser', title: 'Schatkamer' }] });
       }
     }
 
