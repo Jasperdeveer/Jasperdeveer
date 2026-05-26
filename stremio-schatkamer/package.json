@@ -1,0 +1,18 @@
+{
+  "name": "stremio-schatkamer",
+  "version": "1.0.0",
+  "description": "Stremio addon voor de Beeld & Geluid Schatkamer – 700.000+ gratis Nederlandse radio- en tv-programma's",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.10",
+    "puppeteer": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
