@@ -1,0 +1,21 @@
+name: Deploy Scorito Webapp to Railway
+
+on:
+  push:
+    branches: [claude/scorito-auto-fill-webapp-9rj7jr, main]
+    paths: [scorito-webapp/**]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        working-directory: scorito-webapp
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service scorito-webapp --detach
