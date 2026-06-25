@@ -1,0 +1,4 @@
+node_modules/
+.env
+scorito-webapp/.env
+scorito-webapp/node_modules/

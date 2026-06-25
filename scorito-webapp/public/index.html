@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scorito Auto-Fill — WK 2026</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚽</span>
+        <div>
+          <h1>Scorito Auto-Fill</h1>
+          <span class="subtitle">FIFA World Cup 2026</span>
+        </div>
+      </div>
+      <div id="statusBadge" class="status-badge hidden">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">Niet ingelogd</span>
+        <button id="logoutBtn" class="btn-link" onclick="logout()">Uitloggen</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── Login-paneel ───────────────────────────────────────────────── -->
+    <section id="loginPanel" class="card">
+      <h2>Inloggen</h2>
+      <p class="hint">Je inloggegevens worden alleen in je sessie bewaard en nooit opgeslagen.</p>
+
+      <div class="form-grid">
+        <label>Scorito gebruikersnaam / e-mail
+          <input type="email" id="username" autocomplete="username" placeholder="jouw@email.nl" />
+        </label>
+        <label>Scorito wachtwoord
+          <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" />
+        </label>
+      </div>
+
+      <details class="api-details">
+        <summary>API-sleutels (optioneel maar aanbevolen)</summary>
+        <div class="api-info">
+          <p>Met API-sleutels worden voorspellingen aanzienlijk beter:</p>
+          <ul>
+            <li><strong>The Odds API</strong> — bookmaker-kansen. Gratis aanmaken op
+              <a href="https://the-odds-api.com/" target="_blank" rel="noopener">the-odds-api.com</a>
+              (500 verzoeken/maand gratis)
+            </li>
+            <li><strong>football-data.org</strong> — WK-topscorers en teamvorm. Gratis aanmaken op
+              <a href="https://www.football-data.org/client/register" target="_blank" rel="noopener">football-data.org</a>
+            </li>
+          </ul>
+        </div>
+        <div class="form-grid">
+          <label>The Odds API-sleutel
+            <input type="text" id="oddsApiKey" placeholder="abc123..." autocomplete="off" />
+          </label>
+          <label>football-data.org API-sleutel
+            <input type="text" id="footballDataApiKey" placeholder="abc123..." autocomplete="off" />
+          </label>
+        </div>
+      </details>
+
+      <div class="btn-row">
+        <button id="loginBtn" class="btn-primary" onclick="doLogin()">
+          Inloggen &amp; ronde ophalen
+        </button>
+      </div>
+      <p id="loginError" class="error-msg hidden"></p>
+    </section>
+
+    <!-- ── Laad-status ─────────────────────────────────────────────────── -->
+    <section id="loadingPanel" class="card hidden">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <p id="loadingText">Inloggen op Scorito...</p>
+      </div>
+    </section>
+
+    <!-- ── Voorspellingspaneel ─────────────────────────────────────────── -->
+    <section id="predictionsPanel" class="hidden">
+      <div class="round-header card">
+        <div>
+          <h2 id="roundTitle">Ronde</h2>
+          <p id="roundUrl" class="url-text"></p>
+        </div>
+        <div class="data-source-badges" id="dataBadges"></div>
+      </div>
+
+      <div id="matchCards"></div>
+
+      <div class="submit-bar card">
+        <div class="submit-info">
+          <strong id="matchCount">0 wedstrijden</strong> klaar om in te dienen
+        </div>
+        <button id="submitBtn" class="btn-success" onclick="submitAll()">
+          ✓ Bevestig &amp; dien in op Scorito
+        </button>
+      </div>
+      <p id="submitError" class="error-msg hidden"></p>
+    </section>
+
+    <!-- ── Succes ─────────────────────────────────────────────────────── -->
+    <section id="successPanel" class="card hidden success-card">
+      <div class="success-icon">✅</div>
+      <h2>Voorspellingen ingediend!</h2>
+      <p id="successMessage">De browser is geopend en je voorspellingen zijn ingevuld. Controleer en klik op Opslaan.</p>
+      <button class="btn-primary" onclick="resetToLogin()">Nieuwe ronde ophalen</button>
+    </section>
+
+  </main>
+
+  <!-- ── Match-kaart template ─────────────────────────────────────────── -->
+  <template id="matchCardTemplate">
+    <article class="match-card card">
+      <div class="match-teams">
+        <div class="team home-team">
+          <span class="team-flag"></span>
+          <span class="team-name"></span>
+        </div>
+        <div class="score-inputs">
+          <input type="number" class="score-input home-score" min="0" max="20" />
+          <span class="score-sep">–</span>
+          <input type="number" class="score-input away-score" min="0" max="20" />
+        </div>
+        <div class="team away-team">
+          <span class="team-name"></span>
+          <span class="team-flag"></span>
+        </div>
+      </div>
+
+      <div class="scorers-section">
+        <div class="scorers-team home-scorers">
+          <label>Doelpuntenmaker thuis
+            <select class="scorer-select home-scorer-select">
+              <option value="">— geen —</option>
+            </select>
+          </label>
+        </div>
+        <div class="scorers-team away-scorers">
+          <label>Doelpuntenmaker uit
+            <select class="scorer-select away-scorer-select">
+              <option value="">— geen —</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <details class="reasoning">
+        <summary>Onderbouwing</summary>
+        <div class="reasoning-content">
+          <div class="reasoning-grid">
+            <div class="reasoning-block">
+              <h4>FIFA-rang</h4>
+              <div class="ranking-row">
+                <span class="rank-badge home-rank"></span>
+                <span class="vs-text">vs</span>
+                <span class="rank-badge away-rank"></span>
+              </div>
+            </div>
+            <div class="reasoning-block">
+              <h4>Wedkantoor-kansen</h4>
+              <div class="odds-row"></div>
+            </div>
+            <div class="reasoning-block">
+              <h4>Toernooivorm</h4>
+              <div class="form-row">
+                <div class="form-team">
+                  <span class="form-name"></span>
+                  <div class="form-dots home-form-dots"></div>
+                </div>
+                <div class="form-team">
+                  <span class="form-name"></span>
+                  <div class="form-dots away-form-dots"></div>
+                </div>
+              </div>
+            </div>
+            <div class="reasoning-block">
+              <h4>Verwachte goals</h4>
+              <div class="xg-row"></div>
+            </div>
+          </div>
+          <div class="top-scorers-reasoning">
+            <h4>Topscorer-kandidaten</h4>
+            <div class="scorer-candidates"></div>
+          </div>
+        </div>
+      </details>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
