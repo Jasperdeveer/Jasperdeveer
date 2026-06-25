@@ -5,6 +5,8 @@ const { execSync } = require('child_process');
 const SCORITO_URL = 'https://www.scorito.com';
 
 function findChromium() {
+  // Docker (Railway/Render) zet PUPPETEER_EXECUTABLE_PATH; ook CHROMIUM_PATH wordt ondersteund
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   // Probeer pre-installed Playwright Chromium (beschikbaar in cloud-omgeving)
   try {
@@ -260,12 +262,12 @@ async function fetchRound(credentials) {
   }
 }
 
-// Dien goedgekeurde voorspellingen in via Puppeteer
+// Dien goedgekeurde voorspellingen in via Puppeteer (headless — werkt ook op iPhone/cloud)
 async function submitPredictions(credentials, predictions) {
-  // Headless false: gebruiker kan het zien
-  const browser = await launchBrowser(false);
+  const browser = await launchBrowser(true);
   try {
     const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
@@ -278,74 +280,71 @@ async function submitPredictions(credentials, predictions) {
     for (const match of predictions) {
       const { homeInputName, homeInputId, awayInputName, awayInputId, prediction } = match;
 
-      // Thuisscore invullen
-      const homeSelector = homeInputName
-        ? `input[name="${homeInputName}"]`
+      const homeSelector = homeInputName ? `input[name="${homeInputName}"]`
         : homeInputId ? `#${homeInputId}` : null;
-
-      const awaySelector = awayInputName
-        ? `input[name="${awayInputName}"]`
+      const awaySelector = awayInputName ? `input[name="${awayInputName}"]`
         : awayInputId ? `#${awayInputId}` : null;
 
       if (homeSelector) {
         try {
           await page.click(homeSelector, { clickCount: 3 });
           await page.type(homeSelector, String(prediction.homeScore), { delay: 30 });
-        } catch (e) {
-          console.warn(`Kon thuisscore niet invullen voor ${match.homeTeam}:`, e.message);
-        }
+        } catch (e) { console.warn(`Thuisscore ${match.homeTeam}:`, e.message); }
       }
-
       if (awaySelector) {
         try {
           await page.click(awaySelector, { clickCount: 3 });
           await page.type(awaySelector, String(prediction.awayScore), { delay: 30 });
-        } catch (e) {
-          console.warn(`Kon uitscore niet invullen voor ${match.awayTeam}:`, e.message);
-        }
+        } catch (e) { console.warn(`Uitscore ${match.awayTeam}:`, e.message); }
       }
 
-      // Topscorer invullen (als het veld aanwezig is)
       if (match.scorerFieldName && prediction.selectedScorers?.length > 0) {
         const scorer = prediction.selectedScorers[0];
         try {
           if (match.scorerFieldType === 'select') {
-            // Zoek beste overeenkomst in de dropdown
-            const opts = match.scorerOptions || [];
-            const best = opts.find(o =>
+            const best = (match.scorerOptions || []).find(o =>
               o.text.toLowerCase().includes(scorer.toLowerCase().split(' ').pop()) ||
               scorer.toLowerCase().includes(o.text.toLowerCase().split(' ').pop())
             );
-            if (best) {
-              await page.select(`select[name="${match.scorerFieldName}"]`, best.value);
-            }
+            if (best) await page.select(`select[name="${match.scorerFieldName}"]`, best.value);
           } else {
             await page.click(`input[name="${match.scorerFieldName}"]`, { clickCount: 3 });
             await page.type(`input[name="${match.scorerFieldName}"]`, scorer, { delay: 30 });
           }
-        } catch (e) {
-          console.warn(`Kon scorer niet invullen voor ${match.homeTeam} vs ${match.awayTeam}:`, e.message);
-        }
+        } catch (e) { console.warn(`Scorer ${match.homeTeam} vs ${match.awayTeam}:`, e.message); }
       }
 
       await new Promise(r => setTimeout(r, 150));
     }
 
-    console.log('Klaar met invullen. Browser blijft open zodat je het kunt controleren.');
-    console.log('Klik zelf op Opslaan/Bevestigen in de browser om te bevestigen.');
+    // Screenshot vóór indienen — ter controle
+    const previewShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
 
-    // Geef de browser 60 seconden om de gebruiker te laten controleren
-    await new Promise(r => setTimeout(r, 60000));
+    // Formulier indienen
+    let submitted = false;
+    for (const sel of [
+      'button[type="submit"]', 'input[type="submit"]',
+      'button:contains("Opslaan")', 'button:contains("Indienen")',
+      'button:contains("Bevestigen")', '[class*="submit"]', '[class*="save"]'
+    ]) {
+      try { await page.click(sel); submitted = true; break; } catch {}
+    }
+    if (!submitted) throw new Error('Kon de submit-knop niet vinden op Scorito.');
+
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 })
+      .catch(() => console.warn('Geen navigatie na submit — dat kan normaal zijn'));
+
+    const confirmShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
 
     return {
       success: true,
-      message: 'Voorspellingen zijn ingevuld. Controleer de browser en klik op Opslaan/Bevestigen.'
+      message: 'Voorspellingen succesvol ingediend op Scorito!',
+      screenshotBefore: `data:image/jpeg;base64,${previewShot}`,
+      screenshotAfter: `data:image/jpeg;base64,${confirmShot}`
     };
-  } catch (err) {
+  } finally {
     await browser.close();
-    throw err;
   }
-  // Browser wordt na 60s of bij fout gesloten
 }
 
 module.exports = { fetchRound, submitPredictions };

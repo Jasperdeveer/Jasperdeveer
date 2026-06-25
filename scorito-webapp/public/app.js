@@ -1,344 +1,287 @@
 'use strict';
 
-// ── Landvlaggen (emoji) per teamnaam ──────────────────────────────────────────
 const FLAGS = {
-  'argentina': '🇦🇷', 'france': '🇫🇷', 'england': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'spain': '🇪🇸',
-  'brazil': '🇧🇷', 'portugal': '🇵🇹', 'netherlands': '🇳🇱', 'holland': '🇳🇱',
-  'belgium': '🇧🇪', 'italy': '🇮🇹', 'uruguay': '🇺🇾', 'germany': '🇩🇪',
-  'croatia': '🇭🇷', 'switzerland': '🇨🇭', 'colombia': '🇨🇴', 'mexico': '🇲🇽',
-  'united states': '🇺🇸', 'usa': '🇺🇸', 'senegal': '🇸🇳', 'denmark': '🇩🇰',
-  'austria': '🇦🇹', 'morocco': '🇲🇦', 'japan': '🇯🇵', 'serbia': '🇷🇸',
-  'poland': '🇵🇱', 'south korea': '🇰🇷', 'korea republic': '🇰🇷', 'hungary': '🇭🇺',
-  'ukraine': '🇺🇦', 'australia': '🇦🇺', 'canada': '🇨🇦', 'turkey': '🇹🇷',
-  'türkiye': '🇹🇷', 'iran': '🇮🇷', 'ecuador': '🇪🇨', 'peru': '🇵🇪',
-  'chile': '🇨🇱', 'paraguay': '🇵🇾', 'saudi arabia': '🇸🇦', 'egypt': '🇪🇬',
-  'nigeria': '🇳🇬', 'cameroon': '🇨🇲', 'ghana': '🇬🇭', 'tunisia': '🇹🇳',
-  'algeria': '🇩🇿', "côte d'ivoire": '🇨🇮', 'ivory coast': '🇨🇮', 'mali': '🇲🇱',
-  'south africa': '🇿🇦', 'new zealand': '🇳🇿', 'qatar': '🇶🇦', 'jamaica': '🇯🇲',
-  'honduras': '🇭🇳', 'panama': '🇵🇦', 'costa rica': '🇨🇷', 'el salvador': '🇸🇻',
-  'venezuela': '🇻🇪', 'bolivia': '🇧🇴', 'scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
-  'indonesia': '🇮🇩', 'iraq': '🇮🇶', 'uzbekistan': '🇺🇿', 'oman': '🇴🇲',
-  'palestine': '🇵🇸', 'guatemala': '🇬🇹', 'cuba': '🇨🇺', 'angola': '🇦🇴',
-  'tanzania': '🇹🇿', 'zambia': '🇿🇲', 'zimbabwe': '🇿🇼'
+  'argentina':'🇦🇷','france':'🇫🇷','england':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','spain':'🇪🇸',
+  'brazil':'🇧🇷','portugal':'🇵🇹','netherlands':'🇳🇱','holland':'🇳🇱',
+  'belgium':'🇧🇪','italy':'🇮🇹','uruguay':'🇺🇾','germany':'🇩🇪',
+  'croatia':'🇭🇷','switzerland':'🇨🇭','colombia':'🇨🇴','mexico':'🇲🇽',
+  'united states':'🇺🇸','usa':'🇺🇸','senegal':'🇸🇳','denmark':'🇩🇰',
+  'austria':'🇦🇹','morocco':'🇲🇦','japan':'🇯🇵','serbia':'🇷🇸',
+  'poland':'🇵🇱','south korea':'🇰🇷','korea republic':'🇰🇷','hungary':'🇭🇺',
+  'ukraine':'🇺🇦','australia':'🇦🇺','canada':'🇨🇦','turkey':'🇹🇷',
+  'türkiye':'🇹🇷','iran':'🇮🇷','ecuador':'🇪🇨','peru':'🇵🇪',
+  'chile':'🇨🇱','paraguay':'🇵🇾','saudi arabia':'🇸🇦','egypt':'🇪🇬',
+  'nigeria':'🇳🇬','cameroon':'🇨🇲','ghana':'🇬🇭','tunisia':'🇹🇳',
+  'algeria':'🇩🇿',"côte d'ivoire":'🇨🇮','ivory coast':'🇨🇮','mali':'🇲🇱',
+  'south africa':'🇿🇦','new zealand':'🇳🇿','qatar':'🇶🇦','jamaica':'🇯🇲',
+  'honduras':'🇭🇳','panama':'🇵🇦','costa rica':'🇨🇷','el salvador':'🇸🇻',
+  'venezuela':'🇻🇪','bolivia':'🇧🇴','scotland':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','wales':'🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+  'indonesia':'🇮🇩','iraq':'🇮🇶','uzbekistan':'🇺🇿','guatemala':'🇬🇹'
 };
+const flag = n => FLAGS[(n||'').toLowerCase()] || '🏳️';
 
-function getFlag(teamName) {
-  return FLAGS[(teamName || '').toLowerCase()] || '🏳️';
-}
-
-// ── Status en staat ───────────────────────────────────────────────────────────
 let currentPredictions = [];
 
-function showError(elementId, msg) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.remove('hidden');
-}
-function hideError(elementId) {
-  document.getElementById(elementId)?.classList.add('hidden');
-}
+// ── Hulpfuncties ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+function showErr(id, msg) { const el=$(id); el.textContent=msg; el.classList.remove('hidden'); }
+function hideErr(id) { $(id)?.classList.add('hidden'); }
 
 function setLoading(text) {
-  document.getElementById('loginPanel').classList.add('hidden');
-  document.getElementById('predictionsPanel').classList.add('hidden');
-  document.getElementById('successPanel').classList.add('hidden');
-  const panel = document.getElementById('loadingPanel');
-  panel.classList.remove('hidden');
-  document.getElementById('loadingText').textContent = text;
+  ['pinPanel','loginPanel','predictionsPanel','successPanel'].forEach(hide);
+  show('loadingPanel');
+  $('loadingText').textContent = text;
 }
 
-function showPredictions() {
-  document.getElementById('loadingPanel').classList.add('hidden');
-  document.getElementById('loginPanel').classList.add('hidden');
-  document.getElementById('predictionsPanel').classList.remove('hidden');
+// ── PIN ───────────────────────────────────────────────────────────────────────
+async function verifyPin() {
+  hideErr('pinError');
+  const pin = $('pinInput').value;
+  const res = await fetch('/api/verify-pin', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ pin })
+  });
+  if (res.ok) {
+    hide('pinPanel');
+    show('loginPanel');
+  } else {
+    showErr('pinError', 'Onjuiste PIN. Probeer opnieuw.');
+    $('pinInput').value = '';
+    $('pinInput').focus();
+  }
 }
 
-function showSuccess(msg) {
-  document.getElementById('loadingPanel').classList.add('hidden');
-  document.getElementById('predictionsPanel').classList.add('hidden');
-  document.getElementById('successPanel').classList.remove('hidden');
-  document.getElementById('successMessage').textContent = msg;
-}
+// ── Initialisatie ─────────────────────────────────────────────────────────────
+(async () => {
+  const pinStatus = await fetch('/api/pin-required').then(r=>r.json()).catch(()=>({required:false,verified:false}));
 
-// ── Login ─────────────────────────────────────────────────────────────────────
-async function doLogin() {
-  hideError('loginError');
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
-  const oddsApiKey = document.getElementById('oddsApiKey').value.trim();
-  const footballDataApiKey = document.getElementById('footballDataApiKey').value.trim();
-
-  if (!username || !password) {
-    showError('loginError', 'Vul je gebruikersnaam en wachtwoord in.');
+  if (pinStatus.required && !pinStatus.verified) {
+    show('pinPanel');
+    $('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') verifyPin(); });
     return;
   }
 
-  document.getElementById('loginBtn').disabled = true;
+  const status = await fetch('/api/status').then(r=>r.json()).catch(()=>({}));
+  if (status.loggedIn) {
+    $('statusBadge').classList.remove('hidden');
+    setLoading('Sessie herstellen, even geduld...');
+    try { await fetchAndRenderPredictions(); }
+    catch { ['loadingPanel'].forEach(hide); show('loginPanel'); }
+  } else {
+    show('loginPanel');
+  }
+})();
+
+// ── Login ─────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  hideErr('loginError');
+  const username = $('username').value.trim();
+  const password = $('password').value;
+  const oddsApiKey = $('oddsApiKey').value.trim();
+  const footballDataApiKey = $('footballDataApiKey').value.trim();
+
+  if (!username || !password) {
+    showErr('loginError', 'Vul je e-mail en wachtwoord in.');
+    return;
+  }
+  $('loginBtn').disabled = true;
   setLoading('Inloggen op Scorito...');
 
   try {
-    const loginRes = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const r = await fetch('/api/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ username, password, oddsApiKey, footballDataApiKey })
     });
-    if (!loginRes.ok) {
-      const data = await loginRes.json();
-      throw new Error(data.error || 'Login mislukt');
-    }
+    if (!r.ok) throw new Error((await r.json()).error || 'Login mislukt');
 
-    document.getElementById('loadingText').textContent = 'Scorito-ronde ophalen via browser...';
+    $('statusBadge').classList.remove('hidden');
+    $('statusText').textContent = username.split('@')[0];
     await fetchAndRenderPredictions();
-
-    // Toon ingestatus in header
-    document.getElementById('statusBadge').classList.remove('hidden');
-    document.getElementById('statusText').textContent = username;
-
-  } catch (err) {
-    document.getElementById('loginPanel').classList.remove('hidden');
-    document.getElementById('loadingPanel').classList.add('hidden');
-    showError('loginError', err.message);
+  } catch(err) {
+    show('loginPanel'); hide('loadingPanel');
+    showErr('loginError', err.message);
   } finally {
-    document.getElementById('loginBtn').disabled = false;
+    $('loginBtn').disabled = false;
   }
 }
 
-// ── Voorspellingen ophalen en renderen ────────────────────────────────────────
+// ── Voorspellingen ophalen ────────────────────────────────────────────────────
 async function fetchAndRenderPredictions() {
-  document.getElementById('loadingText').textContent = 'Voorspellingen genereren op basis van odds, FIFA-rang en toernooivorm...';
-
-  const res = await fetch('/api/predictions');
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Kon voorspellingen niet ophalen');
-  }
-  const data = await res.json();
-
+  $('loadingText').textContent = 'Voorspellingen genereren op basis van odds, FIFA-rang en vorm...';
+  const r = await fetch('/api/predictions');
+  if (!r.ok) throw new Error((await r.json()).error || 'Ophalen mislukt');
+  const data = await r.json();
   currentPredictions = data.predictions;
   renderPredictions(data.round, data.predictions, data.dataSources);
-  showPredictions();
+  ['loadingPanel'].forEach(hide);
+  show('predictionsPanel');
 }
 
-// ── Wedstrijdkaarten renderen ─────────────────────────────────────────────────
-function renderPredictions(round, predictions, dataSources) {
-  document.getElementById('roundTitle').textContent = round.title || 'Huidige ronde';
-  document.getElementById('roundUrl').textContent = round.url || '';
-  document.getElementById('matchCount').textContent = `${predictions.length} wedstrijd${predictions.length !== 1 ? 'en' : ''}`;
+// ── Renderen ──────────────────────────────────────────────────────────────────
+function renderPredictions(round, predictions, ds) {
+  $('roundTitle').textContent = round.title || 'Actieve ronde';
+  $('roundUrl').textContent = round.url || '';
+  $('matchCount').textContent = `${predictions.length} wedstrijd${predictions.length!==1?'en':''}`;
 
-  // Databron-badges
-  const badges = document.getElementById('dataBadges');
+  const badges = $('dataBadges');
   badges.innerHTML = '';
-  badges.appendChild(badge('Odds', dataSources?.odds));
-  badges.appendChild(badge('Vorm', dataSources?.form));
-  badges.appendChild(badge('Scorers', dataSources?.scorers));
-
-  const container = document.getElementById('matchCards');
-  container.innerHTML = '';
-  predictions.forEach((match, i) => {
-    container.appendChild(buildMatchCard(match, i));
+  [['Odds', ds?.odds], ['Vorm', ds?.form], ['Scorers', ds?.scorers]].forEach(([l,ok]) => {
+    const b = document.createElement('span');
+    b.className = `badge ${ok ? 'badge-ok' : 'badge-warn'}`;
+    b.textContent = ok ? `✓ ${l}` : `⚠ ${l}`;
+    badges.appendChild(b);
   });
+
+  const container = $('matchCards');
+  container.innerHTML = '';
+  predictions.forEach((m,i) => container.appendChild(buildCard(m,i)));
 }
 
-function badge(label, available) {
-  const el = document.createElement('span');
-  el.className = `badge ${available ? 'badge-ok' : 'badge-warn'}`;
-  el.textContent = available ? `✓ ${label}` : `⚠ ${label}`;
-  return el;
-}
+function buildCard(match, idx) {
+  const frag = document.getElementById('matchCardTemplate').content.cloneNode(true);
+  const root = frag.querySelector('.match-card');
+  root.dataset.index = idx;
 
-function buildMatchCard(match, cardIndex) {
-  const tmpl = document.getElementById('matchCardTemplate');
-  const card = tmpl.content.cloneNode(true);
-  const root = card.querySelector('.match-card');
-  root.dataset.index = cardIndex;
-
-  // Teams en vlaggen
-  root.querySelector('.home-team .team-flag').textContent = getFlag(match.homeTeam);
+  root.querySelector('.home-team .team-flag').textContent = flag(match.homeTeam);
   root.querySelector('.home-team .team-name').textContent = match.homeTeam;
-  root.querySelector('.away-team .team-flag').textContent = getFlag(match.awayTeam);
+  root.querySelector('.away-team .team-flag').textContent = flag(match.awayTeam);
   root.querySelector('.away-team .team-name').textContent = match.awayTeam;
 
-  // Score-inputs
-  const homeInput = root.querySelector('.home-score');
-  const awayInput = root.querySelector('.away-score');
-  homeInput.value = match.prediction.homeScore;
-  awayInput.value = match.prediction.awayScore;
-  homeInput.addEventListener('change', () => updatePrediction(cardIndex, 'homeScore', +homeInput.value));
-  awayInput.addEventListener('change', () => updatePrediction(cardIndex, 'awayScore', +awayInput.value));
+  const hIn = root.querySelector('.home-score');
+  const aIn = root.querySelector('.away-score');
+  hIn.value = match.prediction.homeScore;
+  aIn.value = match.prediction.awayScore;
+  hIn.addEventListener('change', () => updatePred(idx, 'homeScore', +hIn.value));
+  aIn.addEventListener('change', () => updatePred(idx, 'awayScore', +aIn.value));
 
-  // Topscorer-dropdowns vullen
-  buildScorerDropdown(root.querySelector('.home-scorer-select'), match, 'home');
-  buildScorerDropdown(root.querySelector('.away-scorer-select'), match, 'away');
+  buildScorerDrop(root.querySelector('.home-scorer-select'), match, 'home', idx);
+  buildScorerDrop(root.querySelector('.away-scorer-select'), match, 'away', idx);
 
-  // Onderbouwing
   fillReasoning(root, match);
-
-  return card;
+  return frag;
 }
 
-function buildScorerDropdown(select, match, side) {
+function buildScorerDrop(sel, match, side, idx) {
   const candidates = match.prediction.recommendedScorers?.[side] || [];
-  const selected = match.prediction.selectedScorers?.[side === 'home' ? 0 : 1] || '';
-
-  select.innerHTML = '<option value="">— geen —</option>';
+  const presel = match.prediction.selectedScorers?.[side==='home'?0:1] || '';
+  sel.innerHTML = '<option value="">— geen —</option>';
   candidates.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.name;
-    opt.textContent = `${p.name} (${p.goals} ⚽, ${p.gamesPlayed} wed.)`;
-    if (p.name === selected) opt.selected = true;
-    select.appendChild(opt);
+    const o = document.createElement('option');
+    o.value = p.name;
+    o.textContent = `${p.name} (${p.goals} ⚽, ${p.gamesPlayed} w)`;
+    if (p.name === presel) o.selected = true;
+    sel.appendChild(o);
   });
-
-  const cardIndex = parseInt(select.closest('.match-card').dataset.index, 10);
-  select.addEventListener('change', () => {
-    const scorers = [...(currentPredictions[cardIndex]?.prediction?.selectedScorers || ['', ''])];
-    scorers[side === 'home' ? 0 : 1] = select.value;
-    updatePrediction(cardIndex, 'selectedScorers', scorers);
+  sel.addEventListener('change', () => {
+    const sc = [...(currentPredictions[idx]?.prediction?.selectedScorers || ['',''])];
+    sc[side==='home'?0:1] = sel.value;
+    updatePred(idx, 'selectedScorers', sc);
   });
 }
 
-function fillReasoning(root, match) {
-  const r = match.reasoning || {};
+function fillReasoning(root, m) {
+  const r = m.reasoning || {};
+  root.querySelector('.home-rank').textContent = `#${r.homeRank||'?'} ${m.homeTeam.split(' ')[0]}`;
+  root.querySelector('.away-rank').textContent = `${m.awayTeam.split(' ')[0]} #${r.awayRank||'?'}`;
 
-  // FIFA-rang
-  root.querySelector('.home-rank').textContent = `#${r.homeRank || '?'} ${match.homeTeam}`;
-  root.querySelector('.away-rank').textContent = `${match.awayTeam} #${r.awayRank || '?'}`;
+  const odds = root.querySelector('.odds-row');
+  const fp = r.finalProbs || {};
+  const h = Math.round((fp.homeWin||0)*100);
+  const d = Math.round((fp.draw||0)*100);
+  const a = 100-h-d;
+  odds.innerHTML = `
+    <div class="odds-bar">
+      <div class="odds-home" style="width:${h}%"></div>
+      <div class="odds-draw" style="width:${d}%"></div>
+      <div class="odds-away" style="width:${a}%"></div>
+    </div>
+    <div class="odds-labels">
+      <span>${m.homeTeam.split(' ')[0]} ${h}%</span>
+      <span>Gelijk ${d}%</span>
+      <span>${a}% ${m.awayTeam.split(' ')[0]}</span>
+    </div>
+    ${!r.oddsProbs ? '<small style="color:var(--muted);font-size:.7rem">Schatting (geen live odds)</small>' : ''}`;
 
-  // Odds
-  const oddsRow = root.querySelector('.odds-row');
-  if (r.oddsProbs) {
-    const h = Math.round(r.finalProbs.homeWin * 100);
-    const d = Math.round(r.finalProbs.draw * 100);
-    const a = 100 - h - d;
-    oddsRow.innerHTML = `
-      <div class="odds-bar">
-        <div class="odds-home" style="width:${h}%"></div>
-        <div class="odds-draw" style="width:${d}%"></div>
-        <div class="odds-away" style="width:${a}%"></div>
-      </div>
-      <div class="odds-labels">
-        <span>${match.homeTeam.split(' ')[0]} ${h}%</span>
-        <span>Gelijk ${d}%</span>
-        <span>${a}% ${match.awayTeam.split(' ')[0]}</span>
-      </div>`;
-  } else {
-    const h = Math.round((r.finalProbs?.homeWin || 0) * 100);
-    const d = Math.round((r.finalProbs?.draw || 0) * 100);
-    const a = 100 - h - d;
-    oddsRow.innerHTML = `
-      <div class="odds-bar">
-        <div class="odds-home" style="width:${h}%"></div>
-        <div class="odds-draw" style="width:${d}%"></div>
-        <div class="odds-away" style="width:${a}%"></div>
-      </div>
-      <div class="odds-labels">
-        <span>${h}%</span><span>${d}%</span><span>${a}%</span>
-      </div>
-      <small style="color:var(--muted);font-size:.72rem;">Geschat op basis van FIFA-rang en vorm (geen live odds)</small>`;
-  }
+  root.querySelector('.home-form-name').textContent = m.homeTeam.split(' ')[0];
+  root.querySelector('.away-form-name').textContent = m.awayTeam.split(' ')[0];
+  root.querySelector('.home-form-dots').innerHTML = formDots(r.homeForm||[]);
+  root.querySelector('.away-form-dots').innerHTML = formDots(r.awayForm||[]);
 
-  // Toernooivorm
-  const homeFormDots = root.querySelector('.home-form-dots');
-  const awayFormDots = root.querySelector('.away-form-dots');
-  root.querySelectorAll('.form-name')[0].textContent = match.homeTeam.split(' ')[0];
-  root.querySelectorAll('.form-name')[1].textContent = match.awayTeam.split(' ')[0];
-  homeFormDots.innerHTML = renderFormDots(r.homeForm || []);
-  awayFormDots.innerHTML = renderFormDots(r.awayForm || []);
-
-  // Verwachte goals
-  const xgRow = root.querySelector('.xg-row');
+  const xg = root.querySelector('.xg-row');
   if (r.expectedGoals) {
-    xgRow.innerHTML = `
-      <div class="xg-numbers">${r.expectedGoals.home.toFixed(1)} – ${r.expectedGoals.away.toFixed(1)}</div>
-      <div>Verwachte doelpunten · Over 2.5: ${Math.round(r.over25Prob * 100)}%</div>`;
+    xg.innerHTML = `<div class="xg-numbers">${r.expectedGoals.home.toFixed(1)} – ${r.expectedGoals.away.toFixed(1)}</div>
+      <div>Over 2.5: ${Math.round((r.over25Prob||0)*100)}%</div>`;
   } else {
-    xgRow.textContent = 'Geen over/under odds beschikbaar';
+    xg.textContent = 'Geen over/under data beschikbaar';
   }
 
-  // Topscorer-kandidaten
-  const candidatesEl = root.querySelector('.scorer-candidates');
-  const allCandidates = [
-    ...(match.prediction.recommendedScorers?.home || []).map(p => ({ ...p, side: match.homeTeam })),
-    ...(match.prediction.recommendedScorers?.away || []).map(p => ({ ...p, side: match.awayTeam }))
+  const all = [
+    ...(m.prediction.recommendedScorers?.home||[]).map(p=>({...p,club:m.homeTeam})),
+    ...(m.prediction.recommendedScorers?.away||[]).map(p=>({...p,club:m.awayTeam}))
   ];
-  if (allCandidates.length > 0) {
-    candidatesEl.innerHTML = allCandidates.map(p => `
-      <div class="scorer-candidate">
-        <div>
-          <strong>${p.name}</strong><br/>
-          <span style="font-size:.72rem;color:var(--muted)">${p.side}</span>
-        </div>
-        <span class="scorer-stat">${p.goals} ⚽ / ${p.gamesPlayed} wed.</span>
-      </div>`).join('');
-  } else {
-    candidatesEl.innerHTML = '<div style="color:var(--muted);font-size:.8rem">Nog geen toernooidata beschikbaar</div>';
-  }
+  root.querySelector('.scorer-candidates').innerHTML = all.length
+    ? all.map(p => `<div class="scorer-candidate">
+        <div><strong>${p.name}</strong><br><span style="font-size:.7rem;color:var(--muted)">${flag(p.club)} ${p.club.split(' ')[0]}</span></div>
+        <span class="scorer-stat">${p.goals}⚽/${p.gamesPlayed}w</span></div>`).join('')
+    : '<div style="color:var(--muted);font-size:.8rem">Nog geen toernooiscorerdata</div>';
 }
 
-function renderFormDots(form) {
-  const dots = form.length > 0
-    ? form.map(r => `<span class="form-dot ${r}">${r}</span>`).join('')
-    : '<span class="form-dot empty">?</span>'.repeat(3);
-  return dots;
+function formDots(form) {
+  return form.length
+    ? form.map(r=>`<span class="form-dot ${r}">${r}</span>`).join('')
+    : `<span class="form-dot empty">?</span>`.repeat(3);
 }
 
-// ── State bijwerken ───────────────────────────────────────────────────────────
-function updatePrediction(index, field, value) {
-  if (!currentPredictions[index]) return;
-  currentPredictions[index].prediction[field] = value;
+function updatePred(idx, field, value) {
+  if (currentPredictions[idx]) currentPredictions[idx].prediction[field] = value;
 }
 
 // ── Indienen ──────────────────────────────────────────────────────────────────
 async function submitAll() {
-  hideError('submitError');
-  document.getElementById('submitBtn').disabled = true;
-  document.getElementById('submitBtn').textContent = 'Bezig met indienen...';
+  hideErr('submitError');
+  $('submitBtn').disabled = true;
+  $('submitBtn').textContent = 'Bezig met indienen...';
+  setLoading('Scorito automatisch invullen en indienen...');
 
   try {
-    const res = await fetch('/api/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const r = await fetch('/api/submit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ predictions: currentPredictions })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Indienen mislukt');
-    showSuccess(data.message);
-  } catch (err) {
-    showError('submitError', err.message);
-    document.getElementById('submitBtn').disabled = false;
-    document.getElementById('submitBtn').textContent = '✓ Bevestig & dien in op Scorito';
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Indienen mislukt');
+
+    ['loadingPanel','predictionsPanel'].forEach(hide);
+    show('successPanel');
+    $('successMessage').textContent = data.message;
+
+    if (data.screenshotAfter) {
+      show('screenshotWrap');
+      $('successScreenshot').src = data.screenshotAfter;
+    }
+  } catch(err) {
+    hide('loadingPanel');
+    show('predictionsPanel');
+    showErr('submitError', err.message);
+    $('submitBtn').disabled = false;
+    $('submitBtn').textContent = '✓ Dien in op Scorito';
   }
 }
 
-// ── Uitloggen / reset ─────────────────────────────────────────────────────────
+// ── Uitloggen ─────────────────────────────────────────────────────────────────
 async function logout() {
-  await fetch('/api/logout', { method: 'POST' });
+  await fetch('/api/logout', { method:'POST' });
   resetToLogin();
 }
 
 function resetToLogin() {
   currentPredictions = [];
-  document.getElementById('matchCards').innerHTML = '';
-  document.getElementById('successPanel').classList.add('hidden');
-  document.getElementById('predictionsPanel').classList.add('hidden');
-  document.getElementById('loadingPanel').classList.add('hidden');
-  document.getElementById('loginPanel').classList.remove('hidden');
-  document.getElementById('statusBadge').classList.add('hidden');
-  document.getElementById('password').value = '';
+  $('matchCards').innerHTML = '';
+  ['successPanel','predictionsPanel','loadingPanel'].forEach(hide);
+  show('loginPanel');
+  $('statusBadge').classList.add('hidden');
+  $('password').value = '';
 }
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-(async () => {
-  const status = await fetch('/api/status').then(r => r.json()).catch(() => ({}));
-  if (status.loggedIn) {
-    document.getElementById('statusBadge').classList.remove('hidden');
-    setLoading('Sessie herstellen...');
-    try {
-      await fetchAndRenderPredictions();
-    } catch {
-      document.getElementById('loginPanel').classList.remove('hidden');
-      document.getElementById('loadingPanel').classList.add('hidden');
-    }
-  }
-})();
