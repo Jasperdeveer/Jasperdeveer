@@ -5,18 +5,15 @@ const { execSync } = require('child_process');
 const SCORITO_URL = 'https://www.scorito.com';
 
 function findChromium() {
-  // Docker (Railway/Render) zet PUPPETEER_EXECUTABLE_PATH; ook CHROMIUM_PATH wordt ondersteund
   if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  // Probeer pre-installed Playwright Chromium (beschikbaar in cloud-omgeving)
   try {
     const found = execSync(
       'find /opt/pw-browsers -name "chrome" -o -name "chromium" 2>/dev/null | grep -v ".zip" | head -1',
       { timeout: 3000 }
     ).toString().trim();
-    if (found) { console.log('Chromium gevonden:', found); return found; }
+    if (found) return found;
   } catch {}
-  // Systeembrowser
   for (const cmd of ['chromium-browser', 'chromium', 'google-chrome']) {
     try {
       const found = execSync(`which ${cmd} 2>/dev/null`, { timeout: 2000 }).toString().trim();
@@ -26,7 +23,7 @@ function findChromium() {
   return undefined;
 }
 
-async function launchBrowser(headless = true) {
+async function launchBrowser() {
   const executablePath = findChromium();
   return puppeteer.launch({
     headless: true,
@@ -36,57 +33,69 @@ async function launchBrowser(headless = true) {
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--no-first-run',
       '--lang=nl-NL,nl'
     ]
   });
 }
 
-// Poll tot de URL niet meer /account/login bevat — robuuster dan waitForNavigation
-// bij SPAs die frames detachen tijdens client-side routing.
-async function waitForLoginRedirect(page, timeout = 20000) {
-  await page.waitForFunction(
-    () => !window.location.href.includes('/account/login'),
-    { timeout, polling: 300 }
-  ).catch(err => {
-    if (err.message.includes('detached') || err.message.includes('Waiting failed')) return;
-    throw err;
+// Blokkeer afbeeldingen, media, fonts en analytics — maakt Scorito ~3× sneller
+async function setupPageOptimizations(page) {
+  await page.setRequestInterception(true);
+  page.on('request', req => {
+    const rt = req.resourceType();
+    const url = req.url();
+    if (rt === 'image' || rt === 'media' || rt === 'font') {
+      req.abort();
+    } else if (url.includes('google-analytics') || url.includes('gtag') ||
+               url.includes('doubleclick') || url.includes('facebook.net') ||
+               url.includes('analytics') || url.includes('/beacon')) {
+      req.abort();
+    } else {
+      req.continue();
+    }
   });
-  // Extra rust voor de SPA-router
-  await new Promise(r => setTimeout(r, 800));
 }
 
-async function doLogin(page, credentials) {
-  console.log('Navigeren naar Scorito login...');
-  await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  // Wacht tot het formulier geladen is
+// Poll tot de URL niet meer /account/login bevat — robuuster dan waitForNavigation
+// bij SPAs die frames detachen tijdens client-side routing.
+async function waitForLoginRedirect(page, timeout = 45000) {
+  await page.waitForFunction(
+    () => !window.location.href.includes('/account/login'),
+    { timeout, polling: 500 }
+  ).catch(err => {
+    if (!err.message.includes('timeout') && !err.message.includes('detached')) throw err;
+  });
   await new Promise(r => setTimeout(r, 1000));
+}
 
-  // Probeer meerdere selector-patronen voor het loginformulier
+async function doLogin(page, credentials, log) {
+  log('Navigeren naar Scorito loginpagina...');
+  await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await new Promise(r => setTimeout(r, 1500));
+
   const userSelectors = [
-    'input[name="username"]',
-    'input[name="email"]',
-    'input[type="email"]',
-    'input[id*="username"]',
-    'input[id*="email"]',
-    'input[placeholder*="gebruikersnaam" i]',
-    'input[placeholder*="e-mail" i]',
+    'input[name="username"]', 'input[name="email"]', 'input[type="email"]',
+    'input[id*="username"]', 'input[id*="email"]',
+    'input[placeholder*="gebruikersnaam" i]', 'input[placeholder*="e-mail" i]',
     'input[placeholder*="email" i]'
   ];
   const passSelectors = [
-    'input[name="password"]',
-    'input[type="password"]',
-    'input[id*="password"]'
+    'input[name="password"]', 'input[type="password"]', 'input[id*="password"]'
   ];
 
   let usernameInput = null;
   for (const sel of userSelectors) {
     usernameInput = await page.$(sel);
-    if (usernameInput) { console.log('Gebruikersnaam-veld:', sel); break; }
+    if (usernameInput) { log(`Inlogveld gevonden (${sel})`); break; }
   }
   let passwordInput = null;
   for (const sel of passSelectors) {
     passwordInput = await page.$(sel);
-    if (passwordInput) { console.log('Wachtwoord-veld:', sel); break; }
+    if (passwordInput) break;
   }
 
   if (!usernameInput || !passwordInput) {
@@ -96,12 +105,13 @@ async function doLogin(page, credentials) {
     );
   }
 
+  log('E-mail en wachtwoord invullen...');
   await usernameInput.click({ clickCount: 3 });
-  await usernameInput.type(credentials.username, { delay: 50 });
+  await usernameInput.type(credentials.username, { delay: 40 });
   await passwordInput.click({ clickCount: 3 });
-  await passwordInput.type(credentials.password, { delay: 50 });
+  await passwordInput.type(credentials.password, { delay: 40 });
 
-  // Klik submit — vang ook frame-detach op bij de klik zelf
+  log('Inlogknop klikken...');
   let submitted = false;
   for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'form button']) {
     try { await page.click(sel); submitted = true; break; } catch {}
@@ -110,18 +120,18 @@ async function doLogin(page, credentials) {
     try { await page.keyboard.press('Enter'); } catch {}
   }
 
-  await waitForLoginRedirect(page, 20000);
+  log('Wachten op doorverwijzing (Scorito kan traag zijn)...');
+  await waitForLoginRedirect(page, 45000);
 
   const url = page.url();
   if (url.includes('/account/login') || url.includes('fout') || url.includes('error')) {
     throw new Error('Login mislukt. Controleer je gebruikersnaam en wachtwoord.');
   }
-  console.log('Ingelogd. Huidige pagina:', url);
+  log('Ingelogd ✓');
 }
 
-// Zoek naar de WK-invulpagina en navigeer er naartoe
-async function navigateToPredictions(page) {
-  // Probeer directe URL-patronen die Scorito mogelijk gebruikt
+async function navigateToPredictions(page, log) {
+  log('Zoeken naar invulpagina WK 2026...');
   const directUrls = [
     `${SCORITO_URL}/wk-2026/invullen`,
     `${SCORITO_URL}/worldcup2026/invullen`,
@@ -130,22 +140,18 @@ async function navigateToPredictions(page) {
 
   for (const url of directUrls) {
     try {
-      const res = await page.goto(url, { waitUntil: 'networkidle2', timeout: 8000 });
+      const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 1000));
       if (res && res.ok() && !page.url().includes('login')) {
-        console.log('Voorspellingspagina gevonden via directe URL:', url);
+        log(`Invulpagina gevonden: ${url}`);
         return true;
       }
     } catch {}
   }
 
-  // Zoek via linktekst op de huidige pagina
   const linkPatterns = [
-    'a[href*="wk-2026"]',
-    'a[href*="world-cup"]',
-    'a[href*="weltmeisterschaft"]',
-    'a[href*="invullen"]',
-    'a[href*="predict"]',
-    'a[href*="voorspel"]'
+    'a[href*="wk-2026"]', 'a[href*="world-cup"]', 'a[href*="invullen"]',
+    'a[href*="predict"]', 'a[href*="voorspel"]', 'a[href*="wk2026"]'
   ];
 
   for (const sel of linkPatterns) {
@@ -153,45 +159,39 @@ async function navigateToPredictions(page) {
       const link = await page.$(sel);
       if (link) {
         const href = await link.evaluate(el => el.href);
-        console.log('WK/invullen link gevonden:', href);
+        log(`Link gevonden: ${href}`);
         await link.click();
         await page.waitForFunction(
-          (prevHref) => window.location.href !== prevHref,
-          { timeout: 10000, polling: 300 },
-          href
+          (prev) => window.location.href !== prev,
+          { timeout: 20000, polling: 500 }, href
         ).catch(() => {});
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1000));
         return true;
       }
     } catch {}
   }
 
-  console.warn('Geen voorspellingspagina gevonden via links. Gebruik huidige pagina.');
+  log('Geen aparte invulpagina gevonden — huidige pagina gebruiken.');
   return false;
 }
 
-// Lees wedstrijddata uit het Scorito-formulier
 async function extractMatches(page) {
   const url = page.url();
-  console.log('Wedstrijden lezen van:', url);
 
   const result = await page.evaluate(() => {
-    // Probeer meerdere selectors voor wedstrijdrijen
     const rowSelectors = [
       '.match', '.wedstrijd', '.fixture', '.game-row',
       '[class*="match-row"]', '[class*="match_row"]', '[class*="prediction-row"]',
       'tr[data-match-id]', 'tr[data-fixture]', '.tiprow', '[class*="tip-row"]'
     ];
 
-    let rows = null;
-    let usedSelector = '';
+    let rows = null, usedSelector = '';
     for (const sel of rowSelectors) {
       const found = document.querySelectorAll(sel);
       if (found.length > 0) { rows = found; usedSelector = sel; break; }
     }
 
     if (!rows || rows.length === 0) {
-      // Geen rijen gevonden: geef de paginastructuur terug zodat we kunnen debuggen
       return {
         success: false,
         debug: {
@@ -210,35 +210,23 @@ async function extractMatches(page) {
       const teamEls = row.querySelectorAll(
         '.team-name, .team, [class*="team-name"], [class*="club-name"], .ploeg'
       );
-      const homeEl = teamEls[0];
-      const awayEl = teamEls[1];
-
       const scoreInputs = row.querySelectorAll(
         'input[type="number"], input[type="text"][name*="score"], input[name*="goal"], input[name*="stand"]'
       );
-
-      const homeInput = scoreInputs[0];
-      const awayInput = scoreInputs[1];
-
-      // Scorer dropdown of tekstveld
       const scorerEl = row.querySelector(
         'select[name*="scorer"], select[name*="doelpuntenmaker"], select[name*="topscorer"], ' +
         'input[name*="scorer"], input[name*="doelpuntenmaker"]'
       );
-
-      // Probeer een unieke rij-identifier te vinden
-      const matchId = row.dataset.matchId || row.dataset.fixtureId ||
-                      row.dataset.id || String(index);
+      const matchId = row.dataset.matchId || row.dataset.fixtureId || row.dataset.id || String(index);
 
       matches.push({
-        index,
-        matchId,
-        homeTeam: homeEl?.textContent?.trim() || `Team ${index * 2 + 1}`,
-        awayTeam: awayEl?.textContent?.trim() || `Team ${index * 2 + 2}`,
-        homeInputName: homeInput?.name || '',
-        homeInputId: homeInput?.id || '',
-        awayInputName: awayInput?.name || '',
-        awayInputId: awayInput?.id || '',
+        index, matchId,
+        homeTeam: teamEls[0]?.textContent?.trim() || `Team ${index * 2 + 1}`,
+        awayTeam: teamEls[1]?.textContent?.trim() || `Team ${index * 2 + 2}`,
+        homeInputName: scoreInputs[0]?.name || '',
+        homeInputId: scoreInputs[0]?.id || '',
+        awayInputName: scoreInputs[1]?.name || '',
+        awayInputId: scoreInputs[1]?.id || '',
         scorerFieldName: scorerEl?.name || '',
         scorerFieldType: scorerEl?.tagName?.toLowerCase() || '',
         scorerOptions: scorerEl?.tagName === 'SELECT'
@@ -251,58 +239,59 @@ async function extractMatches(page) {
   });
 
   if (!result.success) {
-    console.error('Kon wedstrijden niet lezen. Debug info:', JSON.stringify(result.debug, null, 2).substring(0, 1000));
+    console.error('Kon wedstrijden niet lezen. Debug:', JSON.stringify(result.debug, null, 2).substring(0, 1000));
     throw new Error(
       `Kon de wedstrijden niet automatisch uitlezen op ${url}. ` +
-      'Mogelijk moet je de Scorito-URL of DOM-selectors aanpassen. ' +
-      'Zie de serverlogs voor debug-info.'
+      'Mogelijk moet je de Scorito-URL of DOM-selectors aanpassen. Zie de serverlogs.'
     );
   }
 
-  console.log(`${result.matches.length} wedstrijden gevonden via selector: ${result.selector}`);
   return result.matches;
 }
 
-// Haal de huidige ronde op van Scorito
-async function fetchRound(credentials) {
-  const browser = await launchBrowser(true);
+async function fetchRound(credentials, log = console.log) {
+  log('Browser starten...');
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
+    await setupPageOptimizations(page);
 
-    await doLogin(page, credentials);
-    await navigateToPredictions(page);
+    await doLogin(page, credentials, log);
+    await navigateToPredictions(page, log);
 
+    log('Wedstrijden uitlezen...');
     const title = await page.title().catch(() => 'Scorito WK 2026');
     const url = page.url();
     const matches = await extractMatches(page);
 
+    log(`${matches.length} wedstrijd${matches.length !== 1 ? 'en' : ''} gevonden ✓`);
     return { title, url, matches };
   } finally {
     await browser.close();
   }
 }
 
-// Dien goedgekeurde voorspellingen in via Puppeteer (headless — werkt ook op iPhone/cloud)
-async function submitPredictions(credentials, predictions) {
-  const browser = await launchBrowser(true);
+async function submitPredictions(credentials, predictions, log = console.log) {
+  log('Browser starten...');
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
+    await setupPageOptimizations(page);
 
-    await doLogin(page, credentials);
-    await navigateToPredictions(page);
+    await doLogin(page, credentials, log);
+    await navigateToPredictions(page, log);
 
-    console.log(`${predictions.length} voorspellingen invullen...`);
+    log(`${predictions.length} voorspellingen invullen...`);
 
     for (const match of predictions) {
       const { homeInputName, homeInputId, awayInputName, awayInputId, prediction } = match;
-
       const homeSelector = homeInputName ? `input[name="${homeInputName}"]`
         : homeInputId ? `#${homeInputId}` : null;
       const awaySelector = awayInputName ? `input[name="${awayInputName}"]`
@@ -311,13 +300,13 @@ async function submitPredictions(credentials, predictions) {
       if (homeSelector) {
         try {
           await page.click(homeSelector, { clickCount: 3 });
-          await page.type(homeSelector, String(prediction.homeScore), { delay: 30 });
+          await page.type(homeSelector, String(prediction.homeScore), { delay: 25 });
         } catch (e) { console.warn(`Thuisscore ${match.homeTeam}:`, e.message); }
       }
       if (awaySelector) {
         try {
           await page.click(awaySelector, { clickCount: 3 });
-          await page.type(awaySelector, String(prediction.awayScore), { delay: 30 });
+          await page.type(awaySelector, String(prediction.awayScore), { delay: 25 });
         } catch (e) { console.warn(`Uitscore ${match.awayTeam}:`, e.message); }
       }
 
@@ -332,32 +321,36 @@ async function submitPredictions(credentials, predictions) {
             if (best) await page.select(`select[name="${match.scorerFieldName}"]`, best.value);
           } else {
             await page.click(`input[name="${match.scorerFieldName}"]`, { clickCount: 3 });
-            await page.type(`input[name="${match.scorerFieldName}"]`, scorer, { delay: 30 });
+            await page.type(`input[name="${match.scorerFieldName}"]`, scorer, { delay: 25 });
           }
         } catch (e) { console.warn(`Scorer ${match.homeTeam} vs ${match.awayTeam}:`, e.message); }
       }
 
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 100));
     }
 
-    // Screenshot vóór indienen — ter controle
+    log('Screenshot maken voor indienen...');
     const previewShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
 
-    // Formulier indienen
+    log('Formulier indienen...');
     let submitted = false;
     for (const sel of [
       'button[type="submit"]', 'input[type="submit"]',
-      'button:contains("Opslaan")', 'button:contains("Indienen")',
-      'button:contains("Bevestigen")', '[class*="submit"]', '[class*="save"]'
+      '[class*="submit"]', '[class*="save"]',
+      'button:has-text("Opslaan")', 'button:has-text("Indienen")'
     ]) {
       try { await page.click(sel); submitted = true; break; } catch {}
     }
     if (!submitted) throw new Error('Kon de submit-knop niet vinden op Scorito.');
 
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 })
-      .catch(() => console.warn('Geen navigatie na submit — dat kan normaal zijn'));
+    log('Wachten op bevestiging...');
+    await page.waitForFunction(
+      () => true, { timeout: 15000 }
+    ).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
 
     const confirmShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
+    log('Ingediend ✓');
 
     return {
       success: true,

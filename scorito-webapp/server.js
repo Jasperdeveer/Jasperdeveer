@@ -5,6 +5,21 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 
+// SSE-voortgang per sessie
+const sseClients = new Map();
+
+function sendProgress(sessionId, text) {
+  console.log(`[progress] ${text}`);
+  const res = sseClients.get(sessionId);
+  if (res) {
+    try { res.write(`data: ${JSON.stringify({ text })}\n\n`); } catch {}
+  }
+}
+
+function makeLog(sessionId) {
+  return (text) => sendProgress(sessionId, text);
+}
+
 const { fetchRound, submitPredictions } = require('./lib/scorito');
 const { getOdds } = require('./lib/odds');
 const { getRankings } = require('./lib/fifa');
@@ -47,6 +62,18 @@ app.use('/api', (req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── SSE voortgangsstream ───────────────────────────────────────────────────
+
+app.get('/api/progress', (req, res) => {
+  if (!req.session.scorito) return res.status(401).end();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  sseClients.set(req.sessionID, res);
+  req.on('close', () => sseClients.delete(req.sessionID));
+});
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 app.post('/api/login', (req, res) => {
@@ -77,7 +104,7 @@ app.get('/api/status', (req, res) => {
 app.get('/api/round', async (req, res) => {
   if (!req.session.scorito) return res.status(401).json({ error: 'Niet ingelogd.' });
   try {
-    const round = await fetchRound(req.session.scorito);
+    const round = await fetchRound(req.session.scorito, makeLog(req.sessionID));
     res.json(round);
   } catch (err) {
     console.error('fetchRound:', err.message);
@@ -94,7 +121,9 @@ app.get('/api/predictions', async (req, res) => {
   const footballKey = req.session.footballDataApiKey || process.env.FOOTBALL_DATA_API_KEY || null;
 
   try {
-    const round = await fetchRound(req.session.scorito);
+    const log = makeLog(req.sessionID);
+    const round = await fetchRound(req.session.scorito, log);
+    log('Odds en statistieken ophalen...');
 
     // Haal externe data parallel op; fouten worden afzonderlijk afgehandeld
     const [rankingsResult, oddsResult, formResult, scorersResult, statsResult] =
@@ -112,6 +141,7 @@ app.get('/api/predictions', async (req, res) => {
     if (scorersResult.status === 'rejected') console.warn('Scorers fout:', scorersResult.reason);
     if (statsResult.status === 'rejected') console.warn('Stats fout:', statsResult.reason);
 
+    log('Voorspellingen berekenen...');
     const predictions = generatePredictions({
       matches: round.matches,
       rankings: rankingsResult.value || {},
@@ -145,7 +175,7 @@ app.post('/api/submit', async (req, res) => {
     return res.status(400).json({ error: 'Geen voorspellingen meegegeven.' });
   }
   try {
-    const result = await submitPredictions(req.session.scorito, predictions);
+    const result = await submitPredictions(req.session.scorito, predictions, makeLog(req.sessionID));
     res.json(result);
   } catch (err) {
     console.error('submitPredictions:', err.message);

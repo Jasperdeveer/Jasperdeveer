@@ -21,6 +21,7 @@ const FLAGS = {
 const flag = n => FLAGS[(n||'').toLowerCase()] || '🏳️';
 
 let currentPredictions = [];
+let progressSource = null;
 
 // ── Hulpfuncties ──────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -33,6 +34,30 @@ function setLoading(text) {
   ['pinPanel','loginPanel','predictionsPanel','successPanel'].forEach(hide);
   show('loadingPanel');
   $('loadingText').textContent = text;
+  $('progressLog').innerHTML = '';
+}
+
+// ── Live voortgangslog via Server-Sent Events ─────────────────────────────────
+function openProgressStream() {
+  if (progressSource) { progressSource.close(); progressSource = null; }
+  progressSource = new EventSource('/api/progress');
+  progressSource.onmessage = (e) => {
+    try {
+      const { text } = JSON.parse(e.data);
+      $('loadingText').textContent = text;
+      const line = document.createElement('div');
+      line.className = 'progress-line';
+      line.textContent = text;
+      const log = $('progressLog');
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    } catch {}
+  };
+  progressSource.onerror = () => {};
+}
+
+function closeProgressStream() {
+  if (progressSource) { progressSource.close(); progressSource = null; }
 }
 
 // ── PIN ───────────────────────────────────────────────────────────────────────
@@ -121,14 +146,21 @@ async function doLogin() {
 
 // ── Voorspellingen ophalen ────────────────────────────────────────────────────
 async function fetchAndRenderPredictions() {
-  $('loadingText').textContent = 'Voorspellingen genereren op basis van odds, FIFA-rang en vorm...';
-  const r = await fetch('/api/predictions');
-  if (!r.ok) throw new Error((await r.json()).error || 'Ophalen mislukt');
-  const data = await r.json();
-  currentPredictions = data.predictions;
-  renderPredictions(data.round, data.predictions, data.dataSources);
-  ['loadingPanel'].forEach(hide);
-  show('predictionsPanel');
+  openProgressStream();
+  // Geef SSE-verbinding even tijd om op te starten
+  await new Promise(r => setTimeout(r, 250));
+  $('loadingText').textContent = 'Verbinding maken met Scorito...';
+  try {
+    const r = await fetch('/api/predictions');
+    if (!r.ok) throw new Error((await r.json()).error || 'Ophalen mislukt');
+    const data = await r.json();
+    currentPredictions = data.predictions;
+    renderPredictions(data.round, data.predictions, data.dataSources);
+    ['loadingPanel'].forEach(hide);
+    show('predictionsPanel');
+  } finally {
+    closeProgressStream();
+  }
 }
 
 // ── Renderen ──────────────────────────────────────────────────────────────────
@@ -256,6 +288,8 @@ async function submitAll() {
   $('submitBtn').disabled = true;
   $('submitBtn').textContent = 'Bezig met indienen...';
   setLoading('Scorito automatisch invullen en indienen...');
+  openProgressStream();
+  await new Promise(r => setTimeout(r, 250));
 
   try {
     const r = await fetch('/api/submit', {
@@ -279,6 +313,8 @@ async function submitAll() {
     showErr('submitError', err.message);
     $('submitBtn').disabled = false;
     $('submitBtn').textContent = '✓ Dien in op Scorito';
+  } finally {
+    closeProgressStream();
   }
 }
 
