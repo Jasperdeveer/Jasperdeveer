@@ -74,6 +74,65 @@ app.get('/api/progress', (req, res) => {
   req.on('close', () => sseClients.delete(req.sessionID));
 });
 
+// ── Debug: bekijk wat Puppeteer echt ziet op de loginpagina ──────────────────
+
+app.get('/api/debug-login', async (req, res) => {
+  if (!req.session.pinVerified && process.env.APP_PIN) {
+    return res.status(401).json({ error: 'PIN vereist' });
+  }
+  const puppeteer = require('puppeteer');
+  const { execSync } = require('child_process');
+  let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (!executablePath) {
+    try { executablePath = execSync('which chromium-browser 2>/dev/null || which chromium 2>/dev/null', { timeout: 2000 }).toString().trim(); } catch {}
+  }
+  const browser = await puppeteer.launch({
+    headless: true, executablePath,
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 390, height: 844 });
+    await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+
+    const urlsToTry = [
+      'https://mobile.scorito.com/login',
+      'https://www.scorito.com/account/login'
+    ];
+    const results = [];
+    for (const url of urlsToTry) {
+      try {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await new Promise(r => setTimeout(r, 3000));
+        const screenshot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
+        const dom = await page.evaluate(() => ({
+          finalUrl: location.href,
+          title: document.title,
+          inputs: Array.from(document.querySelectorAll('input')).map(i => ({
+            type: i.type, name: i.name, id: i.id,
+            placeholder: i.placeholder, className: i.className.substring(0, 80)
+          })),
+          buttons: Array.from(document.querySelectorAll('button,input[type=submit]')).map(b => ({
+            type: b.type || b.tagName, id: b.id,
+            text: b.textContent?.trim().substring(0, 60),
+            className: b.className?.substring(0, 80)
+          })),
+          forms: Array.from(document.querySelectorAll('form')).map(f => ({
+            id: f.id, action: f.action, className: f.className.substring(0, 80)
+          })),
+          bodySnippet: document.body.innerHTML.substring(0, 6000)
+        }));
+        results.push({ url, screenshot: `data:image/jpeg;base64,${screenshot}`, ...dom });
+      } catch (e) {
+        results.push({ url, error: e.message });
+      }
+    }
+    res.json(results);
+  } finally {
+    await browser.close();
+  }
+});
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 app.post('/api/login', (req, res) => {
