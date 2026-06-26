@@ -29,7 +29,7 @@ function findChromium() {
 async function launchBrowser(headless = true) {
   const executablePath = findChromium();
   return puppeteer.launch({
-    headless: headless ? 'new' : false,
+    headless: true,
     executablePath,
     args: [
       '--no-sandbox',
@@ -41,23 +41,25 @@ async function launchBrowser(headless = true) {
   });
 }
 
-// Vangt "Navigating frame was detached" op — SPA's doen navigaties waarbij Puppeteer
-// de oorspronkelijke frame kwijtraakt. Na de catch wachten we kort en gaan verder.
-async function waitForNav(page, timeout = 15000) {
-  try {
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout });
-  } catch (err) {
-    if (err.message.includes('detached') || err.message.includes('Navigation failed')) {
-      await new Promise(r => setTimeout(r, 1500));
-      return;
-    }
+// Poll tot de URL niet meer /account/login bevat — robuuster dan waitForNavigation
+// bij SPAs die frames detachen tijdens client-side routing.
+async function waitForLoginRedirect(page, timeout = 20000) {
+  await page.waitForFunction(
+    () => !window.location.href.includes('/account/login'),
+    { timeout, polling: 300 }
+  ).catch(err => {
+    if (err.message.includes('detached') || err.message.includes('Waiting failed')) return;
     throw err;
-  }
+  });
+  // Extra rust voor de SPA-router
+  await new Promise(r => setTimeout(r, 800));
 }
 
 async function doLogin(page, credentials) {
   console.log('Navigeren naar Scorito login...');
-  await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'networkidle2', timeout: 30000 });
+  await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // Wacht tot het formulier geladen is
+  await new Promise(r => setTimeout(r, 1000));
 
   // Probeer meerdere selector-patronen voor het loginformulier
   const userSelectors = [
@@ -99,17 +101,19 @@ async function doLogin(page, credentials) {
   await passwordInput.click({ clickCount: 3 });
   await passwordInput.type(credentials.password, { delay: 50 });
 
-  // Klik submit
+  // Klik submit — vang ook frame-detach op bij de klik zelf
   let submitted = false;
   for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'form button']) {
     try { await page.click(sel); submitted = true; break; } catch {}
   }
-  if (!submitted) await page.keyboard.press('Enter');
+  if (!submitted) {
+    try { await page.keyboard.press('Enter'); } catch {}
+  }
 
-  await waitForNav(page, 20000);
+  await waitForLoginRedirect(page, 20000);
 
   const url = page.url();
-  if (url.includes('login') || url.includes('fout') || url.includes('error')) {
+  if (url.includes('/account/login') || url.includes('fout') || url.includes('error')) {
     throw new Error('Login mislukt. Controleer je gebruikersnaam en wachtwoord.');
   }
   console.log('Ingelogd. Huidige pagina:', url);
@@ -151,7 +155,12 @@ async function navigateToPredictions(page) {
         const href = await link.evaluate(el => el.href);
         console.log('WK/invullen link gevonden:', href);
         await link.click();
-        await waitForNav(page, 10000);
+        await page.waitForFunction(
+          (prevHref) => window.location.href !== prevHref,
+          { timeout: 10000, polling: 300 },
+          href
+        ).catch(() => {});
+        await new Promise(r => setTimeout(r, 800));
         return true;
       }
     } catch {}
@@ -266,7 +275,7 @@ async function fetchRound(credentials) {
     await doLogin(page, credentials);
     await navigateToPredictions(page);
 
-    const title = await page.title();
+    const title = await page.title().catch(() => 'Scorito WK 2026');
     const url = page.url();
     const matches = await extractMatches(page);
 
