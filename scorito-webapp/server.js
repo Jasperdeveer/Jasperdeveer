@@ -74,64 +74,42 @@ app.get('/api/progress', (req, res) => {
   req.on('close', () => sseClients.delete(req.sessionID));
 });
 
-// ── Debug: bekijk wat Puppeteer echt ziet op de loginpagina ──────────────────
+// ── Debug: screenshot van wat Puppeteer ziet (open als afbeelding in browser) ─
 
-app.get('/api/debug-login', async (req, res) => {
+app.get('/api/debug-screenshot', async (req, res) => {
   if (!req.session.pinVerified && process.env.APP_PIN) {
-    return res.status(401).json({ error: 'PIN vereist' });
+    return res.status(401).send('PIN vereist');
   }
+  const { launchBrowser } = require('./lib/scorito');
+  // launchBrowser is niet geëxporteerd, gebruik lokale import
   const puppeteer = require('puppeteer');
-  const { execSync } = require('child_process');
-  let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (!executablePath) {
-    try { executablePath = execSync('which chromium-browser 2>/dev/null || which chromium 2>/dev/null', { timeout: 2000 }).toString().trim(); } catch {}
-  }
   const browser = await puppeteer.launch({
-    headless: true, executablePath,
+    headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
     args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu']
   });
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 390, height: 844 });
     await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
-
-    const urlsToTry = [
-      'https://mobile.scorito.com/login',
-      'https://www.scorito.com/account/login'
-    ];
-    const results = [];
-    for (const url of urlsToTry) {
-      try {
-        try {
-          await page.goto(url, { waitUntil: 'load', timeout: 20000 });
-        } catch (e) {
-          if (!e.message.includes('detach') && !e.message.includes('net::ERR')) throw e;
-        }
-        await new Promise(r => setTimeout(r, 3000));
-        const screenshot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
-        const dom = await page.evaluate(() => ({
-          finalUrl: location.href,
-          title: document.title,
-          inputs: Array.from(document.querySelectorAll('input')).map(i => ({
-            type: i.type, name: i.name, id: i.id,
-            placeholder: i.placeholder, className: i.className.substring(0, 80)
-          })),
-          buttons: Array.from(document.querySelectorAll('button,input[type=submit]')).map(b => ({
-            type: b.type || b.tagName, id: b.id,
-            text: b.textContent?.trim().substring(0, 60),
-            className: b.className?.substring(0, 80)
-          })),
-          forms: Array.from(document.querySelectorAll('form')).map(f => ({
-            id: f.id, action: f.action, className: f.className.substring(0, 80)
-          })),
-          bodySnippet: document.body.innerHTML.substring(0, 6000)
-        }));
-        results.push({ url, screenshot: `data:image/jpeg;base64,${screenshot}`, ...dom });
-      } catch (e) {
-        results.push({ url, error: e.message });
-      }
-    }
-    res.json(results);
+    const url = req.query.url || 'https://mobile.scorito.com/login';
+    page.goto(url).catch(() => {});
+    await new Promise(r => setTimeout(r, 6000));
+    const shot = await page.screenshot({ type: 'jpeg', quality: 80 });
+    const info = await page.evaluate(() => JSON.stringify({
+      url: location.href,
+      inputs: Array.from(document.querySelectorAll('input')).map(i =>
+        `type=${i.type} name=${i.name} id=${i.id} placeholder="${i.placeholder}"`),
+      buttons: Array.from(document.querySelectorAll('button')).map(b =>
+        `"${b.textContent?.trim().substring(0,40)}" type=${b.type} id=${b.id}`)
+    }, null, 2)).catch(() => '{}');
+    // Geef HTML-pagina terug met screenshot + info
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html><html><body style="background:#000;color:#fff;font-family:monospace;padding:1rem">
+      <h2>URL: ${page.url()}</h2>
+      <img src="data:image/jpeg;base64,${shot.toString('base64')}" style="max-width:100%;border:1px solid #444">
+      <pre style="margin-top:1rem;font-size:.8rem;white-space:pre-wrap">${info}</pre>
+    </body></html>`);
   } finally {
     await browser.close();
   }
