@@ -1,7 +1,5 @@
 'use strict';
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
+const puppeteer = require('puppeteer');
 const { execSync } = require('child_process');
 
 const SCORITO_URL = 'https://www.scorito.com';
@@ -40,11 +38,28 @@ async function launchBrowser() {
       '--disable-default-apps',
       '--no-first-run',
       '--disable-blink-features=AutomationControlled',
+      '--disable-features=VizDisplayCompositor',
+      '--disable-ipc-flooding-protection',
+      '--mute-audio',
       '--lang=nl-NL,nl'
     ]
   });
 }
 
+// Verberg Puppeteer-vingerafdrukken zodat Scorito ons niet als bot herkent
+async function setupAntiDetection(page) {
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, 'languages', { get: () => ['nl-NL', 'nl', 'en'] });
+    window.chrome = { runtime: {} };
+    const origQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (params) =>
+      params.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : origQuery(params);
+  });
+}
 
 // Blokkeer afbeeldingen, media, fonts en analytics — maakt Scorito ~3× sneller
 async function setupPageOptimizations(page) {
@@ -65,7 +80,6 @@ async function setupPageOptimizations(page) {
 }
 
 // Poll de URL vanuit Node.js (niet via browser-JS) — overleeft execution-context-vernietiging
-// die optreedt wanneer de pagina navigeert terwijl waitForFunction nog actief is.
 async function waitForLoginRedirect(page, timeout = 45000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -175,7 +189,6 @@ async function navigateToPredictions(page, log) {
         const href = await link.evaluate(el => el.href);
         log(`Link gevonden: ${href}`);
         await link.click();
-        // Poll vanuit Node.js — vermijdt execution-context-vernietiging
         const deadline = Date.now() + 20000;
         while (Date.now() < deadline) {
           try { if (page.url() !== href) break; } catch {}
@@ -270,6 +283,7 @@ async function fetchRound(credentials, log = console.log) {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    await setupAntiDetection(page);
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -296,6 +310,7 @@ async function submitPredictions(credentials, predictions, log = console.log) {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    await setupAntiDetection(page);
     await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -361,10 +376,7 @@ async function submitPredictions(credentials, predictions, log = console.log) {
     if (!submitted) throw new Error('Kon de submit-knop niet vinden op Scorito.');
 
     log('Wachten op bevestiging...');
-    await page.waitForFunction(
-      () => true, { timeout: 15000 }
-    ).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
 
     const confirmShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
     log('Ingediend ✓');
