@@ -1,6 +1,6 @@
 {
   "name": "scorito-webapp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Scorito auto-fill webapp voor FIFA World Cup 2026",
   "main": "server.js",
   "scripts": {
