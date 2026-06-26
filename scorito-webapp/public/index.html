@@ -59,24 +59,29 @@
                placeholder="••••••••" />
       </label>
 
-      <details class="api-details">
-        <summary>API-sleutels (optioneel maar aanbevolen)</summary>
-        <div class="api-info">
-          <p>Met API-sleutels worden voorspellingen aanzienlijk beter:</p>
-          <ul>
-            <li><strong>The Odds API</strong> — bookmaker-kansen
-              (<a href="https://the-odds-api.com/" target="_blank" rel="noopener">gratis aanmaken</a>, 500/maand)</li>
-            <li><strong>football-data.org</strong> — WK-scorers en vorm
-              (<a href="https://www.football-data.org/client/register" target="_blank" rel="noopener">gratis aanmaken</a>)</li>
-          </ul>
-        </div>
-        <label>The Odds API-sleutel
-          <input type="text" id="oddsApiKey" placeholder="abc123..." autocomplete="off" />
-        </label>
-        <label style="margin-top:.75rem">football-data.org API-sleutel
-          <input type="text" id="footballDataApiKey" placeholder="abc123..." autocomplete="off" />
-        </label>
-      </details>
+      <div id="apiKeysSection">
+        <details class="api-details">
+          <summary>API-sleutels (optioneel maar aanbevolen)</summary>
+          <div class="api-info">
+            <p>Met API-sleutels worden voorspellingen aanzienlijk beter:</p>
+            <ul>
+              <li><strong>The Odds API</strong> — bookmaker-kansen
+                (<a href="https://the-odds-api.com/" target="_blank" rel="noopener">gratis aanmaken</a>, 500/maand)</li>
+              <li><strong>football-data.org</strong> — WK-scorers en vorm
+                (<a href="https://www.football-data.org/client/register" target="_blank" rel="noopener">gratis aanmaken</a>)</li>
+            </ul>
+          </div>
+          <label>The Odds API-sleutel
+            <input type="text" id="oddsApiKey" placeholder="abc123..." autocomplete="off" />
+          </label>
+          <label style="margin-top:.75rem">football-data.org API-sleutel
+            <input type="text" id="footballDataApiKey" placeholder="abc123..." autocomplete="off" />
+          </label>
+        </details>
+      </div>
+      <p id="apiKeysBadge" class="hint hidden" style="color:var(--success,#16a34a);font-size:.85rem">
+        ✓ API-sleutels geconfigureerd (odds + statistieken actief)
+      </p>
 
       <div class="btn-row">
         <button id="loginBtn" class="btn-primary btn-full" onclick="doLogin()">
