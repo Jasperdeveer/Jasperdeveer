@@ -65,6 +65,17 @@ async function verifyPin() {
   }
 
   const status = await fetch('/api/status').then(r=>r.json()).catch(()=>({}));
+
+  // Verberg de API-sleutelinvoer als beide sleutels al server-side geconfigureerd zijn
+  if (status.hasOddsKey && status.hasFootballKey) {
+    hide('apiKeysSection');
+    show('apiKeysBadge');
+  } else if (status.hasOddsKey || status.hasFootballKey) {
+    // Één sleutel geconfigureerd — toon sectie maar pre-fill de aanwezige
+    const section = $('apiKeysSection');
+    if (section) section.querySelector('.api-details').open = false;
+  }
+
   if (status.loggedIn) {
     $('statusBadge').classList.remove('hidden');
     setLoading('Sessie herstellen, even geduld...');

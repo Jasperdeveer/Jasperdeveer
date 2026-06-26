@@ -41,6 +41,20 @@ async function launchBrowser(headless = true) {
   });
 }
 
+// Vangt "Navigating frame was detached" op — SPA's doen navigaties waarbij Puppeteer
+// de oorspronkelijke frame kwijtraakt. Na de catch wachten we kort en gaan verder.
+async function waitForNav(page, timeout = 15000) {
+  try {
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout });
+  } catch (err) {
+    if (err.message.includes('detached') || err.message.includes('Navigation failed')) {
+      await new Promise(r => setTimeout(r, 1500));
+      return;
+    }
+    throw err;
+  }
+}
+
 async function doLogin(page, credentials) {
   console.log('Navigeren naar Scorito login...');
   await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'networkidle2', timeout: 30000 });
@@ -92,7 +106,7 @@ async function doLogin(page, credentials) {
   }
   if (!submitted) await page.keyboard.press('Enter');
 
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 });
+  await waitForNav(page, 20000);
 
   const url = page.url();
   if (url.includes('login') || url.includes('fout') || url.includes('error')) {
@@ -137,7 +151,7 @@ async function navigateToPredictions(page) {
         const href = await link.evaluate(el => el.href);
         console.log('WK/invullen link gevonden:', href);
         await link.click();
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+        await waitForNav(page, 10000);
         return true;
       }
     } catch {}
