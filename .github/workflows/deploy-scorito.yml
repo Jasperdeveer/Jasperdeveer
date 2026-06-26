@@ -1,13 +1,38 @@
-name: Deploy Scorito Webapp
+name: Deploy Scorito Webapp to Cloud Run
 
 on:
   push:
     branches: [main]
-    paths: [scorito-webapp/**, koyeb.yaml]
+    paths: [scorito-webapp/**]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Koyeb deploys automatisch via GitHub-integratie
-        run: echo "Koyeb picks up this push automatically"
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Build en push via Cloud Build
+        working-directory: scorito-webapp
+        run: |
+          gcloud builds submit \
+            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/scorito-webapp:${{ github.sha }}
+
+      - name: Deploy naar Cloud Run
+        run: |
+          gcloud run deploy scorito-webapp \
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/scorito-webapp:${{ github.sha }} \
+            --region europe-west4 \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 3000 \
+            --memory 512Mi \
+            --max-instances 1
