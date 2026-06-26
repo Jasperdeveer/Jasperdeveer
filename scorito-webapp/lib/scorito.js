@@ -100,8 +100,25 @@ async function waitForLoginRedirect(page, timeout = 45000) {
   }
 }
 
+// Navigeer naar een URL en vang frame-detach/redirect-fouten op.
+// Scorito stuurt redirects tijdens laden — goto() crasht dan, maar de
+// navigatie zelf slaagt. We checken daarna gewoon page.url().
+async function safeGoto(page, url, timeout = 45000) {
+  try {
+    await page.goto(url, { waitUntil: 'load', timeout });
+  } catch (e) {
+    const msg = e.message || '';
+    // Frame detached / detached frame betekent: redirect ging door, pagina is geladen
+    if (!msg.includes('detach') && !msg.includes('Detach') &&
+        !msg.includes('detached') && !msg.includes('net::ERR')) {
+      throw e;
+    }
+  }
+  // Wacht even zodat client-side JS de DOM kan opbouwen na redirect
+  await new Promise(r => setTimeout(r, 2500));
+}
+
 async function doLogin(page, credentials, log) {
-  // Probeer mobile-URL eerst (sneller, simpelere DOM), dan desktop
   const loginUrls = [
     'https://mobile.scorito.com/login',
     `${SCORITO_URL}/account/login`,
@@ -110,19 +127,24 @@ async function doLogin(page, credentials, log) {
 
   let foundLogin = false;
   for (const loginUrl of loginUrls) {
+    log(`Navigeren naar ${loginUrl}...`);
+    await safeGoto(page, loginUrl, 45000);
+    const currentUrl = page.url();
+    log(`Huidige URL na navigatie: ${currentUrl}`);
+    // Wacht op inputs — als er geen zijn na 8s, probeer de volgende URL
     try {
-      log(`Navigeren naar ${loginUrl}...`);
-      await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      // Wacht tot er minstens één input zichtbaar is in de DOM
-      await page.waitForSelector('input', { timeout: 10000 });
+      await page.waitForSelector('input', { timeout: 8000 });
       foundLogin = true;
+      log(`Loginpagina gevonden op: ${currentUrl}`);
       break;
-    } catch {}
+    } catch {
+      log(`Geen inputs gevonden op ${currentUrl}, volgende URL proberen...`);
+    }
   }
   if (!foundLogin) {
     throw new Error('Kon de Scorito loginpagina niet laden. Controleer je internetverbinding.');
   }
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, 500));
 
   const userSelectors = [
     'input[type="email"]',
@@ -194,10 +216,9 @@ async function navigateToPredictions(page, log) {
 
   for (const url of directUrls) {
     try {
-      const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await new Promise(r => setTimeout(r, 1000));
-      if (res && res.ok() && !page.url().includes('login')) {
-        log(`Invulpagina gevonden: ${url}`);
+      await safeGoto(page, url, 30000);
+      if (!page.url().includes('login')) {
+        log(`Invulpagina gevonden: ${page.url()}`);
         return true;
       }
     } catch {}

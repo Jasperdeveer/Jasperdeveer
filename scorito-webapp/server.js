@@ -102,7 +102,11 @@ app.get('/api/debug-login', async (req, res) => {
     const results = [];
     for (const url of urlsToTry) {
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        try {
+          await page.goto(url, { waitUntil: 'load', timeout: 20000 });
+        } catch (e) {
+          if (!e.message.includes('detach') && !e.message.includes('net::ERR')) throw e;
+        }
         await new Promise(r => setTimeout(r, 3000));
         const screenshot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
         const dom = await page.evaluate(() => ({
