@@ -37,8 +37,19 @@ async function launchBrowser() {
       '--disable-background-networking',
       '--disable-default-apps',
       '--no-first-run',
+      '--disable-blink-features=AutomationControlled',
       '--lang=nl-NL,nl'
     ]
+  });
+}
+
+// Verbergt Puppeteer/headless-kenmerken zodat Scorito geen bot detecteert
+async function setupAntiDetection(page) {
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, 'languages', { get: () => ['nl-NL', 'nl', 'en-US'] });
   });
 }
 
@@ -60,16 +71,26 @@ async function setupPageOptimizations(page) {
   });
 }
 
-// Poll tot de URL niet meer /account/login bevat — robuuster dan waitForNavigation
-// bij SPAs die frames detachen tijdens client-side routing.
+// Poll de URL vanuit Node.js (niet via browser-JS) — overleeft execution-context-vernietiging
+// die optreedt wanneer de pagina navigeert terwijl waitForFunction nog actief is.
 async function waitForLoginRedirect(page, timeout = 45000) {
-  await page.waitForFunction(
-    () => !window.location.href.includes('/account/login'),
-    { timeout, polling: 500 }
-  ).catch(err => {
-    if (!err.message.includes('timeout') && !err.message.includes('detached')) throw err;
-  });
-  await new Promise(r => setTimeout(r, 1000));
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      if (!page.url().includes('/account/login')) {
+        await new Promise(r => setTimeout(r, 800));
+        return;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 600));
+  }
+  try {
+    if (page.url().includes('/account/login')) {
+      throw new Error('Login timeout na 45s. Controleer je gebruikersnaam en wachtwoord.');
+    }
+  } catch (e) {
+    if (e.message.includes('timeout')) throw e;
+  }
 }
 
 async function doLogin(page, credentials, log) {
@@ -161,11 +182,13 @@ async function navigateToPredictions(page, log) {
         const href = await link.evaluate(el => el.href);
         log(`Link gevonden: ${href}`);
         await link.click();
-        await page.waitForFunction(
-          (prev) => window.location.href !== prev,
-          { timeout: 20000, polling: 500 }, href
-        ).catch(() => {});
-        await new Promise(r => setTimeout(r, 1000));
+        // Poll vanuit Node.js — vermijdt execution-context-vernietiging
+        const deadline = Date.now() + 20000;
+        while (Date.now() < deadline) {
+          try { if (page.url() !== href) break; } catch {}
+          await new Promise(r => setTimeout(r, 600));
+        }
+        await new Promise(r => setTimeout(r, 800));
         return true;
       }
     } catch {}
@@ -254,9 +277,11 @@ async function fetchRound(credentials, log = console.log) {
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
+    await setupAntiDetection(page);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
@@ -283,6 +308,7 @@ async function submitPredictions(credentials, predictions, log = console.log) {
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
+    await setupAntiDetection(page);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
