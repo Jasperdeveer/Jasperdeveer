@@ -1,13 +1,13 @@
-name: Deploy Scorito Webapp to Render
+name: Deploy Scorito Webapp
 
 on:
   push:
-    branches: [claude/scorito-auto-fill-webapp-9rj7jr, main]
-    paths: [scorito-webapp/**, render.yaml]
+    branches: [main]
+    paths: [scorito-webapp/**, koyeb.yaml]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render deploy
-        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+      - name: Koyeb deploys automatisch via GitHub-integratie
+        run: echo "Koyeb picks up this push automatically"

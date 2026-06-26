@@ -1,0 +1,21 @@
+name: scorito-webapp
+services:
+  - name: scorito-webapp
+    type: web
+    git:
+      repository: github.com/jasperdeveer/jasperdeveer
+      branch: main
+    docker:
+      dockerfile: Dockerfile
+      context: scorito-webapp
+    instance_type: free
+    regions:
+      - fra
+    ports:
+      - port: 3000
+        protocol: http
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
