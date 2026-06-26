@@ -101,18 +101,38 @@ async function waitForLoginRedirect(page, timeout = 45000) {
 }
 
 async function doLogin(page, credentials, log) {
-  log('Navigeren naar Scorito loginpagina...');
-  await page.goto(`${SCORITO_URL}/account/login`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await new Promise(r => setTimeout(r, 1500));
+  // Probeer mobile-URL eerst (sneller, simpelere DOM), dan desktop
+  const loginUrls = [
+    'https://mobile.scorito.com/login',
+    `${SCORITO_URL}/account/login`,
+    `${SCORITO_URL}/login`
+  ];
+
+  let foundLogin = false;
+  for (const loginUrl of loginUrls) {
+    try {
+      log(`Navigeren naar ${loginUrl}...`);
+      await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      // Wacht tot er minstens één input zichtbaar is in de DOM
+      await page.waitForSelector('input', { timeout: 10000 });
+      foundLogin = true;
+      break;
+    } catch {}
+  }
+  if (!foundLogin) {
+    throw new Error('Kon de Scorito loginpagina niet laden. Controleer je internetverbinding.');
+  }
+  await new Promise(r => setTimeout(r, 800));
 
   const userSelectors = [
-    'input[name="username"]', 'input[name="email"]', 'input[type="email"]',
+    'input[type="email"]',
+    'input[name="username"]', 'input[name="email"]',
     'input[id*="username"]', 'input[id*="email"]',
     'input[placeholder*="gebruikersnaam" i]', 'input[placeholder*="e-mail" i]',
-    'input[placeholder*="email" i]'
+    'input[placeholder*="email" i]', 'input[type="text"]'
   ];
   const passSelectors = [
-    'input[name="password"]', 'input[type="password"]', 'input[id*="password"]'
+    'input[type="password"]', 'input[name="password"]', 'input[id*="password"]'
   ];
 
   let usernameInput = null;
@@ -127,6 +147,10 @@ async function doLogin(page, credentials, log) {
   }
 
   if (!usernameInput || !passwordInput) {
+    const allInputs = await page.$$eval('input', els =>
+      els.map(i => `type=${i.type} name=${i.name} id=${i.id} placeholder=${i.placeholder}`)
+    ).catch(() => []);
+    console.error('Aanwezige inputs:', allInputs.join(' | '));
     throw new Error(
       'Kan het loginformulier niet vinden op Scorito. ' +
       'Controleer of de URL correct is of dat Scorito de paginastructuur heeft gewijzigd.'
@@ -161,6 +185,8 @@ async function doLogin(page, credentials, log) {
 async function navigateToPredictions(page, log) {
   log('Zoeken naar invulpagina WK 2026...');
   const directUrls = [
+    'https://mobile.scorito.com/wk-2026/invullen',
+    'https://mobile.scorito.com/worldcup2026/invullen',
     `${SCORITO_URL}/wk-2026/invullen`,
     `${SCORITO_URL}/worldcup2026/invullen`,
     `${SCORITO_URL}/competition/wk2026/predict`
