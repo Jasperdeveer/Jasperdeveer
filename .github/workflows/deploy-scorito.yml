@@ -38,5 +38,5 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --port 3000 \
-            --memory 512Mi \
+            --memory 1Gi \
             --max-instances 1

@@ -1,5 +1,7 @@
 'use strict';
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 const { execSync } = require('child_process');
 
 const SCORITO_URL = 'https://www.scorito.com';
@@ -43,15 +45,6 @@ async function launchBrowser() {
   });
 }
 
-// Verbergt Puppeteer/headless-kenmerken zodat Scorito geen bot detecteert
-async function setupAntiDetection(page) {
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    window.chrome = { runtime: {} };
-    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-    Object.defineProperty(navigator, 'languages', { get: () => ['nl-NL', 'nl', 'en-US'] });
-  });
-}
 
 // Blokkeer afbeeldingen, media, fonts en analytics — maakt Scorito ~3× sneller
 async function setupPageOptimizations(page) {
@@ -281,7 +274,6 @@ async function fetchRound(credentials, log = console.log) {
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
-    await setupAntiDetection(page);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
@@ -308,7 +300,6 @@ async function submitPredictions(credentials, predictions, log = console.log) {
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
     );
-    await setupAntiDetection(page);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
