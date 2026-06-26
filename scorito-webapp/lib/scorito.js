@@ -165,16 +165,33 @@ async function doLogin(page, credentials, log) {
     );
   }
 
+  // Vul waarden in via JavaScript — werkt ook als element niet "klikbaar" is
+  let userSel = '', passSel = '';
+  for (const s of userSelectors) { if (await page.$(s)) { userSel = s; break; } }
+  for (const s of passSelectors) { if (await page.$(s)) { passSel = s; break; } }
+
   log('E-mail en wachtwoord invullen...');
-  await usernameInput.click({ clickCount: 3 });
-  await usernameInput.type(credentials.username, { delay: 40 });
-  await passwordInput.click({ clickCount: 3 });
-  await passwordInput.type(credentials.password, { delay: 40 });
+  await page.evaluate((us, ps, username, password) => {
+    function fill(selector, value) {
+      const el = document.querySelector(selector);
+      if (!el) return;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      setter.set.call(el, value);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    fill(us, username);
+    fill(ps, password);
+  }, userSel, passSel, credentials.username, credentials.password);
 
   log('Inlogknop klikken...');
   let submitted = false;
-  for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'form button']) {
-    try { await page.click(sel); submitted = true; break; } catch {}
+  for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'form button', 'button']) {
+    try {
+      await page.$eval(sel, el => el.click());
+      submitted = true;
+      break;
+    } catch {}
   }
   if (!submitted) {
     try { await page.keyboard.press('Enter'); } catch {}
