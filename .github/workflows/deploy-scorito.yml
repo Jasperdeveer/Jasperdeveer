@@ -20,11 +20,15 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Build en push via Cloud Build
+      - name: Configureer Docker voor GCR
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Build Docker image
         working-directory: scorito-webapp
-        run: |
-          gcloud builds submit \
-            --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/scorito-webapp:${{ github.sha }}
+        run: docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/scorito-webapp:${{ github.sha }} .
+
+      - name: Push naar Container Registry
+        run: docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/scorito-webapp:${{ github.sha }}
 
       - name: Deploy naar Cloud Run
         run: |
