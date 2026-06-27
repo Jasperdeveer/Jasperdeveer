@@ -71,12 +71,33 @@ async function verifyPin() {
   });
   if (res.ok) {
     hide('pinPanel');
-    show('loginPanel');
+    await startApp();
   } else {
     showErr('pinError', 'Onjuiste PIN. Probeer opnieuw.');
     $('pinInput').value = '';
     $('pinInput').focus();
   }
+}
+
+// ── Credentials opslaan/laden in localStorage ─────────────────────────────────
+function saveCreds(username, password) {
+  try { localStorage.setItem('scorito_creds', JSON.stringify({ username, password })); } catch {}
+}
+function loadCreds() {
+  try { return JSON.parse(localStorage.getItem('scorito_creds') || 'null'); } catch { return null; }
+}
+function clearCreds() {
+  try { localStorage.removeItem('scorito_creds'); } catch {}
+}
+
+async function autoLoginWithSaved(creds) {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: creds.username, password: creds.password })
+  });
+  if (!r.ok) throw new Error('Auto-login mislukt');
+  $('statusText').textContent = creds.username.split('@')[0];
+  $('statusBadge').classList.remove('hidden');
 }
 
 // ── Initialisatie ─────────────────────────────────────────────────────────────
@@ -89,27 +110,42 @@ async function verifyPin() {
     return;
   }
 
+  await startApp();
+})();
+
+async function startApp() {
   const status = await fetch('/api/status').then(r=>r.json()).catch(()=>({}));
 
-  // Verberg de API-sleutelinvoer als beide sleutels al server-side geconfigureerd zijn
   if (status.hasOddsKey && status.hasFootballKey) {
     hide('apiKeysSection');
     show('apiKeysBadge');
-  } else if (status.hasOddsKey || status.hasFootballKey) {
-    // Één sleutel geconfigureerd — toon sectie maar pre-fill de aanwezige
-    const section = $('apiKeysSection');
-    if (section) section.querySelector('.api-details').open = false;
   }
 
+  // Al ingelogd via actieve sessie
   if (status.loggedIn) {
     $('statusBadge').classList.remove('hidden');
-    setLoading('Sessie herstellen, even geduld...');
-    try { await fetchAndRenderPredictions(); }
-    catch { ['loadingPanel'].forEach(hide); show('loginPanel'); }
-  } else {
-    show('loginPanel');
+    setLoading('Even geduld...');
+    try { await fetchAndRenderPredictions(); return; }
+    catch { ['loadingPanel'].forEach(hide); }
   }
-})();
+
+  // Probeer opgeslagen credentials (alleen PIN nodig geweest)
+  const saved = loadCreds();
+  if (saved) {
+    setLoading('Automatisch inloggen...');
+    try {
+      await autoLoginWithSaved(saved);
+      await fetchAndRenderPredictions();
+      return;
+    } catch {
+      ['loadingPanel'].forEach(hide);
+    }
+  }
+
+  // Pre-fill gebruikersnaam als die bekend is
+  if (saved?.username) $('username').value = saved.username;
+  show('loginPanel');
+}
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 async function doLogin() {
@@ -133,6 +169,7 @@ async function doLogin() {
     });
     if (!r.ok) throw new Error((await r.json()).error || 'Login mislukt');
 
+    saveCreds(username, password);
     $('statusBadge').classList.remove('hidden');
     $('statusText').textContent = username.split('@')[0];
     await fetchAndRenderPredictions();
@@ -320,6 +357,7 @@ async function submitAll() {
 
 // ── Uitloggen ─────────────────────────────────────────────────────────────────
 async function logout() {
+  clearCreds();
   await fetch('/api/logout', { method:'POST' });
   resetToLogin();
 }
@@ -330,5 +368,6 @@ function resetToLogin() {
   ['successPanel','predictionsPanel','loadingPanel'].forEach(hide);
   show('loginPanel');
   $('statusBadge').classList.add('hidden');
+  $('username').value = '';
   $('password').value = '';
 }
