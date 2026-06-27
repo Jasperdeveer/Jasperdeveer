@@ -132,69 +132,42 @@ async function doLogin(page, credentials, log) {
     throw new Error('Kon de Scorito loginpagina niet laden. Controleer je internetverbinding.');
   }
 
-  const userSelectors = [
-    'input[type="email"]',
-    'input[name="username"]', 'input[name="email"]',
-    'input[id*="username"]', 'input[id*="email"]',
-    'input[placeholder*="gebruikersnaam" i]', 'input[placeholder*="e-mail" i]',
-    'input[placeholder*="email" i]', 'input[type="text"]'
-  ];
-  const passSelectors = [
-    'input[type="password"]', 'input[name="password"]', 'input[id*="password"]'
-  ];
-
-  let usernameInput = null;
-  for (const sel of userSelectors) {
-    usernameInput = await page.$(sel);
-    if (usernameInput) { log(`Inlogveld gevonden (${sel})`); break; }
-  }
-  let passwordInput = null;
-  for (const sel of passSelectors) {
-    passwordInput = await page.$(sel);
-    if (passwordInput) break;
-  }
-
-  if (!usernameInput || !passwordInput) {
-    const allInputs = await page.$$eval('input', els =>
-      els.map(i => `type=${i.type} name=${i.name} id=${i.id} placeholder=${i.placeholder}`)
-    ).catch(() => []);
-    console.error('Aanwezige inputs:', allInputs.join(' | '));
-    throw new Error(
-      'Kan het loginformulier niet vinden op Scorito. ' +
-      'Controleer of de URL correct is of dat Scorito de paginastructuur heeft gewijzigd.'
+  log('Loginformulier invullen en indienen...');
+  const loginResult = await page.evaluate((username, password) => {
+    const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])'));
+    const emailEl = inputs.find(i =>
+      i.type === 'email' || i.type === 'text' ||
+      /email|user|naam/i.test(i.name + i.id + i.placeholder)
     );
-  }
+    const passEl = inputs.find(i => i.type === 'password');
 
-  // Vul waarden in via JavaScript — werkt ook als element niet "klikbaar" is
-  let userSel = '', passSel = '';
-  for (const s of userSelectors) { if (await page.$(s)) { userSel = s; break; } }
-  for (const s of passSelectors) { if (await page.$(s)) { passSel = s; break; } }
+    if (!emailEl || !passEl) {
+      return { ok: false, found: inputs.map(i => `${i.type}|${i.name}|${i.id}|${i.placeholder}`) };
+    }
 
-  log('E-mail en wachtwoord invullen...');
-  await page.evaluate((us, ps, username, password) => {
-    function fill(selector, value) {
-      const el = document.querySelector(selector);
-      if (!el) return;
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    function fill(el, value) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
       setter.set.call(el, value);
       el.dispatchEvent(new Event('input',  { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    fill(us, username);
-    fill(ps, password);
-  }, userSel, passSel, credentials.username, credentials.password);
+    fill(emailEl, username);
+    fill(passEl, password);
 
-  log('Inlogknop klikken...');
-  let submitted = false;
-  for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'form button', 'button']) {
-    try {
-      await page.$eval(sel, el => el.click());
-      submitted = true;
-      break;
-    } catch {}
-  }
-  if (!submitted) {
-    try { await page.keyboard.press('Enter'); } catch {}
+    const btn = document.querySelector('button[type="submit"]') ||
+                document.querySelector('form button') ||
+                document.querySelector('button');
+    if (btn) btn.click();
+    else if (passEl.form) passEl.form.submit();
+
+    return { ok: true };
+  }, credentials.username, credentials.password);
+
+  if (!loginResult.ok) {
+    const found = (loginResult.found || []).join(' / ');
+    console.error('Aanwezige inputs:', found);
+    log('Inputs gevonden: ' + found);
+    throw new Error('Kan het loginformulier niet vinden op Scorito.');
   }
 
   log('Wachten op doorverwijzing (Scorito kan traag zijn)...');
