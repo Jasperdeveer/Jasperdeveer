@@ -31,7 +31,7 @@ function showErr(id, msg) { const el=$(id); el.textContent=msg; el.classList.rem
 function hideErr(id) { $(id)?.classList.add('hidden'); }
 
 function setLoading(text) {
-  ['pinPanel','loginPanel','predictionsPanel','successPanel'].forEach(hide);
+  ['loginPanel','predictionsPanel','successPanel'].forEach(hide);
   show('loadingPanel');
   $('loadingText').textContent = text;
   $('progressLog').innerHTML = '';
@@ -60,25 +60,6 @@ function closeProgressStream() {
   if (progressSource) { progressSource.close(); progressSource = null; }
 }
 
-// ── PIN ───────────────────────────────────────────────────────────────────────
-async function verifyPin() {
-  hideErr('pinError');
-  const pin = $('pinInput').value;
-  const res = await fetch('/api/verify-pin', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ pin })
-  });
-  if (res.ok) {
-    hide('pinPanel');
-    await startApp();
-  } else {
-    showErr('pinError', 'Onjuiste PIN. Probeer opnieuw.');
-    $('pinInput').value = '';
-    $('pinInput').focus();
-  }
-}
-
 // ── Credentials opslaan/laden in localStorage ─────────────────────────────────
 function saveCreds(username, password) {
   try { localStorage.setItem('scorito_creds', JSON.stringify({ username, password })); } catch {}
@@ -101,17 +82,7 @@ async function autoLoginWithSaved(creds) {
 }
 
 // ── Initialisatie ─────────────────────────────────────────────────────────────
-(async () => {
-  const pinStatus = await fetch('/api/pin-required').then(r=>r.json()).catch(()=>({required:false,verified:false}));
-
-  if (pinStatus.required && !pinStatus.verified) {
-    show('pinPanel');
-    $('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') verifyPin(); });
-    return;
-  }
-
-  await startApp();
-})();
+startApp();
 
 async function startApp() {
   const status = await fetch('/api/status').then(r=>r.json()).catch(()=>({}));

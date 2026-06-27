@@ -30,21 +30,6 @@
 
   <main>
 
-    <!-- PIN-scherm (alleen als APP_PIN is ingesteld) -->
-    <section id="pinPanel" class="card hidden">
-      <h2>App-PIN</h2>
-      <p class="hint">Voer de PIN in om de app te gebruiken.</p>
-      <label>PIN
-        <input type="password" id="pinInput" inputmode="numeric"
-               pattern="[0-9]*" placeholder="••••" autocomplete="off"
-               onkeydown="if(event.key==='Enter') verifyPin()" />
-      </label>
-      <div class="btn-row">
-        <button class="btn-primary btn-full" onclick="verifyPin()">Doorgaan</button>
-      </div>
-      <p id="pinError" class="error-msg hidden"></p>
-    </section>
-
     <!-- Loginpaneel -->
     <section id="loginPanel" class="card hidden">
       <h2>Inloggen</h2>

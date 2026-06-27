@@ -42,29 +42,6 @@ app.use(session({
   }
 }));
 
-// Optionele PIN-beveiliging — stel APP_PIN in als de app publiek bereikbaar is
-app.post('/api/verify-pin', (req, res) => {
-  const appPin = process.env.APP_PIN;
-  if (!appPin) { req.session.pinVerified = true; return res.json({ success: true, pinRequired: false }); }
-  if (req.body.pin === appPin) {
-    req.session.pinVerified = true;
-    return res.json({ success: true });
-  }
-  res.status(401).json({ error: 'Onjuiste PIN' });
-});
-
-app.get('/api/pin-required', (req, res) => {
-  res.json({ required: !!process.env.APP_PIN, verified: !!req.session.pinVerified });
-});
-
-// Bescherm alle /api/* routes (behalve verify-pin en pin-required) als APP_PIN is ingesteld
-app.use('/api', (req, res, next) => {
-  if (!process.env.APP_PIN) return next();
-  if (req.path === '/verify-pin' || req.path === '/pin-required') return next();
-  if (req.session.pinVerified) return next();
-  res.status(401).json({ error: 'PIN vereist', pinRequired: true });
-});
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── SSE voortgangsstream ───────────────────────────────────────────────────
