@@ -23,7 +23,7 @@ const flag = n => FLAGS[(n||'').toLowerCase()] || '🏳️';
 let currentPredictions = [];
 let progressSource = null;
 
-// ── Hulpfuncties ──────────────────────────────────────────────────────────────
+// ── Hulpfuncties ──────────────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const show = id => $(id).classList.remove('hidden');
 const hide = id => $(id).classList.add('hidden');
@@ -31,13 +31,13 @@ function showErr(id, msg) { const el=$(id); el.textContent=msg; el.classList.rem
 function hideErr(id) { $(id)?.classList.add('hidden'); }
 
 function setLoading(text) {
-  ['pinPanel','loginPanel','predictionsPanel','successPanel'].forEach(hide);
+  ['loginPanel','predictionsPanel','successPanel'].forEach(hide);
   show('loadingPanel');
   $('loadingText').textContent = text;
   $('progressLog').innerHTML = '';
 }
 
-// ── Live voortgangslog via Server-Sent Events ─────────────────────────────────
+// ── Live voortgangslog via Server-Sent Events ─────────────────────────────
 function openProgressStream() {
   if (progressSource) { progressSource.close(); progressSource = null; }
   progressSource = new EventSource('/api/progress');
@@ -58,25 +58,6 @@ function openProgressStream() {
 
 function closeProgressStream() {
   if (progressSource) { progressSource.close(); progressSource = null; }
-}
-
-// ── PIN ───────────────────────────────────────────────────────────────────────
-async function verifyPin() {
-  hideErr('pinError');
-  const pin = $('pinInput').value;
-  const res = await fetch('/api/verify-pin', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ pin })
-  });
-  if (res.ok) {
-    hide('pinPanel');
-    await startApp();
-  } else {
-    showErr('pinError', 'Onjuiste PIN. Probeer opnieuw.');
-    $('pinInput').value = '';
-    $('pinInput').focus();
-  }
 }
 
 // ── Credentials opslaan/laden in localStorage ─────────────────────────────────
@@ -100,18 +81,8 @@ async function autoLoginWithSaved(creds) {
   $('statusBadge').classList.remove('hidden');
 }
 
-// ── Initialisatie ─────────────────────────────────────────────────────────────
-(async () => {
-  const pinStatus = await fetch('/api/pin-required').then(r=>r.json()).catch(()=>({required:false,verified:false}));
-
-  if (pinStatus.required && !pinStatus.verified) {
-    show('pinPanel');
-    $('pinInput').addEventListener('keydown', e => { if(e.key==='Enter') verifyPin(); });
-    return;
-  }
-
-  await startApp();
-})();
+// ── Initialisatie ─────────────────────────────────────────────────────────────────
+startApp();
 
 async function startApp() {
   const status = await fetch('/api/status').then(r=>r.json()).catch(()=>({}));
@@ -129,7 +100,7 @@ async function startApp() {
     catch { ['loadingPanel'].forEach(hide); }
   }
 
-  // Probeer opgeslagen credentials (alleen PIN nodig geweest)
+  // Probeer opgeslagen credentials uit localStorage
   const saved = loadCreds();
   if (saved) {
     setLoading('Automatisch inloggen...');
@@ -147,7 +118,7 @@ async function startApp() {
   show('loginPanel');
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Login ──────────────────────────────────────────────────────────────────────────
 async function doLogin() {
   hideErr('loginError');
   const username = $('username').value.trim();
@@ -181,7 +152,7 @@ async function doLogin() {
   }
 }
 
-// ── Voorspellingen ophalen ────────────────────────────────────────────────────
+// ── Voorspellingen ophalen ────────────────────────────────────────────────
 async function fetchAndRenderPredictions() {
   openProgressStream();
   // Geef SSE-verbinding even tijd om op te starten
@@ -200,7 +171,7 @@ async function fetchAndRenderPredictions() {
   }
 }
 
-// ── Renderen ──────────────────────────────────────────────────────────────────
+// ── Renderen ──────────────────────────────────────────────────────────────────────────
 function renderPredictions(round, predictions, ds) {
   $('roundTitle').textContent = round.title || 'Actieve ronde';
   $('roundUrl').textContent = round.url || '';
@@ -319,7 +290,7 @@ function updatePred(idx, field, value) {
   if (currentPredictions[idx]) currentPredictions[idx].prediction[field] = value;
 }
 
-// ── Indienen ──────────────────────────────────────────────────────────────────
+// ── Indienen ──────────────────────────────────────────────────────────────────────────
 async function submitAll() {
   hideErr('submitError');
   $('submitBtn').disabled = true;
@@ -355,7 +326,7 @@ async function submitAll() {
   }
 }
 
-// ── Uitloggen ─────────────────────────────────────────────────────────────────
+// ── Uitloggen ───────────────────────────────────────────────────────────────────────
 async function logout() {
   clearCreds();
   await fetch('/api/logout', { method:'POST' });

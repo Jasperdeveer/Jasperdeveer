@@ -42,32 +42,9 @@ app.use(session({
   }
 }));
 
-// Optionele PIN-beveiliging — stel APP_PIN in als de app publiek bereikbaar is
-app.post('/api/verify-pin', (req, res) => {
-  const appPin = process.env.APP_PIN;
-  if (!appPin) { req.session.pinVerified = true; return res.json({ success: true, pinRequired: false }); }
-  if (req.body.pin === appPin) {
-    req.session.pinVerified = true;
-    return res.json({ success: true });
-  }
-  res.status(401).json({ error: 'Onjuiste PIN' });
-});
-
-app.get('/api/pin-required', (req, res) => {
-  res.json({ required: !!process.env.APP_PIN, verified: !!req.session.pinVerified });
-});
-
-// Bescherm alle /api/* routes (behalve verify-pin en pin-required) als APP_PIN is ingesteld
-app.use('/api', (req, res, next) => {
-  if (!process.env.APP_PIN) return next();
-  if (req.path === '/verify-pin' || req.path === '/pin-required') return next();
-  if (req.session.pinVerified) return next();
-  res.status(401).json({ error: 'PIN vereist', pinRequired: true });
-});
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── SSE voortgangsstream ───────────────────────────────────────────────────
+// ── SSE voortgangsstream ───────────────────────────────────────────
 
 app.get('/api/progress', (req, res) => {
   if (!req.session.scorito) return res.status(401).end();
@@ -125,7 +102,7 @@ app.get('/api/debug-predictions', async (req, res) => {
     }
 
     // Navigeer naar voorspellingspagina en wacht
-    page.goto('https://mobile.scorito.com/wk-2026/invullen').catch(() => {});
+    page.goto('https://www.scorito.com/footballtournament/301/4').catch(() => {});
     await new Promise(r => setTimeout(r, 7000));
 
     const shot = await page.screenshot({ type: 'jpeg', quality: 75 });
@@ -147,7 +124,7 @@ app.get('/api/debug-predictions', async (req, res) => {
   }
 });
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────
 
 app.post('/api/login', (req, res) => {
   const { username, password, oddsApiKey, footballDataApiKey } = req.body;
@@ -172,7 +149,7 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ── Scorito ronde ophalen ─────────────────────────────────────────────────────
+// ── Scorito ronde ophalen ──────────────────────────────────────────────────
 
 app.get('/api/round', async (req, res) => {
   if (!req.session.scorito) return res.status(401).json({ error: 'Niet ingelogd.' });
@@ -185,7 +162,7 @@ app.get('/api/round', async (req, res) => {
   }
 });
 
-// ── Voorspellingen genereren ─────────────────────────────────────────────────
+// ── Voorspellingen genereren ───────────────────────────────────────────────
 
 app.get('/api/predictions', async (req, res) => {
   if (!req.session.scorito) return res.status(401).json({ error: 'Niet ingelogd.' });
@@ -239,7 +216,7 @@ app.get('/api/predictions', async (req, res) => {
   }
 });
 
-// ── Voorspellingen indienen ──────────────────────────────────────────────────
+// ── Voorspellingen indienen ──────────────────────────────────────────────
 
 app.post('/api/submit', async (req, res) => {
   if (!req.session.scorito) return res.status(401).json({ error: 'Niet ingelogd.' });
@@ -256,7 +233,7 @@ app.post('/api/submit', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`\nScoreto WK 2026 Auto-Fill draait op: http://localhost:${PORT}`);
