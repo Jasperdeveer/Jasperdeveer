@@ -3,6 +3,10 @@ const puppeteer = require('puppeteer');
 const { execSync } = require('child_process');
 
 const SCORITO_URL = 'https://www.scorito.com';
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+// Scorito React SPA: score-inputs hebben deze CSS-klasse (gevonden in de JS-bundle)
+const PRED_INPUT_SEL = 'input[class*="matchPredictionInput"]';
 
 function findChromium() {
   if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -46,7 +50,6 @@ async function launchBrowser() {
   });
 }
 
-// Verberg Puppeteer-vingerafdrukken zodat Scorito ons niet als bot herkent
 async function setupAntiDetection(page) {
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -61,17 +64,20 @@ async function setupAntiDetection(page) {
   });
 }
 
-// Blokkeer afbeeldingen, media, fonts en analytics — maakt Scorito ~3× sneller
+// Blokkeer alleen tracking/analytics — laat alle app-JS door zodat React kan renderen
 async function setupPageOptimizations(page) {
   await page.setRequestInterception(true);
   page.on('request', req => {
     const rt = req.resourceType();
     const url = req.url();
-    if (rt === 'image' || rt === 'media' || rt === 'font') {
+    if (rt === 'font' || rt === 'media') {
       req.abort();
-    } else if (url.includes('google-analytics') || url.includes('gtag') ||
-               url.includes('doubleclick') || url.includes('facebook.net') ||
-               url.includes('analytics') || url.includes('/beacon')) {
+    } else if (
+      url.includes('google-analytics') || url.includes('gtag') ||
+      url.includes('doubleclick') || url.includes('facebook.net') ||
+      url.includes('termly.io') || url.includes('/beacon') ||
+      url.includes('newrelic')
+    ) {
       req.abort();
     } else {
       req.continue();
@@ -79,12 +85,12 @@ async function setupPageOptimizations(page) {
   });
 }
 
-// Poll de URL vanuit Node.js (niet via browser-JS) — overleeft execution-context-vernietiging
+// Poll page.url() vanuit Node.js — overleeft React-navigatie (execution-context-safe)
 async function waitForLoginRedirect(page, timeout = 45000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     try {
-      if (!page.url().includes('/account/login')) {
+      if (!page.url().includes('/login')) {
         await new Promise(r => setTimeout(r, 800));
         return;
       }
@@ -92,7 +98,7 @@ async function waitForLoginRedirect(page, timeout = 45000) {
     await new Promise(r => setTimeout(r, 600));
   }
   try {
-    if (page.url().includes('/account/login')) {
+    if (page.url().includes('/login')) {
       throw new Error('Login timeout na 45s. Controleer je gebruikersnaam en wachtwoord.');
     }
   } catch (e) {
@@ -100,9 +106,6 @@ async function waitForLoginRedirect(page, timeout = 45000) {
   }
 }
 
-// Fire-and-forget navigatie: stuur de browser naar een URL en wacht een
-// vaste tijd. We wachten NIET op navigation-events — die crashen zodra
-// Scorito een redirect doet. Na de wachttijd is de pagina altijd geladen.
 async function safeGoto(page, url, waitMs = 5000) {
   page.goto(url).catch(() => {});
   await new Promise(r => setTimeout(r, waitMs));
@@ -122,10 +125,7 @@ async function doLogin(page, credentials, log) {
     const currentUrl = page.url();
     log(`Pagina geladen: ${currentUrl}`);
     const hasInputs = await page.$('input').then(el => !!el).catch(() => false);
-    if (hasInputs) {
-      foundLogin = true;
-      break;
-    }
+    if (hasInputs) { foundLogin = true; break; }
     log('Geen inputs gevonden, volgende URL proberen...');
   }
   if (!foundLogin) {
@@ -140,11 +140,9 @@ async function doLogin(page, credentials, log) {
       /email|user|naam/i.test(i.name + i.id + i.placeholder)
     );
     const passEl = inputs.find(i => i.type === 'password');
-
     if (!emailEl || !passEl) {
       return { ok: false, found: inputs.map(i => `${i.type}|${i.name}|${i.id}|${i.placeholder}`) };
     }
-
     function fill(el, value) {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
       setter.set.call(el, value);
@@ -153,13 +151,11 @@ async function doLogin(page, credentials, log) {
     }
     fill(emailEl, username);
     fill(passEl, password);
-
     const btn = document.querySelector('button[type="submit"]') ||
                 document.querySelector('form button') ||
                 document.querySelector('button');
     if (btn) btn.click();
     else if (passEl.form) passEl.form.submit();
-
     return { ok: true };
   }, credentials.username, credentials.password);
 
@@ -173,38 +169,33 @@ async function doLogin(page, credentials, log) {
   log('Wachten op doorverwijzing (Scorito kan traag zijn)...');
   await waitForLoginRedirect(page, 45000);
 
-  const url = page.url();
-  if (url.includes('/account/login') || url.includes('fout') || url.includes('error')) {
+  if (page.url().includes('/login')) {
     throw new Error('Login mislukt. Controleer je gebruikersnaam en wachtwoord.');
   }
   log('Ingelogd ✓');
 }
 
 async function navigateToPredictions(page, log) {
-  log('Zoeken naar invulpagina WK 2026...');
+  log('Navigeren naar WK 2026 invulpagina...');
   const directUrls = [
     'https://mobile.scorito.com/wk-2026/invullen',
     'https://mobile.scorito.com/worldcup2026/invullen',
     `${SCORITO_URL}/wk-2026/invullen`,
     `${SCORITO_URL}/worldcup2026/invullen`,
-    `${SCORITO_URL}/competition/wk2026/predict`
   ];
 
   for (const url of directUrls) {
-    try {
-      await safeGoto(page, url, 30000);
-      if (!page.url().includes('login')) {
-        log(`Invulpagina gevonden: ${page.url()}`);
-        return true;
-      }
-    } catch {}
+    await safeGoto(page, url, 8000);
+    if (!page.url().includes('/login')) {
+      log(`Invulpagina geladen: ${page.url()}`);
+      return true;
+    }
   }
 
+  log('Directe URL mislukt — zoeken naar invullink op de pagina...');
   const linkPatterns = [
-    'a[href*="wk-2026"]', 'a[href*="world-cup"]', 'a[href*="invullen"]',
-    'a[href*="predict"]', 'a[href*="voorspel"]', 'a[href*="wk2026"]'
+    'a[href*="invullen"]', 'a[href*="wk-2026"]', 'a[href*="predict"]', 'a[href*="wk2026"]'
   ];
-
   for (const sel of linkPatterns) {
     try {
       const link = await page.$(sel);
@@ -212,89 +203,100 @@ async function navigateToPredictions(page, log) {
         const href = await link.evaluate(el => el.href);
         log(`Link gevonden: ${href}`);
         await link.click();
-        const deadline = Date.now() + 20000;
-        while (Date.now() < deadline) {
-          try { if (page.url() !== href) break; } catch {}
-          await new Promise(r => setTimeout(r, 600));
-        }
-        await new Promise(r => setTimeout(r, 800));
-        return true;
+        await new Promise(r => setTimeout(r, 5000));
+        if (!page.url().includes('/login')) return true;
       }
     } catch {}
   }
 
-  log('Geen aparte invulpagina gevonden — huidige pagina gebruiken.');
+  log('Geen invulpagina gevonden — doorgaan met huidige pagina.');
   return false;
 }
 
+// Extraheert wedstrijden uit de Scorito React SPA.
+// Scorito gebruikt inputs met klasse 'matchPredictionInput-ciMjLN' (geen name/id).
+// Elke wedstrijd heeft 2 inputs: thuisscore (even index) en uitscore (oneven index).
 async function extractMatches(page) {
   const url = page.url();
 
-  const result = await page.evaluate(() => {
-    const rowSelectors = [
-      '.match', '.wedstrijd', '.fixture', '.game-row',
-      '[class*="match-row"]', '[class*="match_row"]', '[class*="prediction-row"]',
-      'tr[data-match-id]', 'tr[data-fixture]', '.tiprow', '[class*="tip-row"]'
-    ];
+  // Scroll naar beneden zodat React lazy-loading alle wedstrijden rendert
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+  await new Promise(r => setTimeout(r, 1000));
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
 
-    let rows = null, usedSelector = '';
-    for (const sel of rowSelectors) {
-      const found = document.querySelectorAll(sel);
-      if (found.length > 0) { rows = found; usedSelector = sel; break; }
-    }
+  const result = await page.evaluate((inputSel) => {
+    const inputs = Array.from(document.querySelectorAll(inputSel));
 
-    if (!rows || rows.length === 0) {
+    if (inputs.length === 0) {
       return {
         success: false,
         debug: {
           url: window.location.href,
           title: document.title,
-          bodySnippet: document.body.innerHTML.substring(0, 3000),
           allInputs: Array.from(document.querySelectorAll('input')).map(i => ({
-            type: i.type, name: i.name, id: i.id, placeholder: i.placeholder
-          })).slice(0, 30)
+            type: i.type,
+            class: i.className.substring(0, 100),
+            name: i.name,
+            id: i.id,
+            placeholder: i.placeholder
+          })).slice(0, 25),
+          buttons: Array.from(document.querySelectorAll('button')).map(b => b.textContent.trim()).slice(0, 20),
+          bodySnippet: document.body.innerHTML.substring(0, 4000)
         }
       };
     }
 
     const matches = [];
-    rows.forEach((row, index) => {
-      const teamEls = row.querySelectorAll(
-        '.team-name, .team, [class*="team-name"], [class*="club-name"], .ploeg'
-      );
-      const scoreInputs = row.querySelectorAll(
-        'input[type="number"], input[type="text"][name*="score"], input[name*="goal"], input[name*="stand"]'
-      );
-      const scorerEl = row.querySelector(
-        'select[name*="scorer"], select[name*="doelpuntenmaker"], select[name*="topscorer"], ' +
-        'input[name*="scorer"], input[name*="doelpuntenmaker"]'
-      );
-      const matchId = row.dataset.matchId || row.dataset.fixtureId || row.dataset.id || String(index);
+    for (let i = 0; i + 1 < inputs.length; i += 2) {
+      const homeInput = inputs[i];
+
+      // DOM-structuur: input → div (scores-rij) → div (outer PredictionInput-component)
+      // Teamnamen staan hoger in de boom — zoek naar leaf-nodes met tekst
+      let homeTeam = `Thuisteam ${i / 2 + 1}`;
+      let awayTeam = `Uitteam ${i / 2 + 1}`;
+
+      let container = homeInput.parentElement?.parentElement?.parentElement;
+      for (let depth = 0; depth < 10 && container; depth++) {
+        const leafTexts = Array.from(container.querySelectorAll('span, p'))
+          .filter(el => el.children.length === 0)
+          .map(el => el.textContent.trim())
+          .filter(t =>
+            t.length >= 2 && t.length <= 35 &&
+            !/^[\d\s.:%-]+$/.test(t) &&
+            !t.includes('.') // filter translation keys zoals 'Common.Confirm'
+          );
+
+        if (leafTexts.length >= 2) {
+          homeTeam = leafTexts[0];
+          awayTeam = leafTexts[leafTexts.length - 1];
+          break;
+        }
+        container = container.parentElement;
+      }
 
       matches.push({
-        index, matchId,
-        homeTeam: teamEls[0]?.textContent?.trim() || `Team ${index * 2 + 1}`,
-        awayTeam: teamEls[1]?.textContent?.trim() || `Team ${index * 2 + 2}`,
-        homeInputName: scoreInputs[0]?.name || '',
-        homeInputId: scoreInputs[0]?.id || '',
-        awayInputName: scoreInputs[1]?.name || '',
-        awayInputId: scoreInputs[1]?.id || '',
-        scorerFieldName: scorerEl?.name || '',
-        scorerFieldType: scorerEl?.tagName?.toLowerCase() || '',
-        scorerOptions: scorerEl?.tagName === 'SELECT'
-          ? Array.from(scorerEl.options).map(o => ({ value: o.value, text: o.text }))
-          : []
+        index: i / 2,
+        matchId: String(i / 2),
+        homeTeam,
+        awayTeam,
+        homeInputName: '',
+        homeInputId: '',
+        awayInputName: '',
+        awayInputId: '',
+        scorerFieldName: '',
+        scorerFieldType: '',
+        scorerOptions: []
       });
-    });
+    }
 
-    return { success: true, selector: usedSelector, matches };
-  });
+    return { success: true, inputCount: inputs.length, matches };
+  }, PRED_INPUT_SEL);
 
   if (!result.success) {
-    console.error('Kon wedstrijden niet lezen. Debug:', JSON.stringify(result.debug, null, 2).substring(0, 1000));
+    console.error('extractMatches debug:', JSON.stringify(result.debug, null, 2).substring(0, 2000));
     throw new Error(
       `Kon de wedstrijden niet automatisch uitlezen op ${url}. ` +
-      'Mogelijk moet je de Scorito-URL of DOM-selectors aanpassen. Zie de serverlogs.'
+      'Zie de serverlogs voor debug-informatie over de aanwezige DOM-elementen.'
     );
   }
 
@@ -307,14 +309,20 @@ async function fetchRound(credentials, log = console.log) {
   try {
     const page = await browser.newPage();
     await setupAntiDetection(page);
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    );
+    await page.setViewport({ width: 390, height: 844 });
+    await page.setUserAgent(MOBILE_UA);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
     await navigateToPredictions(page, log);
+
+    // Wacht op React-render: wacht maximaal 20s op de score-inputs
+    log('Wachten op React-render van wedstrijdinputs...');
+    await page.waitForSelector(PRED_INPUT_SEL, { timeout: 20000 }).catch(() => {
+      log('Inputs nog niet zichtbaar na 20s — toch doorgaan...');
+    });
+    // Extra wachttijd voor volledige render
+    await new Promise(r => setTimeout(r, 2000));
 
     log('Wedstrijden uitlezen...');
     const title = await page.title().catch(() => 'Scorito WK 2026');
@@ -334,79 +342,109 @@ async function submitPredictions(credentials, predictions, log = console.log) {
   try {
     const page = await browser.newPage();
     await setupAntiDetection(page);
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    );
+    await page.setViewport({ width: 390, height: 844 });
+    await page.setUserAgent(MOBILE_UA);
     await setupPageOptimizations(page);
 
     await doLogin(page, credentials, log);
     await navigateToPredictions(page, log);
 
-    log(`${predictions.length} voorspellingen invullen...`);
+    // Wacht op score-inputs
+    log('Wachten op invulvelden...');
+    await page.waitForSelector(PRED_INPUT_SEL, { timeout: 20000 }).catch(() => {
+      log('Inputs nog niet zichtbaar — toch doorgaan...');
+    });
+    await new Promise(r => setTimeout(r, 2000));
 
-    for (const match of predictions) {
-      const { homeInputName, homeInputId, awayInputName, awayInputId, prediction } = match;
-      const homeSelector = homeInputName ? `input[name="${homeInputName}"]`
-        : homeInputId ? `#${homeInputId}` : null;
-      const awaySelector = awayInputName ? `input[name="${awayInputName}"]`
-        : awayInputId ? `#${awayInputId}` : null;
+    log(`${predictions.length} voorspellingen invullen via React-inputs...`);
 
-      if (homeSelector) {
-        try {
-          await page.click(homeSelector, { clickCount: 3 });
-          await page.type(homeSelector, String(prediction.homeScore), { delay: 25 });
-        } catch (e) { console.warn(`Thuisscore ${match.homeTeam}:`, e.message); }
-      }
-      if (awaySelector) {
-        try {
-          await page.click(awaySelector, { clickCount: 3 });
-          await page.type(awaySelector, String(prediction.awayScore), { delay: 25 });
-        } catch (e) { console.warn(`Uitscore ${match.awayTeam}:`, e.message); }
-      }
+    for (let i = 0; i < predictions.length; i++) {
+      const match = predictions[i];
+      const { homeScore, awayScore } = match.prediction;
+      const matchIdx = typeof match.index === 'number' ? match.index : i;
 
-      if (match.scorerFieldName && prediction.selectedScorers?.length > 0) {
-        const scorer = prediction.selectedScorers[0];
-        try {
-          if (match.scorerFieldType === 'select') {
-            const best = (match.scorerOptions || []).find(o =>
-              o.text.toLowerCase().includes(scorer.toLowerCase().split(' ').pop()) ||
-              scorer.toLowerCase().includes(o.text.toLowerCase().split(' ').pop())
-            );
-            if (best) await page.select(`select[name="${match.scorerFieldName}"]`, best.value);
-          } else {
-            await page.click(`input[name="${match.scorerFieldName}"]`, { clickCount: 3 });
-            await page.type(`input[name="${match.scorerFieldName}"]`, scorer, { delay: 25 });
+      try {
+        // Scroll naar het invoerveld zodat het in view komt
+        await page.evaluate((inputSel, idx) => {
+          const inputs = Array.from(document.querySelectorAll(inputSel));
+          const el = inputs[idx * 2];
+          if (el) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+        }, PRED_INPUT_SEL, matchIdx);
+        await new Promise(r => setTimeout(r, 200));
+
+        // Vul thuisscore en uitscore via React's native setter
+        const fillResult = await page.evaluate((inputSel, idx, home, away) => {
+          const inputs = Array.from(document.querySelectorAll(inputSel));
+          const homeInput = inputs[idx * 2];
+          const awayInput = inputs[idx * 2 + 1];
+          if (!homeInput || !awayInput) return { ok: false, total: inputs.length };
+
+          function fillReact(el, value) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+            setter.set.call(el, String(value));
+            el.dispatchEvent(new Event('input',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
           }
-        } catch (e) { console.warn(`Scorer ${match.homeTeam} vs ${match.awayTeam}:`, e.message); }
-      }
 
-      await new Promise(r => setTimeout(r, 100));
+          fillReact(homeInput, home);
+          fillReact(awayInput, away);
+          return { ok: true };
+        }, PRED_INPUT_SEL, matchIdx, homeScore, awayScore);
+
+        if (!fillResult.ok) {
+          console.warn(`Match ${matchIdx} (${match.homeTeam}): inputs niet gevonden (totaal: ${fillResult.total})`);
+          continue;
+        }
+
+        // Wacht op React state-update
+        await new Promise(r => setTimeout(r, 350));
+
+        // Klik de Bevestig-knop: zit 2 niveaus boven de eerste input van dit match
+        // DOM: input → div (scores-rij) → div (outer) → button
+        const clicked = await page.evaluate((inputSel, idx) => {
+          const inputs = Array.from(document.querySelectorAll(inputSel));
+          const homeInput = inputs[idx * 2];
+          if (!homeInput) return false;
+
+          const outerDiv = homeInput.parentElement?.parentElement;
+          if (!outerDiv) return false;
+
+          // Zoek een niet-disabled button in de outer container
+          const btn = outerDiv.querySelector('button:not([disabled])') ||
+                      outerDiv.querySelector('button');
+          if (!btn) return false;
+
+          btn.click();
+          return true;
+        }, PRED_INPUT_SEL, matchIdx);
+
+        if (clicked) {
+          log(`${match.homeTeam} ${homeScore}-${awayScore} ${match.awayTeam} ✓`);
+        } else {
+          log(`${match.homeTeam} ${homeScore}-${awayScore} ${match.awayTeam} (geen bevestig-knop gevonden)`);
+        }
+
+        // Wacht op API-call
+        await new Promise(r => setTimeout(r, 400));
+
+      } catch (e) {
+        console.warn(`Match ${matchIdx} fout:`, e.message);
+        log(`Fout bij ${match.homeTeam} vs ${match.awayTeam}: ${e.message}`);
+      }
     }
 
-    log('Screenshot maken voor indienen...');
+    log('Screenshot maken...');
     const previewShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
 
-    log('Formulier indienen...');
-    let submitted = false;
-    for (const sel of [
-      'button[type="submit"]', 'input[type="submit"]',
-      '[class*="submit"]', '[class*="save"]',
-      'button:has-text("Opslaan")', 'button:has-text("Indienen")'
-    ]) {
-      try { await page.click(sel); submitted = true; break; } catch {}
-    }
-    if (!submitted) throw new Error('Kon de submit-knop niet vinden op Scorito.');
-
-    log('Wachten op bevestiging...');
-    await new Promise(r => setTimeout(r, 3000));
+    // Wacht even zodat alle API-calls afgerond zijn
+    await new Promise(r => setTimeout(r, 2000));
 
     const confirmShot = await page.screenshot({ type: 'jpeg', quality: 72, encoding: 'base64' });
-    log('Ingediend ✓');
+    log('Alle voorspellingen ingediend ✓');
 
     return {
       success: true,
-      message: 'Voorspellingen succesvol ingediend op Scorito!',
+      message: `${predictions.length} voorspellingen succesvol ingediend op Scorito!`,
       screenshotBefore: `data:image/jpeg;base64,${previewShot}`,
       screenshotAfter: `data:image/jpeg;base64,${confirmShot}`
     };
