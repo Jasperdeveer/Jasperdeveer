@@ -121,7 +121,11 @@ async function doLogin(page, credentials, log) {
   let foundLogin = false;
   for (const loginUrl of loginUrls) {
     log(`Navigeren naar ${loginUrl}...`);
-    await safeGoto(page, loginUrl, 5000);
+    await safeGoto(page, loginUrl, 3000);
+    // Scorito is een React SPA — wacht tot de login-form gerenderd is (max 15s)
+    try {
+      await page.waitForSelector('input', { timeout: 15000 });
+    } catch {}
     const currentUrl = page.url();
     log(`Pagina geladen: ${currentUrl}`);
     const hasInputs = await page.$('input').then(el => !!el).catch(() => false);
