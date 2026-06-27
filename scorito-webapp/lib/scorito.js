@@ -65,6 +65,8 @@ async function setupAntiDetection(page) {
 }
 
 // Blokkeer alleen tracking/analytics — laat alle app-JS door zodat React kan renderen
+// termly.io bewust NIET geblokkeerd: Termly consent JS moet laden zodat de banner
+// afwijsbaar is en React zijn content kan renderen.
 async function setupPageOptimizations(page) {
   await page.setRequestInterception(true);
   page.on('request', req => {
@@ -75,14 +77,43 @@ async function setupPageOptimizations(page) {
     } else if (
       url.includes('google-analytics') || url.includes('gtag') ||
       url.includes('doubleclick') || url.includes('facebook.net') ||
-      url.includes('termly.io') || url.includes('/beacon') ||
-      url.includes('newrelic')
+      url.includes('/beacon') || url.includes('newrelic')
     ) {
       req.abort();
     } else {
       req.continue();
     }
   });
+}
+
+// Sluit de Termly cookie-melding als die aanwezig is.
+// De melding blokkeert React van het renderen van app-content.
+async function dismissCookieConsent(page, log) {
+  try {
+    await page.waitForSelector(
+      '[data-tid="banner-decline"], [data-tid="banner-accept"], button[id*="termly"], .termly-styles-consent-banner button',
+      { timeout: 6000 }
+    );
+    const clicked = await page.evaluate(() => {
+      const selectors = [
+        '[data-tid="banner-decline"]',
+        '[data-tid="banner-accept"]',
+        'button[id*="termly"]',
+        '.termly-styles-consent-banner button'
+      ];
+      for (const sel of selectors) {
+        const btn = document.querySelector(sel);
+        if (btn) { btn.click(); return true; }
+      }
+      return false;
+    });
+    if (clicked) {
+      await new Promise(r => setTimeout(r, 800));
+      if (log) log('Cookie-melding gesloten ✓');
+    }
+  } catch {
+    // Geen cookie-melding aanwezig — doorgaan
+  }
 }
 
 // Poll page.url() vanuit Node.js — overleeft React-navigatie (execution-context-safe)
@@ -122,6 +153,11 @@ async function doLogin(page, credentials, log) {
   for (const loginUrl of loginUrls) {
     log(`Navigeren naar ${loginUrl}...`);
     await safeGoto(page, loginUrl, 3000);
+
+    // Scorito toont eerst een Termly cookie-melding die React blokkeert van renderen.
+    // Sluit de melding zodat de login-form verschijnt.
+    await dismissCookieConsent(page, log);
+
     // Scorito is een React SPA — wacht tot de login-form gerenderd is (max 15s)
     try {
       await page.waitForSelector('input', { timeout: 15000 });
@@ -191,6 +227,8 @@ async function navigateToPredictions(page, log) {
   for (const url of directUrls) {
     await safeGoto(page, url, 8000);
     if (!page.url().includes('/login')) {
+      // Sluit cookie-melding als die ook op de invulpagina verschijnt
+      await dismissCookieConsent(page, log);
       log(`Invulpagina geladen: ${page.url()}`);
       return true;
     }
