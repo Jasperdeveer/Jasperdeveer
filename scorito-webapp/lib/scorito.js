@@ -144,9 +144,9 @@ async function safeGoto(page, url, waitMs = 5000) {
 
 async function doLogin(page, credentials, log) {
   const loginUrls = [
-    'https://mobile.scorito.com/login',
     `${SCORITO_URL}/account/login`,
-    `${SCORITO_URL}/login`
+    `${SCORITO_URL}/login`,
+    'https://mobile.scorito.com/login'
   ];
 
   let foundLogin = false;
@@ -217,7 +217,10 @@ async function doLogin(page, credentials, log) {
 
 async function navigateToPredictions(page, log) {
   log('Navigeren naar WK 2026 invulpagina...');
+
+  // Correcte URL voor de resterende WK 2026 wedstrijden (marketId=301, phase=4)
   const directUrls = [
+    `${SCORITO_URL}/footballtournament/301/4`,
     'https://mobile.scorito.com/wk-2026/invullen',
     'https://mobile.scorito.com/worldcup2026/invullen',
     `${SCORITO_URL}/wk-2026/invullen`,
@@ -226,29 +229,14 @@ async function navigateToPredictions(page, log) {
 
   for (const url of directUrls) {
     await safeGoto(page, url, 8000);
-    if (!page.url().includes('/login')) {
+    const currentUrl = page.url();
+    if (!currentUrl.includes('/login') && !currentUrl.includes('/account/login')) {
       // Sluit cookie-melding als die ook op de invulpagina verschijnt
       await dismissCookieConsent(page, log);
-      log(`Invulpagina geladen: ${page.url()}`);
+      log(`Invulpagina geladen: ${currentUrl}`);
       return true;
     }
-  }
-
-  log('Directe URL mislukt — zoeken naar invullink op de pagina...');
-  const linkPatterns = [
-    'a[href*="invullen"]', 'a[href*="wk-2026"]', 'a[href*="predict"]', 'a[href*="wk2026"]'
-  ];
-  for (const sel of linkPatterns) {
-    try {
-      const link = await page.$(sel);
-      if (link) {
-        const href = await link.evaluate(el => el.href);
-        log(`Link gevonden: ${href}`);
-        await link.click();
-        await new Promise(r => setTimeout(r, 5000));
-        if (!page.url().includes('/login')) return true;
-      }
-    } catch {}
+    log(`Omgeleid naar login bij ${url} — volgende proberen...`);
   }
 
   log('Geen invulpagina gevonden — doorgaan met huidige pagina.');
