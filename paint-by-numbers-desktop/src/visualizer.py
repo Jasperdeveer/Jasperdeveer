@@ -1,0 +1,748 @@
+"""
+Visualizer - Rendering engine for different visualization modes
+Converts JavaScript visualization.js to Python with OpenCV/NumPy
+"""
+
+import cv2
+import numpy as np
+from typing import Optional, List, Tuple, Dict
+import logging
+
+from image_processor import ImageProcessor
+from color_manager import ColorManager, Color
+from contour_tracer import ContourTracer
+
+logger = logging.getLogger(__name__)
+
+
+class Visualizer:
+    """High-performance visualization with OpenCV"""
+
+    def __init__(self):
+        self.image_processor: Optional[ImageProcessor] = None
+        self.color_manager: Optional[ColorManager] = None
+        self.contour_tracer = ContourTracer()
+
+        self.mode = 'original'  # 'original', 'paintByNumbers', 'lineDrawing'
+        self.show_numbers = True
+
+        # Cached data to avoid recomputation
+        self.quantized_image: Optional[np.ndarray] = None
+        self.color_map: Optional[np.ndarray] = None
+        self.contours: Optional[List[np.ndarray]] = None
+        self.regions: Optional[List[dict]] = None
+
+        # Parameters
+        self.parameters = {
+            'number_size': 16,
+            'line_width': 2,
+            'detail_level': 5,
+            'min_region_size': 20,
+            'simplify_epsilon': 1.0,
+            'smoothing_iterations': 2,
+            'corner_angle_threshold': 120,
+            'show_outlines': False,  # Default: outlines hidden (black is always visible)
+            'hide_black_fill': False  # New: Option to hide black fill in line drawing
+        }
+
+    def set_image_processor(self, processor: ImageProcessor):
+        """Set image processor"""
+        self.image_processor = processor
+
+    def set_color_manager(self, manager: ColorManager):
+        """Set color manager"""
+        self.color_manager = manager
+
+    def set_mode(self, mode: str):
+        """Set visualization mode"""
+        if mode in ['original', 'paintByNumbers', 'lineDrawing']:
+            self.mode = mode
+            logger.info(f"Set mode to: {mode}")
+        else:
+            logger.warning(f"Unknown mode: {mode}")
+
+    def set_parameters(self, **kwargs):
+        """Update parameters"""
+        self.parameters.update(kwargs)
+
+    def set_show_numbers(self, show: bool):
+        """Toggle number visibility"""
+        self.show_numbers = show
+
+    def render(self, progress_callback=None) -> Optional[np.ndarray]:
+        """
+        Render current mode to numpy array
+
+        Args:
+            progress_callback: Optional callback(percent, message)
+
+        Returns:
+            RGB image as numpy array
+        """
+        if self.image_processor is None or self.image_processor.original_image is None:
+            logger.error("No image loaded")
+            return None
+
+        if progress_callback:
+            progress_callback(0, f"Rendering {self.mode}...")
+
+        if self.mode == 'original':
+            return self.render_original()
+
+        elif self.mode == 'paintByNumbers':
+            return self.render_paint_by_numbers(progress_callback)
+
+        elif self.mode == 'lineDrawing':
+            return self.render_line_drawing(progress_callback)
+
+        return None
+
+    def render_original(self) -> np.ndarray:
+        """Render original image"""
+        result = self.image_processor.get_image_copy()
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
+        return result
+
+    def render_paint_by_numbers(self, progress_callback=None) -> Optional[np.ndarray]:
+        """
+        Render paint-by-numbers visualization
+        Shows quantized colors + contours + numbers
+
+        Args:
+            progress_callback: Optional callback(percent, message)
+
+        Returns:
+            RGB image
+        """
+        if self.color_manager is None or self.color_manager.get_color_count() == 0:
+            logger.warning("No colors available, rendering original")
+            return self.render_original()
+
+        if progress_callback:
+            progress_callback(10, "Quantizing image...")
+
+        # Quantize image if not cached
+        if self.quantized_image is None or self.color_map is None:
+            colors = self.color_manager.get_colors_as_array()
+            self.quantized_image, self.color_map = self.image_processor.quantize_image(colors)
+
+            if self.quantized_image is None:
+                return None
+
+        result = self.quantized_image.copy()
+
+        if progress_callback:
+            progress_callback(40, "Tracing contours...")
+
+        # Draw contours (if enabled)
+        if self.parameters.get('show_outlines'):
+            result = self.draw_contours(result)
+
+        # Fill black regions completely (ALWAYS, after contours so black stays on top)
+        height, width = result.shape[:2]
+        color_map_2d = self.color_map.reshape(height, width)
+        for color in self.color_manager.get_colors():
+            if hasattr(color, 'is_black') and color.is_black:
+                # Fill all pixels of this color with pure black
+                mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                result[mask] = [0, 0, 0]
+
+        if progress_callback:
+            progress_callback(70, "Placing numbers...")
+
+        # Draw numbers
+        if self.show_numbers:
+            result = self.draw_numbers(result)
+
+        if progress_callback:
+            progress_callback(100, "Complete!")
+
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
+
+        return result
+
+    def render_line_drawing(self, progress_callback=None) -> Optional[np.ndarray]:
+        """
+        Render line drawing (contours only on white background)
+
+        Args:
+            progress_callback: Optional callback(percent, message)
+
+        Returns:
+            RGB image
+        """
+        if self.color_manager is None or self.color_manager.get_color_count() == 0:
+            logger.warning("No colors available, using edge detection")
+            return self.render_edge_detection(progress_callback)
+
+        if progress_callback:
+            progress_callback(10, "Quantizing image...")
+
+        # Ensure we have quantized data
+        if self.quantized_image is None or self.color_map is None:
+            colors = self.color_manager.get_colors_as_array()
+            self.quantized_image, self.color_map = self.image_processor.quantize_image(colors)
+
+            if self.quantized_image is None:
+                return None
+
+        # Create white background
+        height, width = self.quantized_image.shape[:2]
+        result = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+        if progress_callback:
+            progress_callback(40, "Tracing contours...")
+
+        # Draw contours (if enabled)
+        if self.parameters.get('show_outlines'):
+            # For black regions, only draw external boundary (not internal details)
+            result = self.draw_contours(result, exclude_internal_for_black=True)
+
+        # Fill black regions completely (unless hide_black_fill is enabled)
+        if not self.parameters.get('hide_black_fill'):
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    # Fill all pixels of this color with pure black
+                    mask = color_map_2d == (color.number - 1)  # color numbers are 1-indexed
+                    result[mask] = [0, 0, 0]
+                    logger.info(f"Filled black regions: {np.sum(mask)} pixels")
+        else:
+            # When hiding black fill, draw only the contours of black regions
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    # Find contours of black regions
+                    mask = (color_map_2d == (color.number - 1)).astype(np.uint8)
+                    contours_black, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    # Draw black contours
+                    cv2.drawContours(result, contours_black, -1, (0, 0, 0), int(self.parameters['line_width']))
+                    logger.info(f"Drew {len(contours_black)} black contours")
+
+        if progress_callback:
+            progress_callback(70, "Placing numbers...")
+
+        # Draw numbers
+        if self.show_numbers:
+            result = self.draw_numbers(result)
+
+        if progress_callback:
+            progress_callback(100, "Complete!")
+
+        # Apply preview highlight if active
+        result = self.apply_preview_highlight(result)
+
+        return result
+
+    def render_edge_detection(self, progress_callback=None) -> Optional[np.ndarray]:
+        """Fallback: render using AI edge detection"""
+        if progress_callback:
+            progress_callback(0, "AI edge detection...")
+
+        edges, corners = self.image_processor.detect_edges_advanced(
+            use_multi_scale=True,
+            preserve_corners=True,
+            progress_callback=progress_callback
+        )
+
+        if edges is None:
+            return self.render_original()
+
+        # Convert edges to RGB
+        edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+        # Invert (white background, black lines)
+        edges_rgb = 255 - edges_rgb
+
+        return edges_rgb
+
+    def draw_contours(self, image: np.ndarray, exclude_internal_for_black: bool = False) -> np.ndarray:
+        """
+        Draw contours on image
+
+        Args:
+            image: RGB image
+            exclude_internal_for_black: If True, skip internal contours within black regions
+
+        Returns:
+            Image with contours drawn
+        """
+        if self.color_map is None:
+            return image
+
+        height, width = image.shape[:2]
+
+        # Trace contours if not cached
+        if self.contours is None:
+            self.contours = self.contour_tracer.trace_color_boundaries(
+                self.color_map,
+                width,
+                height,
+                simplify_epsilon=self.parameters['simplify_epsilon'],
+                preserve_corners=True
+            )
+
+        # If excluding internal black contours, create a mask
+        black_mask = None
+        if exclude_internal_for_black and self.color_manager:
+            black_mask = np.zeros((height, width), dtype=bool)
+            color_map_2d = self.color_map.reshape(height, width)
+            for color in self.color_manager.get_colors():
+                if hasattr(color, 'is_black') and color.is_black:
+                    mask = color_map_2d == (color.number - 1)
+                    black_mask |= mask
+
+            # Erode mask slightly so we keep the external boundary
+            if np.any(black_mask):
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                black_mask = cv2.erode(black_mask.astype(np.uint8), kernel).astype(bool)
+
+        # Draw contours
+        result = image.copy()
+        for contour in self.contours:
+            # Skip if this contour is entirely within black region
+            if black_mask is not None and len(contour) > 0:
+                # Sample a few points from the contour
+                sample_points = contour[::max(1, len(contour)//10)]
+                points_in_black = 0
+                for point in sample_points:
+                    x, y = int(point[0][0]), int(point[0][1])
+                    if 0 <= y < height and 0 <= x < width:
+                        if black_mask[y, x]:
+                            points_in_black += 1
+
+                # If most points are in black, skip this contour
+                if points_in_black > len(sample_points) * 0.8:
+                    continue
+
+            # Draw this contour
+            cv2.drawContours(result, [contour], -1, (0, 0, 0), int(self.parameters['line_width']))
+
+        return result
+
+    def draw_numbers(self, image: np.ndarray) -> np.ndarray:
+        """
+        Draw numbers on image
+
+        Args:
+            image: RGB image
+
+        Returns:
+            Image with numbers drawn
+        """
+        if self.color_map is None or self.color_manager is None:
+            return image
+
+        height, width = image.shape[:2]
+        color_map_2d = self.color_map.reshape(height, width)
+
+        # Find regions if not cached
+        if self.regions is None:
+            self.regions = self.contour_tracer.find_region_centers(
+                self.color_map,
+                width,
+                height,
+                min_region_size=self.parameters['min_region_size']
+            )
+
+        # Draw numbers on each region
+        result = image.copy()
+
+        # Check if preview mode is active
+        preview_index = self.color_manager.get_preview_color_index()
+        is_preview_active = preview_index is not None
+
+        for region in self.regions:
+            color_idx = region['color_idx']
+            color = self.color_manager.get_color_by_index(color_idx)
+
+            if color is None:
+                continue
+
+            # If preview is active, only show numbers for the preview color
+            if is_preview_active and color_idx != preview_index:
+                continue
+
+            # Skip numbers for white and black regions
+            if hasattr(color, 'is_white') and color.is_white:
+                continue  # Wit krijgt geen cijfers
+            if hasattr(color, 'is_black') and color.is_black:
+                continue  # Zwart krijgt geen cijfers
+
+            # Get optimal center for this region
+            center = self.contour_tracer.find_optimal_center(
+                color_map_2d,
+                width,
+                height,
+                region
+            )
+
+            # Calculate font size proportional to image dimensions
+            # Base size scales with image width (larger images = larger numbers)
+            base_size = (width / 1000.0) * (self.parameters['number_size'] / 16.0)
+            # Add region-based adjustment (smaller regions = slightly smaller numbers)
+            region_scale = min(1.0, np.sqrt(region['size']) / 100.0)
+            font_size = max(0.3, base_size * region_scale)
+
+            number_text = str(color.number)
+
+            # Get text size for proper positioning
+            # Use FONT_HERSHEY_DUPLEX for better quality than SIMPLEX
+            font = cv2.FONT_HERSHEY_DUPLEX
+            # Calculate thickness for sharper rendering
+            text_thickness = max(1, int(font_size * 3))
+            (text_width, text_height), _ = cv2.getTextSize(
+                number_text,
+                font,
+                font_size,
+                thickness=text_thickness
+            )
+
+            # Center text
+            text_x = int(center[0] - text_width / 2)
+            text_y = int(center[1] + text_height / 2)
+
+            # Draw white outline for visibility (thinner for sharper look)
+            outline_thickness = max(2, int(font_size * 4))
+            cv2.putText(
+                result,
+                number_text,
+                (text_x, text_y),
+                font,
+                font_size,
+                (255, 255, 255),  # White outline
+                thickness=outline_thickness,
+                lineType=cv2.LINE_AA
+            )
+
+            # Draw black number on top
+            cv2.putText(
+                result,
+                number_text,
+                (text_x, text_y),
+                font,
+                font_size,
+                (0, 0, 0),  # Black text
+                thickness=text_thickness,
+                lineType=cv2.LINE_AA
+            )
+
+        return result
+
+    def render_current_mode(self, progress_callback=None) -> Optional[np.ndarray]:
+        """
+        Re-render current mode without recomputing quantization
+        Used for toggling numbers in presentation mode
+
+        Args:
+            progress_callback: Optional callback(percent, message)
+
+        Returns:
+            RGB image
+        """
+        if self.mode == 'original':
+            return self.render_original()
+
+        elif self.mode == 'paintByNumbers' and self.quantized_image is not None:
+            result = self.quantized_image.copy()
+
+            # Draw contours if enabled
+            if self.parameters.get('show_outlines'):
+                result = self.draw_contours(result)
+
+            # Fill black regions completely (ALWAYS, even if outlines are off)
+            if self.color_map is not None and self.color_manager:
+                height, width = result.shape[:2]
+                color_map_2d = self.color_map.reshape(height, width)
+                for color in self.color_manager.get_colors():
+                    if hasattr(color, 'is_black') and color.is_black:
+                        mask = color_map_2d == (color.number - 1)
+                        result[mask] = [0, 0, 0]
+
+            if self.show_numbers:
+                result = self.draw_numbers(result)
+
+            # Apply preview highlight if active
+            result = self.apply_preview_highlight(result)
+
+            return result
+
+        elif self.mode == 'lineDrawing' and self.quantized_image is not None:
+            height, width = self.quantized_image.shape[:2]
+            result = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+            # Draw contours if enabled (exclude internal black contours)
+            if self.parameters.get('show_outlines'):
+                result = self.draw_contours(result, exclude_internal_for_black=True)
+
+            # Fill black regions completely (unless hide_black_fill is enabled)
+            if self.color_map is not None and self.color_manager:
+                if not self.parameters.get('hide_black_fill'):
+                    color_map_2d = self.color_map.reshape(height, width)
+                    for color in self.color_manager.get_colors():
+                        if hasattr(color, 'is_black') and color.is_black:
+                            mask = color_map_2d == (color.number - 1)
+                            result[mask] = [0, 0, 0]
+                else:
+                    # When hiding black fill, draw only the contours of black regions
+                    color_map_2d = self.color_map.reshape(height, width)
+                    for color in self.color_manager.get_colors():
+                        if hasattr(color, 'is_black') and color.is_black:
+                            # Find contours of black regions
+                            mask = (color_map_2d == (color.number - 1)).astype(np.uint8)
+                            contours_black, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                            # Draw black contours
+                            cv2.drawContours(result, contours_black, -1, (0, 0, 0), int(self.parameters['line_width']))
+
+            if self.show_numbers:
+                result = self.draw_numbers(result)
+
+            # Apply preview highlight if active
+            result = self.apply_preview_highlight(result)
+
+            return result
+
+        else:
+            # Fallback: full render
+            return self.render(progress_callback)
+
+    def apply_preview_highlight(self, image: np.ndarray) -> np.ndarray:
+        """
+        Apply preview highlight overlay to regions matching preview color
+
+        Args:
+            image: RGB image to apply highlight to
+
+        Returns:
+            Image with highlight overlay
+        """
+        if not self.color_manager or not self.color_manager.is_preview_active():
+            return image
+
+        if self.color_map is None:
+            return image
+
+        preview_index = self.color_manager.get_preview_color_index()
+        if preview_index is None:
+            return image
+
+        # Create result image
+        result = image.copy()
+
+        # Create mask for preview color regions
+        height, width = image.shape[:2]
+        color_map_2d = self.color_map.reshape(height, width)
+        mask = color_map_2d == preview_index
+
+        # Convert all NON-preview colors to grayscale
+        grayscale = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
+        grayscale_rgb = cv2.cvtColor(grayscale, cv2.COLOR_GRAY2RGB)
+
+        # Keep only preview color in color, make rest grayscale
+        result[~mask] = grayscale_rgb[~mask]
+
+        # Get preview color for contrast calculation
+        preview_color = self.color_manager.get_color_by_index(preview_index)
+        if preview_color:
+            # Choose best contrasting neon color (green, magenta, or cyan)
+            neon_colors = [
+                (0, 255, 0),      # Neon Green
+                (255, 0, 255),    # Magenta
+                (0, 255, 255)     # Cyan
+            ]
+
+            # Calculate color distance for each neon color
+            preview_rgb = np.array([preview_color.r, preview_color.g, preview_color.b], dtype=np.float32)
+            best_contrast = 0
+            contour_color = (0, 255, 0)  # Default: neon green
+
+            for neon in neon_colors:
+                neon_rgb = np.array(neon, dtype=np.float32)
+                # Euclidean distance in RGB space for contrast
+                distance = np.sqrt(np.sum((preview_rgb - neon_rgb) ** 2))
+                if distance > best_contrast:
+                    best_contrast = distance
+                    contour_color = neon
+
+            # Add subtle hatched overlay (diagonal lines pattern)
+            overlay = result.copy()
+            height, width = result.shape[:2]
+
+            # Create diagonal line pattern on hover areas only
+            for y in range(0, height, 8):  # Every 8 pixels
+                for x in range(width):
+                    if (x + y) % 16 < 2 and mask[y, x]:  # Thin diagonal lines
+                        overlay[y, x] = [int(c * 0.85) for c in overlay[y, x]]  # Darken slightly
+
+            # Blend overlay (subtle)
+            result = cv2.addWeighted(result, 0.85, overlay, 0.15, 0)
+
+            # Find contours of the mask
+            mask_uint8 = mask.astype(np.uint8) * 255
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Draw thin neon contours (1px for subtle look)
+            cv2.drawContours(result, contours, -1, contour_color, thickness=1)
+
+        return result
+
+    def clear_cache(self):
+        """Clear cached rendering data"""
+        self.quantized_image = None
+        self.color_map = None
+        self.contours = None
+        self.regions = None
+        logger.info("Cleared rendering cache")
+
+    def export_svg(self, mode: str = 'lineDrawing', include_numbers: bool = True) -> Optional[str]:
+        """
+        Export current visualization as SVG
+
+        Args:
+            mode: 'lineDrawing' or 'colored' (paint-by-numbers with colors)
+            include_numbers: Whether to include numbers in the SVG
+
+        Returns:
+            SVG string
+        """
+        if self.color_map is None or self.contours is None:
+            logger.error("Cannot export SVG: no color map or contours available")
+            return None
+
+        if not self.color_manager:
+            logger.error("Cannot export SVG: no color manager")
+            return None
+
+        try:
+            # Get image dimensions
+            height, width = self.quantized_image.shape[:2] if self.quantized_image is not None else (800, 800)
+            colors = self.color_manager.get_colors()
+
+            # Start SVG
+            svg_lines = []
+            svg_lines.append(f'<?xml version="1.0" encoding="UTF-8"?>')
+            svg_lines.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">')
+
+            # Add background
+            if mode == 'lineDrawing':
+                svg_lines.append(f'  <rect width="{width}" height="{height}" fill="white"/>')
+            else:
+                svg_lines.append(f'  <rect width="{width}" height="{height}" fill="#f0f0f0"/>')
+
+            # Group for regions
+            svg_lines.append('  <g id="regions">')
+
+            # Draw each color's regions
+            for color in colors:
+                color_index = color.number - 1
+                color_hex = color.to_hex()
+
+                # Get contours for this color
+                if color_index < len(self.contours):
+                    color_contours = self.contours[color_index]
+
+                    if color_contours:
+                        # Create path for all contours of this color
+                        for contour in color_contours:
+                            if len(contour) < 3:  # Need at least 3 points
+                                continue
+
+                            # Build SVG path
+                            path_data = []
+                            for i, point in enumerate(contour):
+                                x, y = int(point[0][0]), int(point[0][1])
+                                if i == 0:
+                                    path_data.append(f"M {x} {y}")
+                                else:
+                                    path_data.append(f"L {x} {y}")
+                            path_data.append("Z")  # Close path
+
+                            path_str = " ".join(path_data)
+
+                            # Style based on mode
+                            if mode == 'lineDrawing':
+                                # White fill with black outline
+                                if hasattr(color, 'is_black') and color.is_black:
+                                    fill = "black"
+                                else:
+                                    fill = "white"
+                                stroke = "black"
+                                stroke_width = self.parameters.get('line_width', 0.5)
+                            else:
+                                # Colored fill
+                                fill = color_hex
+                                stroke = "black"
+                                stroke_width = 1.0
+
+                            svg_lines.append(f'    <path d="{path_str}" fill="{fill}" stroke="{stroke}" stroke-width="{stroke_width}"/>')
+
+            svg_lines.append('  </g>')
+
+            # Add numbers if requested
+            if include_numbers and mode == 'lineDrawing':
+                svg_lines.append('  <g id="numbers">')
+
+                # Get region centers and sizes
+                if self.regions:
+                    for color in colors:
+                        color_index = color.number - 1
+
+                        # Skip white colors (no numbers)
+                        if hasattr(color, 'is_white') and color.is_white:
+                            continue
+
+                        # Skip black colors (no numbers)
+                        if hasattr(color, 'is_black') and color.is_black:
+                            continue
+
+                        if color_index < len(self.regions):
+                            for region in self.regions[color_index]:
+                                cx, cy, area = region['center_x'], region['center_y'], region['area']
+
+                                # Determine font size based on region area
+                                min_size = self.parameters.get('number_size', 16)
+                                if area < 50:
+                                    continue  # Too small for numbers
+
+                                font_size = max(min_size, int(np.sqrt(area) * 0.3))
+                                font_size = min(font_size, 100)  # Cap at 100
+
+                                # Add text
+                                svg_lines.append(
+                                    f'    <text x="{int(cx)}" y="{int(cy)}" '
+                                    f'font-family="Arial, sans-serif" font-size="{font_size}" '
+                                    f'font-weight="bold" text-anchor="middle" '
+                                    f'dominant-baseline="middle" '
+                                    f'fill="black" stroke="white" stroke-width="2" paint-order="stroke">'
+                                    f'{color.number}</text>'
+                                )
+
+                svg_lines.append('  </g>')
+
+            # Close SVG
+            svg_lines.append('</svg>')
+
+            svg_content = '\n'.join(svg_lines)
+            logger.info(f"SVG export successful: {len(svg_lines)} lines")
+            return svg_content
+
+        except Exception as e:
+            logger.error(f"SVG export failed: {e}", exc_info=True)
+            return None
+
+    def get_region_stats(self) -> Optional[Dict]:
+        """
+        Get statistics for color regions
+
+        Returns:
+            Dictionary with region statistics
+        """
+        if self.color_map is None or self.color_manager is None:
+            return None
+
+        return self.image_processor.calculate_region_stats(
+            self.color_map,
+            self.color_manager.get_colors_as_array()
+        )

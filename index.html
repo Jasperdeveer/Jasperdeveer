@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSPR Beamer Setup</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 JSPR Beamer Setup <span class="version">v6.0 AI Pro</span></h1>
+            <p>Voor street art en spuitbus projecten met beamer projectie</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Left Panel: Controls -->
+            <div class="control-panel">
+                <section class="panel-section">
+                    <h2>Afbeelding</h2>
+                    <input type="file" id="imageUpload" accept="image/*">
+                    <div id="imagePreview"></div>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Visualisatie Mode</h2>
+                    <div class="mode-buttons">
+                        <button id="modeOriginal" class="mode-btn active" data-mode="original">Origineel</button>
+                        <button id="modePaintByNumbers" class="mode-btn" data-mode="paintByNumbers">Paint-by-Numbers</button>
+                        <button id="modeLineDrawing" class="mode-btn" data-mode="lineDrawing">Lijntekening</button>
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Parameters</h2>
+                    <div class="parameter">
+                        <label for="colorCount">Aantal kleuren: <span id="colorCountValue">8</span></label>
+                        <input type="range" id="colorCount" min="2" max="32" value="8">
+                    </div>
+                    <div class="parameter">
+                        <label for="numberSize">Cijfergrootte: <span id="numberSizeValue">Auto</span></label>
+                        <input type="range" id="numberSize" min="8" max="48" value="16">
+                    </div>
+                    <div class="parameter">
+                        <label for="lineWidth">Lijndikte: <span id="lineWidthValue">2</span>px</label>
+                        <input type="range" id="lineWidth" min="1" max="10" value="2">
+                    </div>
+                    <div class="parameter">
+                        <label for="detailLevel">Detailniveau: <span id="detailLevelValue">5</span></label>
+                        <input type="range" id="detailLevel" min="1" max="10" value="5">
+                    </div>
+                    <div class="parameter">
+                        <label for="minRegionSize">Min. vlakgrootte: <span id="minRegionSizeValue">50</span>px</label>
+                        <input type="range" id="minRegionSize" min="10" max="500" value="50">
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Doekafmetingen</h2>
+                    <div class="parameter">
+                        <label for="canvasWidth">Breedte (cm): <span id="canvasWidthValue">100</span></label>
+                        <input type="number" id="canvasWidth" min="10" max="1000" value="100">
+                    </div>
+                    <div class="parameter">
+                        <label for="canvasHeight">Hoogte (cm): <span id="canvasHeightValue">100</span></label>
+                        <input type="number" id="canvasHeight" min="10" max="1000" value="100">
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Kleurenpalet</h2>
+                    <button id="detectColors" class="primary-btn">Detecteer Kleuren</button>
+                    <button id="undoBtn" class="secondary-btn" disabled>Ongedaan maken</button>
+                    <div id="colorPalette"></div>
+                </section>
+
+                <section class="panel-section">
+                    <h2>Export</h2>
+                    <button id="exportSVG" class="primary-btn">Download SVG</button>
+                    <button id="exportPNG" class="primary-btn">Download PNG</button>
+                </section>
+            </div>
+
+            <!-- Center Panel: Canvas -->
+            <div class="canvas-panel">
+                <div class="canvas-controls">
+                    <button id="zoomIn">+</button>
+                    <button id="zoomOut">-</button>
+                    <button id="zoomReset">Reset</button>
+                    <button id="presentationMode">🖥️ Presentatie Mode</button>
+                    <span id="zoomLevel">100%</span>
+                </div>
+                <div class="canvas-wrapper" id="canvasWrapper">
+                    <canvas id="mainCanvas"></canvas>
+                </div>
+            </div>
+
+            <!-- Right Panel: Legend -->
+            <div class="legend-panel">
+                <h2>Legenda</h2>
+                <div id="legend"></div>
+                <div id="sprayCalculations" class="spray-info">
+                    <h3>Spuitbus Berekening</h3>
+                    <p class="info-text">Montana Black: ~2-2.5m² per bus</p>
+                    <div id="sprayResults"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Indicator with Progress Bar -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-text">Bezig...</div>
+            <div class="loading-step" id="loadingStep">Initialiseren</div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TensorFlow.js for AI-powered features (optional but recommended) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+
+    <script src="utils.js"></script>
+    <script src="colorUtils.js"></script>
+    <script src="aiEdgeDetector.js"></script>
+    <script src="imageProcessor.js"></script>
+    <script src="colorManager.js"></script>
+    <script src="contourTracer.js"></script>
+    <script src="visualization.js"></script>
+    <script src="presentationMode.js"></script>
+    <script src="legend.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

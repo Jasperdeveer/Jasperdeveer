@@ -1,0 +1,27 @@
+# Paint-by-Numbers Desktop App - Python Dependencies
+# For macOS (M1/M2/M3 Apple Silicon compatible) - Updated
+
+# GUI Framework - Let PyQt5 manage its own Qt version
+PyQt5>=5.15.10
+
+# Image Processing & Computer Vision
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.24.0,<2.0.0
+Pillow>=10.0.0
+
+# Machine Learning (K-means clustering)
+scikit-learn>=1.3.0
+scikit-image>=0.22.0
+
+# Export functionality
+svgwrite>=1.4.0
+
+# Utilities
+scipy>=1.11.0
+
+# App bundling for macOS
+py2app>=0.28.0
+
+# Development (optional)
+pytest>=7.4.0

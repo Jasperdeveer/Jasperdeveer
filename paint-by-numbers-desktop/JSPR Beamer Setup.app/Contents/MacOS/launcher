@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# JSPR Beamer Setup Launcher
+# Wrapper that executes the real launcher script outside the .app bundle
+
+# Get the directory where this app bundle is located
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# Execute the external launcher script
+exec "$APP_DIR/start_app.sh"

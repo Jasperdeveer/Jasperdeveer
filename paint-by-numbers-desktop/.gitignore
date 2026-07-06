@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# PyQt
+*.ui.py
+*.qrc.py
+
+# py2app
+build/
+dist/
+*.app
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data
+*.png
+*.jpg
+*.jpeg
+*.bmp
+!assets/*.png
+!assets/*.jpg

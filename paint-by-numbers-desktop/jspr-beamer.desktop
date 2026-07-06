@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=JSPR Beamer Setup
+Comment=Paint-by-Numbers Generator
+Exec=/home/user/Jasperdeveer/paint-by-numbers-desktop/launch.sh
+Icon=/home/user/Jasperdeveer/paint-by-numbers-desktop/assets/icon.png
+Terminal=true
+Categories=Graphics;Photography;
+Keywords=paint;numbers;art;coloring;
+StartupNotify=true
