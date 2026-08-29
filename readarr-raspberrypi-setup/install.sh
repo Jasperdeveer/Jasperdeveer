@@ -40,7 +40,7 @@ if ! command -v rclone >/dev/null 2>&1; then
 fi
 
 echo "==> Mappen aanmaken..."
-mkdir -p "$SETUP_DIR/config/readarr" "$SETUP_DIR/config/prowlarr" "$SETUP_DIR/library" "$SETUP_DIR/logs"
+mkdir -p "$SETUP_DIR/config/readarr" "$SETUP_DIR/config/prowlarr" "$SETUP_DIR/config/decypharr" "$SETUP_DIR/library" "$SETUP_DIR/logs"
 sudo mkdir -p /mnt/torbox
 sudo chown "$USER" /mnt/torbox
 
@@ -125,21 +125,42 @@ echo "==> Mount + sync-timer starten..."
 sudo systemctl enable --now rclone-torbox-mount.service
 sudo systemctl enable --now dropbox-sync.timer
 
-echo "==> Readarr + Prowlarr starten..."
+echo "==> Readarr + Prowlarr + Decypharr starten..."
 cd "$SETUP_DIR"
 docker compose up -d
 
-echo "==> Readarr + Prowlarr automatisch configureren (root folder, Torbox-downloadclient, Prowlarr<->Readarr sync)..."
-"$SETUP_DIR/scripts/configure-apps.sh" || echo "!! configure-apps.sh niet volledig gelukt -- draai 'm later opnieuw: ./scripts/configure-apps.sh"
+TAILSCALE_IP="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null || echo 'TAILSCALE-IP-VAN-JE-PI')"
 
-TAILSCALE_IP="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null || echo '<tailscale-ip-van-je-pi>')"
+cat <<WIZARDEOF
+
+==> EENMALIGE HANDMATIGE STAP: Decypharr opzetten (Torbox-koppeling)
+    Torbox heeft geen ingebouwde qBittorrent-compatibele API -- Decypharr
+    vertaalt tussen de qBittorrent-API (die Readarr verwacht) en Torbox's
+    eigen API. Dit vereist een korte, interactieve setup-wizard die niet
+    volledig gescript kan worden. Ga naar:
+
+      http://${TAILSCALE_IP}:8282
+
+    en doorloop de wizard:
+      - Debrid provider: Torbox, met je TORBOX_API_KEY (staat in .env)
+      - Usenet: overslaan, tenzij je dat expliciet wilt (zie README.md)
+      - Mount type: "None" -- we gebruiken de bestaande rclone-mount op
+        /mnt/torbox, Decypharr hoeft zelf niets te mounten
+
+    Druk daarna op Enter om verder te gaan met de automatische configuratie.
+WIZARDEOF
+read -r -p ""
+
+echo "==> Readarr + Prowlarr automatisch configureren (root folder, Decypharr-downloadclient, Prowlarr<->Readarr sync)..."
+"$SETUP_DIR/scripts/configure-apps.sh" || echo "!! configure-apps.sh niet volledig gelukt -- draai 'm later opnieuw: ./scripts/configure-apps.sh"
 
 cat <<EOF
 
 ==> Installatie klaar.
 
-  Readarr:  http://${TAILSCALE_IP}:8787
-  Prowlarr: http://${TAILSCALE_IP}:9696
+  Readarr:   http://${TAILSCALE_IP}:8787
+  Prowlarr:  http://${TAILSCALE_IP}:9696
+  Decypharr: http://${TAILSCALE_IP}:8282
 
 Nog te doen (dit vereist echt jouw eigen accounts/keuzes, kan niet worden
 geautomatiseerd):

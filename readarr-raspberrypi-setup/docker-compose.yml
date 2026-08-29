@@ -1,7 +1,10 @@
 services:
   readarr:
-    image: lscr.io/linuxserver/readarr:latest
+    image: ghcr.io/pennydreadful/bookshelf:hardcover
+    platform: linux/arm64/v8
     container_name: readarr
+    security_opt:
+      - seccomp=unconfined
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -17,7 +20,10 @@ services:
 
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
+    platform: linux/arm64/v8
     container_name: prowlarr
+    security_opt:
+      - seccomp=unconfined
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -26,4 +32,20 @@ services:
       - ./config/prowlarr:/config
     ports:
       - "9696:9696"
+    restart: unless-stopped
+
+  decypharr:
+    image: ghcr.io/sirrobot01/decypharr:latest
+    platform: linux/arm64/v8
+    container_name: decypharr
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Amsterdam}
+    volumes:
+      - ./config/decypharr:/app
+    ports:
+      - "8282:8282"
     restart: unless-stopped
