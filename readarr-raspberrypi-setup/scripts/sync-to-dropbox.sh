@@ -6,7 +6,7 @@ set -euo pipefail
 
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${READARR_LIBRARY_DIR:-$SETUP_DIR/library}"
-DEST="${DROPBOX_REMOTE:-dropbox:Readarr-Library}"
+DEST="${DROPBOX_REMOTE:-dropbox:Jasper de Veer/Readarr-Library}"
 LOG_DIR="$SETUP_DIR/logs"
 LOG_FILE="$LOG_DIR/dropbox-sync.log"
 

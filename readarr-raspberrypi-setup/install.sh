@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
-# Eenmalige host-setup voor Readarr + Torbox + Dropbox-sync op een Raspberry Pi.
-# Draai dit script rechtstreeks op de Pi (via SSH over Tailscale), NIET lokaal.
+# Eenmalige, zoveel mogelijk geautomatiseerde setup voor Readarr + Torbox +
+# Dropbox-sync op een Raspberry Pi. Draai dit rechtstreeks op de Pi (via SSH
+# over je bestaande Tailscale-verbinding), NIET lokaal.
 #
-#   ssh pi@<tailscale-hostname>
-#   git clone <deze-repo>
+#   ssh <gebruiker>@<tailscale-hostname-van-je-pi>
+#   git clone https://github.com/Jasperdeveer/Jasperdeveer.git
 #   cd Jasperdeveer/readarr-raspberrypi-setup
+#   cp .env.example .env && nano .env      # vul TORBOX_EMAIL + TORBOX_API_KEY in
 #   ./install.sh
 set -euo pipefail
 
 SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ ! -f "$SETUP_DIR/.env" ]; then
+  echo "Geen .env gevonden. Maak 'm aan met: cp .env.example .env"
+  echo "Vul daarna TORBOX_EMAIL en TORBOX_API_KEY in en draai dit script opnieuw."
+  exit 1
+fi
+set -a
+source "$SETUP_DIR/.env"
+set +a
 
 echo "==> Controleer Docker..."
 if ! command -v docker >/dev/null 2>&1; then
@@ -31,6 +42,34 @@ fi
 echo "==> Mappen aanmaken..."
 mkdir -p "$SETUP_DIR/config/readarr" "$SETUP_DIR/config/prowlarr" "$SETUP_DIR/library" "$SETUP_DIR/logs"
 sudo mkdir -p /mnt/torbox
+sudo chown "$USER" /mnt/torbox
+
+echo "==> Torbox rclone-remote (WebDAV) automatisch aanmaken..."
+if [ -z "${TORBOX_EMAIL:-}" ] || [ -z "${TORBOX_API_KEY:-}" ]; then
+  echo "!! TORBOX_EMAIL / TORBOX_API_KEY ontbreken in .env -- sla Torbox-remote over."
+  echo "   Vul .env aan en draai dan: rclone config create torbox webdav url=https://webdav.torbox.app vendor=other user=<email> pass=\$(rclone obscure <apikey>)"
+elif rclone listremotes | grep -q '^torbox:$'; then
+  echo "  Remote 'torbox' bestaat al, sla over."
+else
+  rclone config create torbox webdav \
+    url=https://webdav.torbox.app \
+    vendor=other \
+    user="$TORBOX_EMAIL" \
+    pass="$(rclone obscure "$TORBOX_API_KEY")"
+  echo "  OK. (Controleer bij problemen de actuele WebDAV-host/credentials in je"
+  echo "   Torbox-account onder Settings -> Integrations -- Torbox kan dit wijzigen.)"
+fi
+
+echo "==> Dropbox rclone-remote..."
+if rclone listremotes | grep -q '^dropbox:$'; then
+  echo "  Remote 'dropbox' bestaat al, sla over."
+else
+  echo "  !! Dit is de enige stap die ik niet voor je kan automatiseren: Dropbox"
+  echo "     vereist een interactieve OAuth-login met jouw account."
+  echo "     Start nu de configuratie (volg de link, log in bij Dropbox):"
+  echo ""
+  rclone config create dropbox dropbox
+fi
 
 echo "==> systemd unit voor de Torbox WebDAV-mount schrijven..."
 sudo tee /etc/systemd/system/rclone-torbox-mount.service >/dev/null <<EOF
@@ -63,6 +102,7 @@ Description=Sync Readarr-bibliotheek naar Dropbox
 [Service]
 Type=oneshot
 User=${USER}
+EnvironmentFile=-${SETUP_DIR}/.env
 ExecStart=${SETUP_DIR}/scripts/sync-to-dropbox.sh
 EOF
 
@@ -81,32 +121,30 @@ EOF
 
 sudo systemctl daemon-reload
 
-cat <<'EOF'
+echo "==> Mount + sync-timer starten..."
+sudo systemctl enable --now rclone-torbox-mount.service
+sudo systemctl enable --now dropbox-sync.timer
 
-==> Basis-installatie klaar. Vervolgstappen (handmatig, eenmalig):
+echo "==> Readarr + Prowlarr starten..."
+cd "$SETUP_DIR"
+docker compose up -d
 
-1. Configureer rclone remotes:
-     rclone config
-   - Maak remote "torbox" aan (type: webdav), url https://webdav.torbox.app,
-     vendor "other", user = je Torbox e-mailadres, pass = je Torbox API key.
-     (Controleer host/credentials in je Torbox account -> Settings -> Integrations,
-      deze kunnen door Torbox worden aangepast.)
-   - Maak remote "dropbox" aan (type: dropbox) en volg de OAuth-link.
-     Geen browser op de Pi? Draai "rclone authorize dropbox" op je laptop en
-     plak het resultaat terug in de Pi-config.
+echo "==> Readarr + Prowlarr automatisch configureren (root folder, Torbox-downloadclient, Prowlarr<->Readarr sync)..."
+"$SETUP_DIR/scripts/configure-apps.sh" || echo "!! configure-apps.sh niet volledig gelukt -- draai 'm later opnieuw: ./scripts/configure-apps.sh"
 
-2. Start de mount + sync-timer:
-     sudo systemctl enable --now rclone-torbox-mount.service
-     sudo systemctl enable --now dropbox-sync.timer
+TAILSCALE_IP="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null || echo '<tailscale-ip-van-je-pi>')"
 
-3. Start Readarr + Prowlarr:
-     cp .env.example .env   # pas PUID/PGID/TZ aan indien nodig
-     docker compose up -d
+cat <<EOF
 
-4. Open de webinterfaces via je Tailscale-IP:
-     http://<tailscale-ip>:8787   (Readarr)
-     http://<tailscale-ip>:9696   (Prowlarr)
+==> Installatie klaar.
 
-Zie README.md voor het configureren van Torbox als download-client en
-Prowlarr-indexers binnen Readarr.
+  Readarr:  http://${TAILSCALE_IP}:8787
+  Prowlarr: http://${TAILSCALE_IP}:9696
+
+Nog te doen (dit vereist echt jouw eigen accounts/keuzes, kan niet worden
+geautomatiseerd):
+  - Indexers toevoegen in Prowlarr (Settings -> Indexers) met je eigen
+    trackeraccounts.
+
+Zie README.md voor details en troubleshooting.
 EOF
