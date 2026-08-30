@@ -12,6 +12,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `docker-compose.arr-network.yml` | Override om Shelfarr in het Docker-netwerk van Prowlarr te hangen. |
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
+| `CLAUDE.md` | Context voor een Claude Code-sessie die op de Pi zelf draait. |
 | `scripts/tailscale-serve.sh` | Zet de web-UI achter HTTPS op je tailnet. |
 
 ## Hoe dit in je stack past
@@ -32,6 +33,19 @@ Dat is geen toeval: **Readarr is op 27 juni 2025 gearchiveerd**, omdat het volle
 leunde op de Goodreads-metadata-API die offline ging. Shelfarr haalt metadata bij
 Open Library en Hardcover en heeft dat probleem niet. Je kunt beide prima een tijdje
 naast elkaar draaien — let dan op de twee punten in [stap 6](#6-naast-readarr-draaien).
+
+## Dit vanaf de Pi zelf afmaken
+
+Wil je de configuratie niet met de hand narekenen, installeer dan Claude Code op de
+Pi — arm64 wordt ondersteund, mits 4 GB RAM of meer:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+cd ~/Jasperdeveer/shelfarr-stack && claude
+```
+
+`CLAUDE.md` in deze map bevat de volledige context van je stack en wat er nog
+uitgezocht moet worden, dus die sessie begint niet blanco.
 
 ## Vereisten
 
