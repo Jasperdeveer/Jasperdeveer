@@ -46,7 +46,8 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
 
 ## Werkwijze
 
-- Draai `./scripts/stack-check.sh` als eerste.
+- Draai `./scripts/make-env.sh --dry-run` als eerste; die leidt alles af behalve de
+  bibliotheekpaden. `./scripts/stack-check.sh` geeft het volledige beeld.
 - **Verander niets** aan Readarr, Prowlarr, gluetun, Decypharr of de rclone-mount.
   Shelfarr komt ernaast te staan, niet in de plaats van.
 - Valideer compose-wijzigingen met `docker compose config` vóór je iets start.

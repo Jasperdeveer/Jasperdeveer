@@ -1,0 +1,13 @@
+# Override: mount óók de rclone-mount op zijn eigen pad.
+#
+# Nodig wanneer Decypharr zijn symlinks buiten /mnt/torbox neerzet en ze naar
+# bestanden ín die mount wijzen. De container moet dan beide paden 1-op-1 zien,
+# anders wijst de symlink binnen de container nergens heen.
+#
+# `scripts/make-env.sh` zegt of je dit nodig hebt en zet zo nodig de juiste
+# COMPOSE_FILE in .env.
+
+services:
+  shelfarr:
+    volumes:
+      - ${SYMLINK_TARGET_ROOT:-/mnt/torbox}:${SYMLINK_TARGET_ROOT:-/mnt/torbox}:ro,rslave

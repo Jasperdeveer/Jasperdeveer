@@ -9,7 +9,9 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | Bestand | Waarvoor |
 |---|---|
 | `docker-compose.yml` | De stack. Shelfarr draait standaard; extra's zitten achter profiles. |
-| `docker-compose.arr-network.yml` | Override om Shelfarr in het Docker-netwerk van Prowlarr te hangen. |
+| `docker-compose.arr-network.yml` | Override om Shelfarr in het Docker-netwerk van gluetun te hangen. |
+| `docker-compose.symlinks.yml` | Override die de rclone-mount óók op zijn eigen pad aankoppelt. |
+| `scripts/make-env.sh` | Leest de draaiende stack uit en schrijft daaruit `.env`. |
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
 | `CLAUDE.md` | Context voor een Claude Code-sessie die op de Pi zelf draait. |
@@ -105,30 +107,43 @@ uitgezocht moet worden, dus die sessie begint niet blanco.
 ## 1. Installeren
 
 ```bash
-# op de Pi
-git clone https://github.com/Jasperdeveer/Jasperdeveer.git
-cd Jasperdeveer/shelfarr-stack
+cd ~/Jasperdeveer && git pull
+cd shelfarr-stack
 
-cp .env.example .env
+./scripts/make-env.sh --dry-run     # kijken wat het afleidt
+./scripts/make-env.sh               # .env schrijven
+```
 
-# leest je stack uit en zegt welke waarden in .env horen
-./scripts/stack-check.sh
+`make-env.sh` leest gluetun's netwerknaam, de rclone-mount, Decypharr's downloadmap en
+je PUID/PGID en tijdzone rechtstreeks uit het draaiende systeem, en zet meteen de juiste
+`COMPOSE_FILE` — inclusief `docker-compose.symlinks.yml` als Decypharr symlinks buiten de
+mount neerzet die naar bestanden erbinnen wijzen.
 
-nano .env                    # ARR_NETWORK, paden, PUID/PGID, tijdzone
+Wat het **niet** kan weten, is waar je boeken heen moeten. Controleer die twee regels:
 
-sudo mkdir -p /mnt/ssd/shelfarr/data /mnt/ssd/media/{audiobooks,ebooks}
-sudo chown -R "$(id -u):$(id -g)" /mnt/ssd/shelfarr /mnt/ssd/media
+```bash
+grep -E 'AUDIOBOOKS_PATH|EBOOKS_PATH' .env
+```
 
+Ze moeten binnen de map liggen die je Dropbox-timer synct, en buiten de root folder van
+Bookshelf. Klopt het niet, pas het aan. Daarna:
+
+```bash
+mkdir -p "$(grep ^AUDIOBOOKS_PATH .env | cut -d= -f2)" "$(grep ^EBOOKS_PATH .env | cut -d= -f2)"
 docker compose up -d
 docker compose logs -f shelfarr
 ```
 
-`COMPOSE_FILE` in `.env` zorgt dat de netwerk-override automatisch meekomt, dus
-`docker compose up -d` volstaat.
-
 De eerste start duurt op een Pi een minuut of twee. Ga daarna naar
 `http://100.120.136.112:5056` — **de eerste account die je registreert wordt admin**,
 dus doe dat meteen zelf.
+
+Controleer voor je verder gaat of de container de mount en Decypharr ziet:
+
+```bash
+docker compose exec shelfarr ls /mnt/torbox | head
+docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo decypharr-bereikbaar
+```
 
 ## 2. Toegang via Tailscale
 
