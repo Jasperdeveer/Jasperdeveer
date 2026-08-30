@@ -91,6 +91,25 @@ fi
 [ -n "$DECY_PASS" ] && note "wachtwoord ingelezen (${#DECY_PASS} tekens), URL $DECY_URL"
 
 hdr "Toepassen in Shelfarr"
+
+# `docker compose exec` slaat de entrypoint over, en juist die zet de
+# Active Record-encryptiesleutels in de omgeving — zonder hen weigert
+# production.rb te booten. We laden ze hier uit dezelfde bestanden op het
+# storage-volume, en laten rails als de `rails`-gebruiker draaien zodat de
+# SQLite-hulpbestanden niet van root worden.
+RUNNER='
+[ -f /rails/storage/.encryption_keys ] && . /rails/storage/.encryption_keys
+if [ -z "${SECRET_KEY_BASE:-}" ] && [ -f /rails/storage/.secret_key_base ]; then
+  SECRET_KEY_BASE=$(cat /rails/storage/.secret_key_base)
+  export SECRET_KEY_BASE
+fi
+if [ "$(id -u)" = "0" ] && command -v gosu >/dev/null 2>&1; then
+  exec gosu rails bin/rails runner -
+else
+  exec bin/rails runner -
+fi
+'
+
 $DOCKER compose exec -T \
   -e CFG_PROWLARR_URL="$PROWLARR_URL" \
   -e CFG_PROWLARR_KEY="$PROWLARR_KEY" \
@@ -98,7 +117,7 @@ $DOCKER compose exec -T \
   -e CFG_DECY_USER="$DECY_USER" \
   -e CFG_DECY_PASS="$DECY_PASS" \
   -e CFG_DOWNLOAD_LOCAL_PATH="$DOWNLOAD_LOCAL_PATH" \
-  shelfarr bin/rails runner - <<'RUBY'
+  shelfarr sh -c "$RUNNER" <<'RUBY'
 require "net/http"
 
 def put_setting(key, value)
