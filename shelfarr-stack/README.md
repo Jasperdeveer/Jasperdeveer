@@ -326,9 +326,37 @@ Standaard uit; op een Pi scheelt dat geheugen.
 
 Permanent aanzetten kan met `COMPOSE_PROFILES=audiobookshelf` in je `.env`.
 
-FlareSolverr draait een echte browser tegen externe pagina's. Zet je het aan, beperk
-dan het uitgaande verkeer van die container (geen toegang tot je LAN, loopback of
-link-local) — Shelfarr kan niet controleren wat er binnen FlareSolverr wordt opgehaald.
+### FlareSolverr en Anna's Archive
+
+```bash
+./scripts/configure-shelfarr.sh --with-anna
+```
+
+Dat start FlareSolverr (zet `COMPOSE_PROFILES=flaresolverr` in je `.env`), wacht tot
+hij antwoordt, zet `flaresolverr_url` en de Anna's Archive-toggle, en vraagt om de
+API-key.
+
+Die key is geen formaliteit: Shelfarr's `anna_archive_configured?` eist **zowel** de
+toggle **als** een niet-lege `anna_archive_api_key`. Zonder member-key (die krijg je
+via een donatie) blijft de bron ongebruikt, hoe je hem ook aanzet. Het script zegt aan
+het eind welke van de twee het is.
+
+Twee praktische dingen op een Pi. FlareSolverr draait een headless Chromium, dus reken
+op een paar honderd MB extra geheugengebruik zodra er een pagina wordt opgehaald. En
+het draait een echte browser tegen externe pagina's: Shelfarr kan niet controleren wat
+daarbinnen wordt opgevraagd, dus je wilt die container niet bij je LAN laten. Een
+concrete afscherming, met een eigen subnet en een regel in de `DOCKER-USER`-keten:
+
+```bash
+# geef flaresolverr een eigen subnet in docker-compose.override.yml, bijvoorbeeld
+# 172.31.9.0/24, en blokkeer daarvandaan al het privéverkeer:
+sudo iptables -I DOCKER-USER -s 172.31.9.0/24 -d 10.0.0.0/8     -j DROP
+sudo iptables -I DOCKER-USER -s 172.31.9.0/24 -d 172.16.0.0/12  -j DROP
+sudo iptables -I DOCKER-USER -s 172.31.9.0/24 -d 192.168.0.0/16 -j DROP
+sudo iptables -I DOCKER-USER -s 172.31.9.0/24 -d 169.254.0.0/16 -j DROP
+```
+
+Bewaar die regels met `iptables-persistent`, anders zijn ze na een herstart weg.
 
 ## 8. Beheer
 

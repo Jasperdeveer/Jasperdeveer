@@ -4,6 +4,7 @@
 # draaiende stack, zodat je niks hoeft over te typen.
 #
 #   ./scripts/configure-shelfarr.sh
+#   ./scripts/configure-shelfarr.sh --with-anna    # ook FlareSolverr + Anna's Archive
 #
 # Draai dit ná `docker compose up -d` en nadat je je adminaccount hebt
 # geregistreerd. Herhaald draaien is veilig: bestaande waarden worden bijgewerkt,
@@ -11,6 +12,13 @@
 
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
+
+WITH_ANNA=0
+case "${1:-}" in
+  --with-anna) WITH_ANNA=1 ;;
+  "")          ;;
+  *) echo "onbekende optie: $1" >&2; exit 1 ;;
+esac
 
 DOCKER="docker"
 command -v docker >/dev/null 2>&1 && { docker info >/dev/null 2>&1 || DOCKER="sudo docker"; }
@@ -90,6 +98,45 @@ if [ -z "$DECY_PASS" ]; then
 fi
 [ -n "$DECY_PASS" ] && note "wachtwoord ingelezen (${#DECY_PASS} tekens), URL $DECY_URL"
 
+FLARESOLVERR_URL=""
+ANNA_ENABLED="false"
+ANNA_KEY=""
+if [ "$WITH_ANNA" = 1 ]; then
+  hdr "FlareSolverr"
+  if ! $DOCKER compose ps --status running 2>/dev/null | grep -q flaresolverr; then
+    note "container draait nog niet — starten"
+    grep -q '^COMPOSE_PROFILES=' .env \
+      && sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=flaresolverr/' .env \
+      || printf 'COMPOSE_PROFILES=flaresolverr\n' >> .env
+    $DOCKER compose up -d flaresolverr || fail "FlareSolverr kwam niet op"
+    note "even wachten tot Chromium klaar is…"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      $DOCKER compose exec -T shelfarr sh -c \
+        'wget -qO- --timeout=3 http://flaresolverr:8191/ >/dev/null 2>&1' && break
+      sleep 3
+    done
+  fi
+  if $DOCKER compose exec -T shelfarr sh -c \
+       'wget -qO- --timeout=5 http://flaresolverr:8191/ >/dev/null 2>&1'; then
+    FLARESOLVERR_URL="http://flaresolverr:8191"
+    note "bereikbaar op $FLARESOLVERR_URL"
+  else
+    note "nog niet bereikbaar; controleer later met: docker compose logs flaresolverr"
+    FLARESOLVERR_URL="http://flaresolverr:8191"
+  fi
+
+  hdr "Anna's Archive"
+  note "Shelfarr gebruikt deze bron alleen met een member-API-key (donatie)."
+  note "Zonder key blijft hij ongebruikt, ook als de toggle aanstaat."
+  read -rsp "  API-key (leeg laten mag): " ANNA_KEY; echo
+  ANNA_ENABLED="true"
+  if [ -n "$ANNA_KEY" ]; then
+    note "key ingelezen (${#ANNA_KEY} tekens)"
+  else
+    note "geen key — toggle gaat aan, maar de bron telt nog niet mee"
+  fi
+fi
+
 hdr "Toepassen in Shelfarr"
 
 # `docker compose exec` slaat de entrypoint over, en juist die zet de
@@ -117,6 +164,10 @@ $DOCKER compose exec -T \
   -e CFG_DECY_USER="$DECY_USER" \
   -e CFG_DECY_PASS="$DECY_PASS" \
   -e CFG_DOWNLOAD_LOCAL_PATH="$DOWNLOAD_LOCAL_PATH" \
+  -e CFG_WITH_ANNA="$WITH_ANNA" \
+  -e CFG_FLARESOLVERR_URL="$FLARESOLVERR_URL" \
+  -e CFG_ANNA_ENABLED="$ANNA_ENABLED" \
+  -e CFG_ANNA_KEY="$ANNA_KEY" \
   shelfarr sh -c "$RUNNER" <<'RUBY'
 require "net/http"
 
@@ -141,6 +192,12 @@ put_setting "ebook_output_path",              "/ebooks"
 put_setting "download_local_path",            ENV["CFG_DOWNLOAD_LOCAL_PATH"]
 put_setting "completed_download_import_mode", "copy"
 put_setting "enabled_languages",              [ "en", "nl" ]
+
+if ENV["CFG_WITH_ANNA"] == "1"
+  put_setting "flaresolverr_url",    ENV["CFG_FLARESOLVERR_URL"]
+  put_setting "anna_archive_enabled", ENV["CFG_ANNA_ENABLED"] == "true"
+  put_setting "anna_archive_api_key", ENV["CFG_ANNA_KEY"].to_s unless ENV["CFG_ANNA_KEY"].to_s.empty?
+end
 
 puts "\nDownload client:"
 dc = DownloadClient.find_or_initialize_by(name: "Decypharr (Torbox)")
@@ -169,6 +226,22 @@ begin
   puts "  decypharr  #{dc.test_connection ? 'OK' : 'faalt — controleer inloggegevens'}"
 rescue StandardError => e
   puts "  decypharr  fout: #{e.class} #{e.message}"
+end
+
+if ENV["CFG_WITH_ANNA"] == "1"
+  begin
+    uri = URI("#{ENV['CFG_FLARESOLVERR_URL']}/")
+    res = Net::HTTP.start(uri.host, uri.port, open_timeout: 5, read_timeout: 15) { |h| h.request(Net::HTTP::Get.new(uri)) }
+    puts "  flare      HTTP #{res.code} — bereikbaar"
+  rescue StandardError => e
+    puts "  flare      onbereikbaar: #{e.class} #{e.message}"
+  end
+  begin
+    ok = SettingsService.anna_archive_configured?
+    puts "  anna       #{ok ? 'actief' : 'toggle staat aan, maar zonder API-key gebruikt Shelfarr de bron niet'}"
+  rescue StandardError => e
+    puts "  anna       status onleesbaar: #{e.class}"
+  end
 end
 
 puts "\nZichtbaar voor de container:"
