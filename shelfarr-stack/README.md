@@ -19,12 +19,12 @@ Shelfarr neemt de rol van Readarr over: zoeken, aanvragen, release kiezen,
 importeren. **Prowlarr, Torbox, rclone en de Dropbox-timer blijven ongewijzigd.**
 
 ```
-   Shelfarr (:5056) ─┬─→ Prowlarr (:9696) ──→ indexers
-                     └─→ Torbox-shim ────────→ Torbox (cloud-download)
-                                                    │ rclone
-                                              /mnt/torbox
-                                                    │ import (copy)
-                                              bibliotheek ──→ Dropbox-timer
+   Shelfarr (:5056) ─┬─→ Prowlarr (:9696) ─────────→ indexers
+                     └─→ Decypharr (gluetun:8282) ─→ Torbox (cloud-download)
+                                                          │ rclone
+                                                    /mnt/torbox
+                                                          │ import (copy)
+                                                    bibliotheek ──→ Dropbox-timer
 ```
 
 Dat is geen toeval: **Readarr is op 27 juni 2025 gearchiveerd**, omdat het volledig
@@ -40,7 +40,7 @@ naast elkaar draaien — let dan op de twee punten in [stap 6](#6-naast-readarr-
 - **Docker met de compose-plugin.**
 - **Een externe SSD of HDD** voor de database — op een SD-kaart is continu schrijven
   vragen om problemen.
-- Prowlarr, de Torbox-shim en de rclone-mount draaien al.
+- Prowlarr, Decypharr (achter gluetun) en de rclone-mount draaien al.
 
 ## 1. Installeren
 
@@ -50,7 +50,11 @@ git clone https://github.com/Jasperdeveer/Jasperdeveer.git
 cd Jasperdeveer/shelfarr-stack
 
 cp .env.example .env
-nano .env                    # paden, PUID/PGID (`id -u` / `id -g`), tijdzone
+
+# de netwerknaam die je in ARR_NETWORK nodig hebt
+docker inspect gluetun -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
+
+nano .env                    # ARR_NETWORK, paden, PUID/PGID (`id -u` / `id -g`), tijdzone
 
 sudo mkdir -p /mnt/ssd/shelfarr/data /mnt/ssd/media/{audiobooks,ebooks}
 sudo chown -R "$(id -u):$(id -g)" /mnt/ssd/shelfarr /mnt/ssd/media
@@ -58,6 +62,9 @@ sudo chown -R "$(id -u):$(id -g)" /mnt/ssd/shelfarr /mnt/ssd/media
 docker compose up -d
 docker compose logs -f shelfarr
 ```
+
+`COMPOSE_FILE` in `.env` zorgt dat de netwerk-override automatisch meekomt, dus
+`docker compose up -d` volstaat.
 
 De eerste start duurt op een Pi een minuut of twee. Ga daarna naar
 `http://100.120.136.112:5056` — **de eerste account die je registreert wordt admin**,
@@ -81,75 +88,83 @@ poort 5056 niet meer los benaderbaar op je LAN.
 
 ## 3. Prowlarr koppelen
 
-*Admin → Settings → Indexer*: provider `prowlarr`, URL `http://100.120.136.112:9696`,
-en de API-key uit *Prowlarr → Settings → General*.
+Shelfarr hangt in hetzelfde Docker-netwerk als je bestaande stack (dat regelt
+`docker-compose.arr-network.yml`), dus je kunt containernamen gebruiken:
+
+*Admin → Settings → Indexer*: provider `prowlarr`, URL `http://prowlarr:9696`, en de
+API-key uit *Prowlarr → Settings → General*.
+
+Zit Prowlarr óók achter gluetun — kijk in Readarr → Settings → Indexers wat daar als
+host staat — dan is het `http://gluetun:9696`. Werkt geen van beide, dan doet
+`http://100.120.136.112:9696` het altijd, mits de poort op de host gepubliceerd is.
 
 > **Val waar iedereen in trapt:** `http://localhost:9696` werkt niet. `localhost` is
 > binnen de Shelfarr-*container*, niet je Pi.
 
-Wil je liever containernamen (`http://prowlarr:9696`) dan hang je Shelfarr in het
-netwerk van Prowlarr:
+## 4. Decypharr (Torbox) koppelen
 
-```bash
-docker inspect prowlarr -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
-# zet de gevonden naam als ARR_NETWORK in .env
-docker compose -f docker-compose.yml -f docker-compose.arr-network.yml up -d
-```
+Shelfarr praat niet rechtstreeks met Torbox — het gebruikt dezelfde Decypharr als
+Readarr. Shelfarr ondersteunt dat type native, dus neem in **Admin → Download
+Clients** over wat er in Readarr staat:
 
-## 4. Torbox koppelen
-
-Shelfarr praat niet rechtstreeks met Torbox — net als Readarr gaat het via de
-qBittorrent-compatibele shim die je al draait. Kijk in **Readarr → Settings →
-Download Clients** welk type en welke poort daar staan, en neem dat over in
-**Shelfarr → Admin → Download Clients**:
-
-| Wat er in Readarr staat | Type in Shelfarr |
+| Veld | Waarde |
 |---|---|
-| Decypharr (qBittorrent, meestal poort 8282) | `decypharr` |
-| TorBoxarr / CatBox / rdt-client (qBittorrent-shim) | `qbittorrent` |
-| Een echte qBittorrent of SABnzbd | `qbittorrent` / `sabnzbd` |
+| Type | `decypharr` |
+| URL | `http://gluetun:8282` |
+| Username / Password | leeg, net als in Readarr |
+| Category | `shelfarr-books` — **niet** dezelfde als Readarr |
 
-Vul dezelfde host, poort en inloggegevens in, met `http://100.120.136.112:<poort>` als
-URL. Draai je nog geen shim, dan is [Decypharr](https://docs.decypharr.com/guides/debrid/torbox/)
-de logische keuze: Shelfarr ondersteunt dat type native.
+Decypharr draait achter gluetun en heeft daardoor geen eigen hostnaam op het netwerk;
+`gluetun` ís het adres. Vandaar dat Shelfarr in dat netwerk moet hangen (stap 1).
+Publiceert gluetun poort 8282 op de host, dan werkt `http://100.120.136.112:8282` ook.
 
-Geef Shelfarr wel een **eigen category** (bijvoorbeeld `shelfarr-books`), anders gaan
-Readarr en Shelfarr elkaars downloads opeisen.
+Die eigen category is belangrijk: zonder dat gaan Readarr en Shelfarr elkaars
+downloads opeisen.
 
-### De rclone-mount
+### De rclone-mount en Decypharr's symlinks
 
-Shelfarr leest de afgeronde bestanden uit `/mnt/torbox`, dat in de container als
-`/downloads` verschijnt. Drie dingen moeten kloppen:
+Decypharr downloadt niets naar de Pi. Het zet **symlinks** neer die wijzen naar de
+rclone-mount, en Shelfarr volgt die symlinks bij het importeren. Daarom staan host- en
+containerpad in `docker-compose.yml` op precies hetzelfde: een symlink naar
+`/mnt/torbox/...` breekt zodra de container dat bestand op `/downloads/...` ziet.
 
-1. **Mount-propagation.** Een FUSE-mount die ná Docker wordt aangekoppeld is binnen
-   een container onzichtbaar, tenzij de bind-mount `rslave` gebruikt. Dat staat al
-   goed in `docker-compose.yml` (`ro,rslave`). Zonder dat zie je een lege map — dit
-   is verreweg de meest voorkomende oorzaak van "hij importeert niks".
-2. **`--allow-other`.** rclone moet met die vlag draaien, en `user_allow_other` moet
+Staan Decypharr's symlinks in een aparte map (bijvoorbeeld `/mnt/symlinks`), zet dan
+`DOWNLOADS_PATH` én `DOWNLOADS_CONTAINER_PATH` op de gedeelde bovenliggende map `/mnt`.
+Welke map het is zie je in Decypharr's config of in Readarr → Activity → History bij een
+geïmporteerd boek.
+
+Verder moeten drie dingen kloppen aan de mount zelf:
+
+1. **Mount-propagation.** Een FUSE-mount die ná Docker wordt aangekoppeld is binnen een
+   container onzichtbaar, tenzij de bind-mount `rslave` gebruikt. Dat staat al goed in
+   `docker-compose.yml`. Zonder dat zie je een lege map — verreweg de meest voorkomende
+   oorzaak van "hij importeert niks".
+2. **`--allow-other`.** rclone moet met die vlag draaien en `user_allow_other` moet
    aanstaan in `/etc/fuse.conf`. Anders kan alleen de rclone-gebruiker bij de mount en
-   kijkt de container tegen `Permission denied` aan. Zet `--uid`/`--gid` gelijk aan je
-   `PUID`/`PGID`.
-3. **Directory-cache.** rclone cachet mapinhoud standaard 5 minuten, dus een net
-   afgeronde download is er "nog niet" als Shelfarr gaat importeren. Draai de mount
-   met `--dir-cache-time 1m --poll-interval 15s`.
+   krijgt de container `Permission denied`. Zet `--uid`/`--gid` gelijk aan `PUID`/`PGID`.
+3. **Directory-cache.** rclone cachet mapinhoud standaard vijf minuten, dus een net
+   afgeronde download is er "nog niet" als Shelfarr gaat importeren. Draai de mount met
+   `--dir-cache-time 1m --poll-interval 15s`.
 
-Controleren of het werkt:
+Controleren of alles klopt:
 
 ```bash
-docker compose exec shelfarr ls /downloads
+docker compose exec shelfarr ls /mnt/torbox        # ziet de container de mount?
+docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo decypharr-ok
 ```
-
-Zie je hier je Torbox-bestanden, dan is dit deel klaar.
 
 ## 5. Configuratie-checklist in de UI
 
 1. *Admin → Settings → Indexer* — Prowlarr (stap 3).
-2. *Admin → Download Clients* — je Torbox-shim, met eigen category (stap 4). Klik `Test`.
+2. *Admin → Download Clients* — Decypharr op `http://gluetun:8282`, met eigen category (stap 4). Klik `Test`.
 3. *Admin → Settings → Downloads → Output Paths*:
    - audioboeken `/audiobooks`, e-books `/ebooks`
+   - `download_local_path` op het pad waar Decypharr zijn symlinks neerzet — dus
+     `/mnt/torbox` (of `/mnt/symlinks/...`), niet het standaard `/downloads`
    - **import-modus: `copy`.** `hardlink` kán niet — de rclone-mount en je SSD zijn
-     verschillende filesystems. `move` wil je niet: dat probeert te verwijderen uit je
-     Torbox-opslag (en mislukt sowieso op een read-only mount).
+     verschillende filesystems, en je importeert bovendien via een symlink. `move` wil
+     je niet: dat probeert te verwijderen uit je Torbox-opslag (en mislukt sowieso op
+     een read-only mount).
    - Houd er rekening mee dat `copy` betekent dat de Pi de bytes echt via rclone bij
      Torbox ophaalt. Een audioboek van een gigabyte duurt dus even.
 4. *Admin → Settings → Language* — `enabled_languages` op `en` én `nl` als je ook
@@ -218,15 +233,17 @@ docker compose start shelfarr
 
 | Symptoom | Oorzaak / oplossing |
 |---|---|
-| `/downloads` is leeg in de container | Mount-propagation of `--allow-other` (stap 4). Check met `docker compose exec shelfarr ls /downloads`. |
+| De mount is leeg in de container | Mount-propagation of `--allow-other` (stap 4). Check met `docker compose exec shelfarr ls /mnt/torbox`. |
+| Download client-test faalt op `gluetun:8282` | Shelfarr hangt niet in het juiste netwerk. Check `ARR_NETWORK` en of je met de override start. |
+| Import faalt op een symlink die nergens heen wijst | Host- en containerpad verschillen. Zet `DOWNLOADS_PATH` en `DOWNLOADS_CONTAINER_PATH` gelijk (stap 4). |
 | Download slaagt, import gebeurt nooit | rclone's dir-cache: het bestand is nog niet zichtbaar. `--dir-cache-time 1m --poll-interval 15s`. |
-| `Permission denied` op `/downloads` | rclone's `--uid`/`--gid` komen niet overeen met `PUID`/`PGID` in `.env`. |
+| `Permission denied` op de mount | rclone's `--uid`/`--gid` komen niet overeen met `PUID`/`PGID` in `.env`. |
 | Import faalt op hardlink | Zet de import-modus op `copy` — cross-filesystem hardlinks bestaan niet. |
 | `exec format error` bij het starten | 32-bit OS. `uname -m` moet `aarch64` geven. |
 | `Permission denied` op de bibliotheekmappen | `PUID`/`PGID` komen niet overeen met de eigenaar. Check `id -u`, `id -g`, `ls -ln /mnt/ssd/media`. |
 | Klacht over eigenaarschap bij het starten | Zet `CHOWN_ON_START=never` in `.env`. |
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
-| Prowlarr- of download client-test faalt | `localhost` gebruikt. Neem `http://100.120.136.112:<poort>`. |
+| Prowlarr-test faalt | `localhost` gebruikt. Neem `http://prowlarr:9696` of `http://100.120.136.112:9696`. |
 | Readarr en Shelfarr pakken elkaars downloads | Aparte category per app (stap 6). |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
 | Shelfarr op een subpad (`/shelfarr`) | Zet `RAILS_RELATIVE_URL_ROOT=/shelfarr` in de environment van de service. |

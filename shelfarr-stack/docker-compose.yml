@@ -3,9 +3,13 @@
 #   cp .env.example .env   # paden + PUID/PGID invullen
 #   docker compose up -d
 #
-# Downloads lopen via je bestaande Torbox-setup: Shelfarr geeft releases aan
-# dezelfde qBittorrent-compatibele shim als Readarr, en leest de afgeronde
-# bestanden uit de rclone-mount /mnt/torbox. Zie README stap 4.
+# Downloads lopen via je bestaande Decypharr (Torbox). Die zit achter gluetun,
+# dus Shelfarr moet in hetzelfde Docker-netwerk hangen om `gluetun:8282` te
+# kunnen bereiken. Start daarom met de override:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.arr-network.yml up -d
+#
+# Zie README stap 3 en 4.
 #
 # Optionele onderdelen draaien via profiles (standaard uit, scheelt RAM op een Pi):
 #   --profile audiobookshelf library-app voor luisteren/lezen
@@ -35,11 +39,13 @@ services:
       # Bibliotheken: hier zet Shelfarr afgeronde boeken neer.
       - ${AUDIOBOOKS_PATH:?zet AUDIOBOOKS_PATH in .env}:/audiobooks
       - ${EBOOKS_PATH:?zet EBOOKS_PATH in .env}:/ebooks
-      # De rclone-mount van je Torbox-opslag (/mnt/torbox).
+      # De rclone-mount met je afgeronde downloads. Host- en containerpad zijn
+      # bewust identiek: Decypharr levert symlinks aan, en die wijzen naar het
+      # pad zoals de host het ziet. Met een ander containerpad dangelen ze.
       # `rslave` is verplicht: zonder mount-propagation ziet de container een
       # lege map, omdat de FUSE-mount ná het starten van Docker is aangekoppeld.
       # `ro` beschermt je cloud-opslag; Shelfarr hoeft er alleen uit te lezen.
-      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads:${DOWNLOADS_MOUNT_OPTS:-ro,rslave}
+      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:${DOWNLOADS_CONTAINER_PATH:-/mnt/torbox}:${DOWNLOADS_MOUNT_OPTS:-ro,rslave}
       # Audible-backups uit de Libation-companion (leeg zolang die niet draait).
       - ${LIBATION_BOOKS_PATH:-libation_books}:/imports/libation:ro
       - libation_control:/run/shelfarr-libation:ro

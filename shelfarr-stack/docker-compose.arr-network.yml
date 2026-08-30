@@ -1,12 +1,16 @@
-# Override: hang Shelfarr óók in het Docker-netwerk waar je bestaande Prowlarr
-# (en eventueel je download client) al in zit. Daarmee kun je in de Shelfarr-UI
-# `http://prowlarr:9696` gebruiken in plaats van het IP van je Pi.
+# Override: hang Shelfarr in het Docker-netwerk waar gluetun (met Decypharr
+# erachter) en Prowlarr al in zitten. In jouw stack is dit geen optie maar de
+# normale manier van starten: Decypharr luistert op `gluetun:8282` en is buiten
+# dat netwerk niet te bereiken, tenzij gluetun poort 8282 op de host publiceert.
 #
 # Netwerknaam opzoeken:
-#   docker inspect prowlarr -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
+#   docker inspect gluetun -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
 #
 # Zet die naam als ARR_NETWORK in .env en start met:
 #   docker compose -f docker-compose.yml -f docker-compose.arr-network.yml up -d
+#
+# Tip: zet COMPOSE_FILE=docker-compose.yml:docker-compose.arr-network.yml in .env,
+# dan volstaat `docker compose up -d`.
 
 services:
   shelfarr:
