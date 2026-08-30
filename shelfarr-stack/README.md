@@ -13,6 +13,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `docker-compose.symlinks.yml` | Override die de rclone-mount óók op zijn eigen pad aankoppelt. |
 | `docker-compose.compat.yml` | Override voor een 32-bit Docker-daemon die arm64-containers draait. |
 | `scripts/make-env.sh` | Leest de draaiende stack uit en schrijft daaruit `.env`. |
+| `scripts/configure-shelfarr.sh` | Zet indexer, download client en output paths, zonder de UI. |
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
 | `CLAUDE.md` | Context voor een Claude Code-sessie die op de Pi zelf draait. |
@@ -251,24 +252,40 @@ docker compose exec shelfarr ls /mnt/torbox        # ziet de container de mount?
 docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo decypharr-ok
 ```
 
-## 5. Configuratie-checklist in de UI
+## 5. Configureren
 
-1. *Admin → Settings → Indexer* — Prowlarr (stap 3).
-2. *Admin → Download Clients* — Decypharr op `http://gluetun:8282`, met inloggegevens en de category `shelfarr` (stap 4). Klik `Test`.
+Nadat je je adminaccount hebt geregistreerd:
+
+```bash
+./scripts/configure-shelfarr.sh
+```
+
+Dat zet de indexer, de download client en de output paths in één keer. De
+Prowlarr-API-key leest het uit de draaiende Prowlarr-container, en de
+Decypharr-inloggegevens uit Bookshelf's eigen download client-instellingen — die
+werken aantoonbaar, dus overtypen hoeft niet. Lukt dat niet, dan vraagt het script
+erom. Aan het eind test het beide verbindingen en laat het zien hoeveel items de
+container in `/audiobooks`, `/ebooks` en de downloadmount ziet.
+
+Herhaald draaien is veilig: bestaande waarden worden bijgewerkt, niet gedupliceerd.
+
+### Of met de hand, in de UI
+
+1. *Admin → Settings → Indexer* — provider `prowlarr`, URL `http://gluetun:9696`,
+   API-key uit *Prowlarr → Settings → General*.
+2. *Admin → Download Clients* — type `decypharr`, URL `http://gluetun:8282`, de
+   inloggegevens uit Decypharr, category `shelfarr`. Klik `Test`.
 3. *Admin → Settings → Downloads → Output Paths*:
    - audioboeken `/audiobooks`, e-books `/ebooks`
-   - `download_local_path` op het pad waar Decypharr zijn symlinks neerzet — dus
-     `/mnt/torbox` (of `/mnt/symlinks/...`), niet het standaard `/downloads`
-   - **import-modus: `copy`.** `hardlink` kán niet — de rclone-mount en je SSD zijn
-     verschillende filesystems, en je importeert bovendien via een symlink. `move` wil
-     je niet: dat probeert te verwijderen uit je Torbox-opslag (en mislukt sowieso op
-     een read-only mount).
-   - Houd er rekening mee dat `copy` betekent dat de Pi de bytes echt via rclone bij
-     Torbox ophaalt. Een audioboek van een gigabyte duurt dus even.
-4. *Admin → Settings → Language* — `enabled_languages` op `en` én `nl` als je ook
-   Nederlandse boeken zoekt.
+   - `download_local_path` op de downloadmount, dus `/mnt/torbox`
+   - **import-modus: `copy`.** `hardlink` kán niet — de rclone-mount en je SD-kaart
+     zijn verschillende filesystems, en je importeert via een symlink. `move` wil je
+     niet: dat probeert te verwijderen uit je Torbox-opslag.
+   - Reken erop dat `copy` de bytes echt via rclone bij Torbox ophaalt. Een audioboek
+     van een gigabyte duurt dus even, en landt op je SD-kaart.
+4. *Admin → Settings → Language* — `enabled_languages` op `en` én `nl`.
 5. Optioneel: `auto_select_enabled` aan met `auto_select_min_seeders` en een
-   `auto_select_confidence_threshold` van ~90, dan hoef je niet elke release zelf te kiezen.
+   `auto_select_confidence_threshold` van ~90.
 
 Alle instellingen met hun defaults staan in de
 [settings reference](https://shelfarr.org/configuration.html).

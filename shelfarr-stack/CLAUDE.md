@@ -49,6 +49,9 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
 
 - Draai `./scripts/make-env.sh --dry-run` als eerste; die leidt alles af behalve de
   bibliotheekpaden. `./scripts/stack-check.sh` geeft het volledige beeld.
+- `./scripts/configure-shelfarr.sh` zet indexer, download client en output paths via
+  `bin/rails runner` in de container. De JSON-API (`/api/v1`) dekt alleen requests;
+  instellingen en download clients zitten achter de sessie-UI, vandaar die route.
 - **Verander niets** aan Readarr, Prowlarr, gluetun, Decypharr of de rclone-mount.
   Shelfarr komt ernaast te staan, niet in de plaats van.
 - Valideer compose-wijzigingen met `docker compose config` vóór je iets start.
