@@ -3,6 +3,10 @@
 #   cp .env.example .env   # paden + PUID/PGID invullen
 #   docker compose up -d
 #
+# Let op: de Docker-daemon op deze Pi is 32-bit (armhf) en zou dus armv7-images
+# pullen. Die bestaan niet voor Shelfarr, vandaar de expliciete `platform`-regels.
+# De kernel is wél 64-bit, dus arm64-containers draaien. Zie README, Vereisten.
+#
 # Downloads lopen via je bestaande Decypharr (Torbox). Die zit achter gluetun,
 # dus Shelfarr moet in hetzelfde Docker-netwerk hangen om `gluetun:8282` te
 # kunnen bereiken. Start daarom met de override:
@@ -27,6 +31,7 @@ x-logging: &default-logging
 services:
   shelfarr:
     image: ghcr.io/pedro-revez-silva/shelfarr:${SHELFARR_VERSION:-latest}
+    platform: ${DOCKER_PLATFORM:-linux/arm64}
     container_name: shelfarr
     restart: unless-stopped
     logging: *default-logging
@@ -74,6 +79,7 @@ services:
   # ---------------------------------------------------------------------------
   audiobookshelf:
     image: ghcr.io/advplyr/audiobookshelf:latest
+    platform: ${DOCKER_PLATFORM:-linux/arm64}
     container_name: audiobookshelf
     profiles: ["audiobookshelf"]
     restart: unless-stopped
@@ -96,6 +102,7 @@ services:
   # ---------------------------------------------------------------------------
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
+    platform: ${DOCKER_PLATFORM:-linux/arm64}
     container_name: flaresolverr
     profiles: ["flaresolverr"]
     restart: unless-stopped
@@ -114,6 +121,7 @@ services:
   # ---------------------------------------------------------------------------
   shelfarr-libation:
     image: ghcr.io/pedro-revez-silva/shelfarr-libation:${SHELFARR_VERSION:-latest}
+    platform: ${DOCKER_PLATFORM:-linux/arm64}
     container_name: shelfarr-libation
     profiles: ["audible"]
     restart: unless-stopped

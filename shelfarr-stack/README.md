@@ -34,40 +34,59 @@ leunde op de Goodreads-metadata-API die offline ging. Shelfarr haalt metadata bi
 Open Library en Hardcover en heeft dat probleem niet. Je kunt beide prima een tijdje
 naast elkaar draaien — let dan op de twee punten in [stap 6](#6-naast-readarr-draaien).
 
-## Dit vanaf de Pi zelf afmaken
+## Deze Pi: 64-bit kernel, 32-bit userland
 
-Wil je de configuratie niet met de hand narekenen, installeer dan Claude Code op de
-Pi — arm64 wordt ondersteund, mits 4 GB RAM of meer:
+Deze Pi draait een 64-bit kernel met een 32-bit (`armhf`) userland — een veel
+voorkomende combinatie op Raspberry Pi OS. `uname -m` meldt daardoor `aarch64`
+terwijl `dpkg --print-architecture` `armhf` zegt. Gevolg:
 
 ```bash
-# repo ophalen (nog niet aanwezig op de Pi)
-git clone https://github.com/Jasperdeveer/Jasperdeveer.git ~/Jasperdeveer
-cd ~/Jasperdeveer && git checkout claude/shelfarr-stack-integration-c4z6ki
+uname -m                                     # aarch64  — de kernel
+dpkg --print-architecture                    # armhf    — de userland
+docker version --format '{{.Server.Arch}}'   # arm      — wat Docker standaard pullt
+```
+
+Docker zou dus `linux/arm/v7`-images ophalen, en die bestaan niet voor Shelfarr.
+Omdat de kernel wél 64-bit is, kunnen arm64-**containers** gewoon draaien: die
+brengen hun eigen 64-bit userland mee. Daarom staat in `docker-compose.yml` bij elke
+service een expliciete `platform: linux/arm64`.
+
+Controleer eerst of dat op jouw Pi werkt:
+
+```bash
+docker run --rm --platform linux/arm64 arm64v8/alpine uname -m
+```
+
+- Antwoordt dit `aarch64`, dan draaien arm64-containers en kun je gewoon verder.
+- Faalt het met `exec format error`, dan kan deze Pi geen 64-bit containers draaien
+  en is een herinstallatie met 64-bit Raspberry Pi OS de enige route.
+
+Wat hier níét mee opgelost wordt, is software die je rechtstreeks op de Pi
+installeert. Claude Code publiceert alleen x64- en arm64-binaries, en die starten
+niet op een 32-bit userland: je krijgt `No such file or directory` op een bestand dat
+er wel degelijk staat — dat is de ontbrekende 64-bit linker. Daarvoor is een 64-bit
+OS nodig.
+
+## Dit vanaf de Pi zelf afmaken
+
+Dit werkt alleen op een 64-bit userland (zie hierboven) met 4 GB RAM of meer. Is dat
+het geval, dan hoef je de configuratie niet met de hand na te rekenen:
+
+```bash
+cd ~/Jasperdeveer && git fetch origin
+git checkout claude/shelfarr-stack-integration-c4z6ki
 
 curl -fsSL https://claude.ai/install.sh | bash
 cd shelfarr-stack && claude
 ```
-
-Faalt de installatie met `No such file or directory` op een bestand dat er wél lijkt te
-staan, dan ontbreekt de 64-bit dynamische linker: je userland is 32-bit. Check
-`dpkg --print-architecture` — zie Vereisten hieronder.
 
 `CLAUDE.md` in deze map bevat de volledige context van je stack en wat er nog
 uitgezocht moet worden, dus die sessie begint niet blanco.
 
 ## Vereisten
 
-- **Een volledig 64-bit OS.** `uname -m` is hier niet genoeg: dat toont de kernel, en
-  een 64-bit kernel met 32-bit userland is op Raspberry Pi OS heel gewoon. De
-  beslissende checks:
-
-  ```bash
-  dpkg --print-architecture                    # moet arm64 zijn, niet armhf
-  docker version --format '{{.Server.Arch}}'   # bepaalt welke images Docker pullt
-  ```
-
-  Staat daar `armhf`, dan zoekt Docker naar armv7-images en die bestaan niet voor
-  Shelfarr. Een 64-bit Raspberry Pi OS is dan de enige route.
+- **Een 64-bit kernel.** `uname -m` moet `aarch64` geven. De userland mag 32-bit
+  zijn — zie hieronder — maar de kernel niet.
 - **Pi 4 of 5 met minimaal 2 GB RAM.** Shelfarr is een Rails-app.
 - **Docker met de compose-plugin.**
 - **Een externe SSD of HDD** voor de database — op een SD-kaart is continu schrijven
@@ -280,7 +299,8 @@ docker compose start shelfarr
 | Download slaagt, import gebeurt nooit | rclone's dir-cache: het bestand is nog niet zichtbaar. `--dir-cache-time 1m --poll-interval 15s`. |
 | `Permission denied` op de mount | rclone's `--uid`/`--gid` komen niet overeen met `PUID`/`PGID` in `.env`. |
 | Import faalt op hardlink | Zet de import-modus op `copy` — cross-filesystem hardlinks bestaan niet. |
-| `exec format error` bij het starten | 32-bit OS. `uname -m` moet `aarch64` geven. |
+| `no matching manifest for linux/arm/v7` | Docker pullt armv7. `DOCKER_PLATFORM=linux/arm64` in `.env` — zie de sectie over de 32-bit userland. |
+| `exec format error` bij het starten | De kernel is 32-bit. `uname -m` moet `aarch64` geven; zo niet, dan is een 64-bit OS nodig. |
 | `Permission denied` op de bibliotheekmappen | `PUID`/`PGID` komen niet overeen met de eigenaar. Check `id -u`, `id -g`, `ls -ln /mnt/ssd/media`. |
 | Klacht over eigenaarschap bij het starten | Zet `CHOWN_ON_START=never` in `.env`. |
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |

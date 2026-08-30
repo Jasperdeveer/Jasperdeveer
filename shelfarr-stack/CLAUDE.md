@@ -7,6 +7,11 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
 ## De bestaande stack — vastgesteld, niet gokken
 
 - Raspberry Pi, bereikbaar via Tailscale op `100.120.136.112`.
+- **64-bit kernel (`aarch64`), 32-bit userland (`armhf`), Docker-daemon `arm`.**
+  Docker pullt daardoor uit zichzelf armv7-images, die voor Shelfarr niet bestaan;
+  vandaar `platform: linux/arm64` op elke service. Arm64-*containers* draaien wel,
+  omdat de kernel 64-bit is. Software die je rechtstreeks op de Pi installeert moet
+  armhf zijn — Claude Code kan hier dus niet draaien.
 - **Prowlarr** als indexer-manager, poort 9696.
 - **Readarr** op poort 8787. Dit is de app die Shelfarr overneemt. Readarr is op
   27 juni 2025 gearchiveerd omdat de Goodreads-metadata-API verdween; Shelfarr
