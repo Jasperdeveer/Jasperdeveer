@@ -269,6 +269,15 @@ container in `/audiobooks`, `/ebooks` en de downloadmount ziet.
 
 Herhaald draaien is veilig: bestaande waarden worden bijgewerkt, niet gedupliceerd.
 
+Twee dingen over Decypharr die verklaren waarom de ingevulde waarden er vreemd
+uitzien. De username is niet een gewone login maar de **host van de arr**, met de
+API-key van die arr als wachtwoord — dat is Decypharr's manier om te weten wie er
+aanklopt. Het script neemt Bookshelf's paar over, dus Shelfarr meldt zich aan als
+Bookshelf. Voor het downloadverkeer maakt dat niets uit, want Shelfarr pollt zelf
+de qBittorrent-API; het telt alleen als Decypharr ooit terug wil bellen naar de arr.
+En de **category bepaalt de submap** waarin Decypharr de bestanden zet, dus met
+`shelfarr` staan die netjes los van wat Bookshelf binnenhaalt.
+
 ### Of met de hand, in de UI
 
 1. *Admin → Settings → Indexer* — provider `prowlarr`, URL `http://gluetun:9696`,
