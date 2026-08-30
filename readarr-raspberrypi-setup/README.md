@@ -12,21 +12,23 @@ De Dropbox-doelmap: **`/Jasper de Veer/Readarr-Library`**.
 ```
 Torbox (WebDAV)  --rclone mount-->  /mnt/torbox  --bind mount-->  Readarr (import)
 Torbox (echte API) <-- Decypharr (qBittorrent-mock) <-- Readarr (download client, start/monitor)
+                        Decypharr + Prowlarr --netwerk van--> gluetun (NordVPN-sidecar)
+Decypharr --downloadt echte bestanden naar--> ./config/decypharr/downloads --gedeeld volume--> Readarr (import)
 Readarr  --organiseert boeken naar--> ./library
 ./library  --rclone copy (timer)-->  Dropbox: /Jasper de Veer/Readarr-Library
 Prowlarr --indexers--> Readarr (zoeken naar boeken; Torbox zoekt zelf niet)
 ```
 
-Drie containers: `readarr` (de Readarr-opvolger), `prowlarr` (indexer-manager)
-en `decypharr` (vertaalt tussen de qBittorrent-API die Readarr verwacht en
-Torbox's eigen API — zie hieronder waarom die nodig is).
+Vier containers: `readarr` (de Readarr-opvolger), `prowlarr` (indexer-manager),
+`decypharr` (vertaalt tussen de qBittorrent-API die Readarr verwacht en
+Torbox's eigen API) en `gluetun` (VPN-sidecar, zie hieronder).
 
 Torbox is geen *indexer* (zoekbron) maar een *downloadclient*: het haalt de
 torrents op die Readarr via indexers vindt. Je hebt dus naast Torbox nog
 gewoon indexers nodig (via Prowlarr) — dat is het enige stukje dat alleen jij
 kan invullen, omdat het om jouw eigen trackeraccounts gaat.
 
-## Twee belangrijke afwijkingen van een "standaard" Readarr-setup
+## Belangrijke afwijkingen van een "standaard" Readarr-setup
 
 ### 1. Readarr zelf is dood — we draaien Bookshelf
 
@@ -52,13 +54,51 @@ echte API.
 Decypharr's eigen mount-functies (die het downloaden zelf als virtueel
 bestandssysteem aanbieden) gebruiken we niet — dat vereist FUSE +
 `SYS_ADMIN`-rechten in de container, wat we liever vermijden. In plaats
-daarvan staat Decypharr op **mount type "None"**: we vertrouwen op de
-rclone-mount die we al hebben op `/mnt/torbox` (bind-mounted in de
-`readarr`-container) voor het daadwerkelijk zien van de bestanden.
+daarvan staat Decypharr op **mount type "None"**, met
+**`default_download_action: "download"`**: Decypharr downloadt de bestanden
+dan echt lokaal naar `/app/downloads` (i.p.v. te symlinken naar een mount die
+er niet is). Dat pad is als gedeeld volume gekoppeld in zowel `decypharr` als
+`readarr` (`./config/decypharr/downloads:/app/downloads`), zodat Readarr de
+kant-en-klare bestanden kan zien en importeren.
+
+Decypharr's standaard `allowed_file_types`-lijst bevat alleen video/audio-
+extensies (voor de Sonarr/Radarr-doelgroep) — **geen ebook-formaten**.
+Zonder aanpassing filtert Decypharr dus stilzwijgend élk boek weg, met een
+cryptische `"no valid download links available"`-fout tot gevolg. Beide
+aanpassingen (download-actie + ebook-extensies zoals epub/mobi/pdf/cbz)
+worden automatisch toegepast door `./scripts/configure-apps.sh` op
+Decypharr's `config.json`, na de eenmalige setup-wizard.
 
 **Decypharr moet je één keer zelf via de webinterface opzetten** (setup-
 wizard: `http://<pi-ip>:8282`) — dat kan niet volledig gescript worden.
 `install.sh` pauzeert daarvoor en wacht op een Enter.
+
+### 3. Prowlarr en Decypharr draaien achter een NordVPN-sidecar (gluetun)
+
+Voor privacy (je ISP kan anders zien dat je verkeer naar indexer-sites en
+Torbox's API stuurt) routeren `prowlarr` en `decypharr` via een
+`gluetun`-container (`network_mode: service:gluetun`) die verbinding maakt
+met NordVPN via OpenVPN. `readarr` zelf staat hier **buiten** — die praat
+alleen met containers binnen het thuisnetwerk en hoeft niet door de VPN.
+
+Belangrijke gevolgen van deze netwerkopzet:
+- Andere containers bereiken Prowlarr/Decypharr voortaan via de naam
+  **`gluetun`**, niet via `prowlarr`/`decypharr` (die hebben geen eigen
+  netwerkidentiteit meer). `configure-apps.sh` regelt dit automatisch, zowel
+  voor Readarr's downloadclient-instelling als voor Prowlarr's eigen
+  "Application URL" (nodig zodat de indexer-URL's die naar Readarr worden
+  gesynct ook echt bereikbaar zijn).
+- **`prowlarr` en `decypharr` starten pas als `gluetun` gezond is.** Zonder
+  geldige NordVPN-credentials in `.env` blijft `gluetun` voor altijd
+  "unhealthy" en komen deze twee containers dus nooit op. Vul
+  `NORDVPN_OPENVPN_USER`/`NORDVPN_OPENVPN_PASSWORD` in vóór je
+  `docker compose up -d` draait.
+- NordVPN's WireGuard-sleutel is niet handmatig op te halen via hun
+  webinterface (alleen IKEv2/OpenVPN stonden er). We gebruiken daarom
+  **OpenVPN** met NordVPN's "Service credentials" (een apart
+  gebruikersnaam/wachtwoord-paar voor handmatige configuraties, te vinden op
+  `https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/` →
+  "Set up NordVPN manually" — dit zijn niet je normale account-inloggegevens).
 
 ## Bekend Bullseye-probleem: SIGSYS-crashes door verouderde libseccomp2
 
@@ -71,10 +111,10 @@ crashen met exit code 159 (SIGSYS) en vrijwel lege logs. Een gewone
 repo geen nieuwere versie heeft.
 
 **Fix in `docker-compose.yml`:** `security_opt: [seccomp=unconfined]` op alle
-drie de services. Dit schakelt seccomp-filtering voor deze containers uit —
-een bewuste, beperkte security-trade-off (alleen deze 3 containers, niet de
-hele host) totdat je OS een upgrade krijgt (Bullseye zelf is uit 2021 en
-ontvangt op termijn geen updates meer).
+services met een eigen netwerknaamruimte. Dit schakelt seccomp-filtering voor
+deze containers uit — een bewuste, beperkte security-trade-off (alleen deze
+containers, niet de hele host) totdat je OS een upgrade krijgt (Bullseye zelf
+is uit 2021 en ontvangt op termijn geen updates meer).
 
 ## Stap 1 — Repo op de Pi zetten
 
@@ -91,11 +131,15 @@ cp .env.example .env
 nano .env
 ```
 
-Vul `TORBOX_EMAIL` en `TORBOX_API_KEY` in (te vinden in je Torbox-account
-onder **Settings → Integrations**). `PUID`/`PGID` moeten overeenkomen met de
-eigenaar van de `./library`-map op de host, anders kan de container niet
-schrijven (Readarr geeft dan een "Folder not writable"-fout bij het
-toevoegen van de root folder).
+Vul in:
+- `TORBOX_EMAIL` en `TORBOX_API_KEY` (te vinden in je Torbox-account onder
+  **Settings → Integrations**).
+- `NORDVPN_OPENVPN_USER` / `NORDVPN_OPENVPN_PASSWORD` (NordVPN "Service
+  credentials", zie hierboven) — **vereist**, anders starten prowlarr en
+  decypharr nooit op.
+- `PUID`/`PGID` moeten overeenkomen met de eigenaar van de `./library`-map op
+  de host, anders kan de container niet schrijven (Readarr geeft dan een
+  "Folder not writable"-fout bij het toevoegen van de root folder).
 
 ## Stap 3 — Eén script: `./install.sh`
 
@@ -105,19 +149,23 @@ toevoegen van de root folder).
 
 Dit doet automatisch:
 1. Controleert/installeert Docker en rclone.
-2. Maakt de Torbox rclone-remote (WebDAV) **non-interactief** aan met de
+2. Waarschuwt als NordVPN-credentials ontbreken (zie hierboven).
+3. Maakt de Torbox rclone-remote (WebDAV) **non-interactief** aan met de
    gegevens uit `.env`.
-3. Start de Dropbox rclone-configuratie — **interactief moment**: je krijgt
+4. Start de Dropbox rclone-configuratie — **interactief moment**: je krijgt
    een link, log in bij Dropbox en bevestig. (Geen browser op de Pi zelf?
    Draai op je laptop `rclone authorize dropbox` en plak het resultaat terug
    wanneer het script erom vraagt.)
-4. Zet systemd-units klaar en start de Torbox-mount + de Dropbox-sync-timer
+5. Zet systemd-units klaar en start de Torbox-mount + de Dropbox-sync-timer
    (elke 30 minuten).
-5. Start Readarr (Bookshelf) + Prowlarr + Decypharr via Docker Compose.
-6. **Pauzeert voor de Decypharr-wizard** (zie hierboven) — eenmalig,
+6. Start Readarr (Bookshelf) + Prowlarr + Decypharr + gluetun via Docker
+   Compose.
+7. **Pauzeert voor de Decypharr-wizard** (zie hierboven) — eenmalig,
    interactief, kan niet gescript worden.
-7. Wacht tot Readarr/Prowlarr hun API-key gegenereerd hebben en configureert
+8. Wacht tot Readarr/Prowlarr hun API-key gegenereerd hebben en configureert
    dan automatisch, via hun REST API's:
+   - Decypharr's `config.json` patchen (ebook-bestandstypen + download-actie)
+   - Prowlarr's Application URL op de gluetun-sidecar zetten
    - root folder `/books` in Readarr
    - Decypharr als qBittorrent-compatibele downloadclient in Readarr
    - de app-koppeling Prowlarr → Readarr (voor indexer-sync)
@@ -126,12 +174,14 @@ Dit doet automatisch:
 
 ```
 http://<tailscale-ip-van-pi>:8787   (Readarr / Bookshelf)
-http://<tailscale-ip-van-pi>:9696   (Prowlarr)
-http://<tailscale-ip-van-pi>:8282   (Decypharr)
+http://<tailscale-ip-van-pi>:9696   (Prowlarr, via gluetun)
+http://<tailscale-ip-van-pi>:8282   (Decypharr, via gluetun)
 ```
 
 ## Wat jij nog moet doen (kan echt niet geautomatiseerd worden)
 
+- **NordVPN "Service credentials" ophalen** en in `.env` zetten (eenmalig,
+  vóór `install.sh`).
 - **Dropbox-login** tijdens `install.sh` (interactieve OAuth, eenmalig).
 - **Decypharr-setup-wizard** tijdens `install.sh` (Torbox API-key invullen,
   mount type "None" kiezen, eenmalig).
@@ -139,6 +189,11 @@ http://<tailscale-ip-van-pi>:8282   (Decypharr)
   eigen trackeraccounts (bv. MyAnonamouse of andere boeken-indexers), dat kan
   alleen jij invullen. Prowlarr pusht ze daarna automatisch door naar Readarr
   dankzij de app-koppeling die `install.sh` al heeft gelegd.
+- **Metadataprofiel-taal** (Readarr → Settings → Metadata Profiles →
+  Standard → Allowed Languages): staat standaard op Engels (`eng`). Wil je
+  liever een andere taal, gebruik dan de ISO 639-2/B-code (bv. `nld` voor
+  Nederlands, niet `nl` of `dut`) plus `null` (voor boeken zonder
+  taalmetadata), anders wordt alles geweigerd.
 
 Als de automatische Readarr/Prowlarr-koppeling niet lukt, kun je 'm los
 opnieuw draaien:
@@ -169,15 +224,37 @@ In Readarr: **Settings → Connect → + → Custom Script**:
   plaats van op het hostpad).
 
 Voor de meeste gebruikers is de systemd-timer (elke 30 minuten, buiten de
-container om) eenvoudiger en robuuster — dan hoef je dit niet te doen.
+container om) eenvoudiger en robuuster — dan hoef je dit niet te doen. Let
+op: dit is niet getest en vereist dat `rclone` beschikbaar is *binnen* de
+Readarr-container, wat bij het Bookshelf-image niet gegarandeerd is.
 
 ## Logs & troubleshooting
 
 - Dropbox-sync log: `logs/dropbox-sync.log`
 - Torbox-mount status: `systemctl status rclone-torbox-mount.service`
-- Readarr/Prowlarr/Decypharr logs: `docker compose logs -f readarr prowlarr decypharr`
+- Readarr/Prowlarr/Decypharr/gluetun-logs:
+  `docker compose logs -f readarr prowlarr decypharr gluetun`
 - App-koppeling opnieuw proberen: `./scripts/configure-apps.sh`
 - Containers crashen direct (exit code 159, lege logs): zie het
   libseccomp2/Bullseye-probleem hierboven.
 - "Folder '/books' is not writable": `PUID`/`PGID` in `.env` komt niet
   overeen met de eigenaar van `./library` op de host.
+- **`prowlarr`/`decypharr` komen niet op, `docker compose ps` toont ze niet
+  als running**: check `docker compose logs gluetun` — vrijwel altijd
+  ontbrekende/foute NordVPN-credentials in `.env`.
+- **Download blijft hangen op "downloading" of geeft
+  `"no valid download links available"`**: Decypharr's `config.json` mist de
+  ebook-fix. Draai `./scripts/configure-apps.sh` opnieuw, of handmatig:
+  `allowed_file_types` moet `epub`/`mobi`/`pdf`/etc. bevatten en
+  `default_download_action` moet `"download"` zijn (niet `"symlink"`, want we
+  gebruiken mount type "None"). Herstart daarna `decypharr`.
+- **Import faalt met "path does not exist"**: Readarr en Decypharr moeten
+  hetzelfde downloadpad zien. Controleer dat
+  `./config/decypharr/downloads:/app/downloads` in béide services staat in
+  `docker-compose.yml`.
+- **Indexer-test faalt met "Name does not resolve (prowlarr:9696)"**:
+  Prowlarr's Application URL staat nog op de oude waarde. Draai
+  `./scripts/configure-apps.sh` opnieuw (zet 'm automatisch op
+  `http://gluetun:9696`), en check daarna of bestaande indexers in Readarr
+  (Settings → Indexers) ook `http://gluetun:9696/...` als URL hebben —
+  zo niet, verwijder en voeg opnieuw toe via Prowlarr's "Sync App Indexers".

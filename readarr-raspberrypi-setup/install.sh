@@ -40,9 +40,21 @@ if ! command -v rclone >/dev/null 2>&1; then
 fi
 
 echo "==> Mappen aanmaken..."
-mkdir -p "$SETUP_DIR/config/readarr" "$SETUP_DIR/config/prowlarr" "$SETUP_DIR/config/decypharr" "$SETUP_DIR/library" "$SETUP_DIR/logs"
+mkdir -p "$SETUP_DIR/config/readarr" "$SETUP_DIR/config/prowlarr" "$SETUP_DIR/config/decypharr" "$SETUP_DIR/config/gluetun" "$SETUP_DIR/library" "$SETUP_DIR/logs"
 sudo mkdir -p /mnt/torbox
 sudo chown "$USER" /mnt/torbox
+
+echo "==> Controleer NordVPN-credentials..."
+if [ -z "${NORDVPN_OPENVPN_USER:-}" ] || [ -z "${NORDVPN_OPENVPN_PASSWORD:-}" ]; then
+  echo "!! NORDVPN_OPENVPN_USER / NORDVPN_OPENVPN_PASSWORD ontbreken in .env."
+  echo "   BELANGRIJK: prowlarr en decypharr draaien via de gluetun-VPN-sidecar"
+  echo "   (network_mode: service:gluetun) en starten pas als gluetun 'healthy'"
+  echo "   is. Zonder geldige NordVPN-credentials blijven ze voor altijd wachten"
+  echo "   en komt de hele stack niet op. Haal 'Service credentials' op via"
+  echo "   https://my.nordaccount.com/dashboard/nordvpn/manual-configuration/"
+  echo "   (kies OpenVPN, niet WireGuard), vul ze in in .env, en draai dit"
+  echo "   script daarna opnieuw."
+fi
 
 echo "==> Torbox rclone-remote (WebDAV) automatisch aanmaken..."
 if [ -z "${TORBOX_EMAIL:-}" ] || [ -z "${TORBOX_API_KEY:-}" ]; then
