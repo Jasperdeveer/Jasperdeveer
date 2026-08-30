@@ -267,6 +267,10 @@ werken aantoonbaar, dus overtypen hoeft niet. Lukt dat niet, dan vraagt het scri
 erom. Aan het eind test het beide verbindingen en laat het zien hoeveel items de
 container in `/audiobooks`, `/ebooks` en de downloadmount ziet.
 
+Het zet ook **Project Gutenberg en LibriVox** aan. Die twee hebben geen account,
+key of extra container nodig — alleen hun toggle en een standaard-URL — en leveren
+gratis publiek domein: klassieke e-books en voorgelezen audioboeken.
+
 Herhaald draaien is veilig: bestaande waarden worden bijgewerkt, niet gedupliceerd.
 
 Twee dingen over Decypharr die verklaren waarom de ingevulde waarden er vreemd

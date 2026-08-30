@@ -193,6 +193,10 @@ put_setting "download_local_path",            ENV["CFG_DOWNLOAD_LOCAL_PATH"]
 put_setting "completed_download_import_mode", "copy"
 put_setting "enabled_languages",              [ "en", "nl" ]
 
+# Publiek domein, geen account of key nodig — altijd aan.
+put_setting "gutenberg_enabled",              true
+put_setting "librivox_enabled",               true
+
 if ENV["CFG_WITH_ANNA"] == "1"
   put_setting "flaresolverr_url",    ENV["CFG_FLARESOLVERR_URL"]
   put_setting "anna_archive_enabled", ENV["CFG_ANNA_ENABLED"] == "true"
@@ -226,6 +230,13 @@ begin
   puts "  decypharr  #{dc.test_connection ? 'OK' : 'faalt — controleer inloggegevens'}"
 rescue StandardError => e
   puts "  decypharr  fout: #{e.class} #{e.message}"
+end
+
+begin
+  puts "  gutenberg  #{SettingsService.gutenberg_configured? ? 'actief' : 'uit'}"
+  puts "  librivox   #{SettingsService.librivox_configured? ? 'actief' : 'uit'}"
+rescue StandardError => e
+  puts "  bronnen    status onleesbaar: #{e.class}"
 end
 
 if ENV["CFG_WITH_ANNA"] == "1"
