@@ -17,11 +17,12 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 
 ## Hoe dit in je stack past
 
-Shelfarr neemt de rol van Readarr over: zoeken, aanvragen, release kiezen,
-importeren. **Prowlarr, Torbox, rclone en de Dropbox-timer blijven ongewijzigd.**
+Shelfarr doet hetzelfde werk als je Bookshelf: zoeken, release kiezen, importeren.
+**Prowlarr, gluetun, Decypharr, Torbox, rclone en de Dropbox-timer blijven
+ongewijzigd** — Shelfarr komt ernaast te staan.
 
 ```
-   Shelfarr (:5056) ─┬─→ Prowlarr (:9696) ─────────→ indexers
+   Shelfarr (:5056) ─┬─→ Prowlarr (gluetun:9696) ──→ indexers
                      └─→ Decypharr (gluetun:8282) ─→ Torbox (cloud-download)
                                                           │ rclone
                                                     /mnt/torbox
@@ -29,10 +30,17 @@ importeren. **Prowlarr, Torbox, rclone en de Dropbox-timer blijven ongewijzigd.*
                                                     bibliotheek ──→ Dropbox-timer
 ```
 
-Dat is geen toeval: **Readarr is op 27 juni 2025 gearchiveerd**, omdat het volledig
-leunde op de Goodreads-metadata-API die offline ging. Shelfarr haalt metadata bij
-Open Library en Hardcover en heeft dat probleem niet. Je kunt beide prima een tijdje
-naast elkaar draaien — let dan op de twee punten in [stap 6](#6-naast-readarr-draaien).
+Je draait [Bookshelf](https://github.com/pennydreadful/bookshelf), een actief
+onderhouden Readarr-revival met Hardcover-metadata — niet het originele Readarr, dat
+op 27 juni 2025 werd gearchiveerd toen de Goodreads-API verdween. Je zit dus niet op
+doodlopende software, en Shelfarr is hier een *alternatief*, geen redding.
+
+Waar ze van elkaar verschillen: Bookshelf monitort auteurs en RSS-feeds en houdt een
+bibliotheek bij. Shelfarr is een aanvraagsysteem in Jellyseerr-stijl met meerdere
+gebruikers, en kan naast indexers ook directe bronnen aanspreken (Anna's Archive,
+Z-Library, LibriVox) plus Audiobookshelf aansturen. De download-kant overlapt volledig.
+Naast elkaar draaien kan prima; let op de punten in
+[stap 6](#6-naast-bookshelf-draaien).
 
 ## Deze Pi: 64-bit kernel, 32-bit userland
 
@@ -91,7 +99,8 @@ uitgezocht moet worden, dus die sessie begint niet blanco.
 - **Docker met de compose-plugin.**
 - **Een externe SSD of HDD** voor de database — op een SD-kaart is continu schrijven
   vragen om problemen.
-- Prowlarr, Decypharr (achter gluetun) en de rclone-mount draaien al.
+- Prowlarr en Decypharr draaien al, allebei in gluetun's netwerk-namespace, en de
+  rclone-mount op `/mnt/torbox` staat.
 
 ## 1. Installeren
 
@@ -139,15 +148,14 @@ poort 5056 niet meer los benaderbaar op je LAN.
 
 ## 3. Prowlarr koppelen
 
-Shelfarr hangt in hetzelfde Docker-netwerk als je bestaande stack (dat regelt
-`docker-compose.arr-network.yml`), dus je kunt containernamen gebruiken:
+Prowlarr deelt gluetun's netwerk-namespace en heet daarbinnen dus ook `gluetun`.
+Shelfarr hangt in hetzelfde Docker-netwerk (dat regelt `docker-compose.arr-network.yml`):
 
-*Admin → Settings → Indexer*: provider `prowlarr`, URL `http://prowlarr:9696`, en de
+*Admin → Settings → Indexer*: provider `prowlarr`, URL `http://gluetun:9696`, en de
 API-key uit *Prowlarr → Settings → General*.
 
-Zit Prowlarr óók achter gluetun — kijk in Readarr → Settings → Indexers wat daar als
-host staat — dan is het `http://gluetun:9696`. Werkt geen van beide, dan doet
-`http://100.120.136.112:9696` het altijd, mits de poort op de host gepubliceerd is.
+gluetun publiceert 9696 ook op de host, dus `http://100.120.136.112:9696` werkt net zo
+goed als je de override liever niet gebruikt.
 
 > **Val waar iedereen in trapt:** `http://localhost:9696` werkt niet. `localhost` is
 > binnen de Shelfarr-*container*, niet je Pi.
@@ -155,29 +163,29 @@ host staat — dan is het `http://gluetun:9696`. Werkt geen van beide, dan doet
 ## 4. Decypharr (Torbox) koppelen
 
 Shelfarr praat niet rechtstreeks met Torbox — het gebruikt dezelfde Decypharr als
-Readarr. Shelfarr ondersteunt dat type native, dus neem in **Admin → Download
-Clients** over wat er in Readarr staat:
+Bookshelf. Shelfarr ondersteunt dat type native, dus neem in **Admin → Download
+Clients** over wat er in Bookshelf staat:
 
 | Veld | Waarde |
 |---|---|
 | Type | `decypharr` |
 | URL | `http://gluetun:8282` |
-| Username / Password | dezelfde als in Readarr — zie hieronder |
-| Category | `shelfarr` — Readarr gebruikt `readarr`, dus **niet** die |
+| Username / Password | dezelfde als in Bookshelf — zie hieronder |
+| Category | `shelfarr` — Bookshelf gebruikt `readarr`, dus **niet** die |
 
-Decypharr draait achter gluetun en heeft daardoor geen eigen hostnaam op het netwerk;
-`gluetun` ís het adres. Vandaar dat Shelfarr in dat netwerk moet hangen (stap 1).
-Publiceert gluetun poort 8282 op de host, dan werkt `http://100.120.136.112:8282` ook.
+Decypharr draait in gluetun's netwerk-namespace en heeft daardoor geen eigen hostnaam;
+`gluetun` ís het adres. gluetun publiceert 8282 ook op de host, dus
+`http://100.120.136.112:8282` werkt eveneens.
 
-Decypharr staat op authenticatie, dus je hebt de inloggegevens nodig. Readarr toont het
-wachtwoord niet — haal het uit Decypharr's eigen config (`config.json`, of zijn web-UI),
-niet uit het Readarr-scherm.
+Decypharr staat op authenticatie (`use_auth: true`), dus je hebt de inloggegevens nodig.
+Bookshelf toont het wachtwoord niet — haal het uit Decypharr's eigen config op
+`~/Jasperdeveer/readarr-raspberrypi-setup/config/decypharr/config.json`, of uit zijn web-UI.
 
 Die eigen category is belangrijk: staat Shelfarr ook op `readarr`, dan gaan beide apps
 elkaars downloads opeisen.
 
-Readarr heeft geen Remote Path Mappings ingevuld staan — Decypharr en Readarr zien de
-bestanden dus op precies hetzelfde pad. Dat moet voor Shelfarr net zo blijven; daar
+Bookshelf heeft geen Remote Path Mappings ingevuld staan — Decypharr en Bookshelf zien
+de bestanden dus op precies hetzelfde pad. Dat moet voor Shelfarr net zo blijven; daar
 gaat de volgende paragraaf over.
 
 ### De rclone-mount en Decypharr's symlinks
@@ -190,21 +198,22 @@ containerpad in `docker-compose.yml` op precies hetzelfde: een symlink naar
 Staan Decypharr's symlinks in een aparte map (bijvoorbeeld `/mnt/symlinks`), zet dan
 `DOWNLOADS_PATH` én `DOWNLOADS_CONTAINER_PATH` op de gedeelde bovenliggende map `/mnt`.
 Welke map het is zegt `./scripts/stack-check.sh` je — die laat zien waar de symlinks
-staan en waar ze heen wijzen. Anders staat het in Decypharr's config, of in Readarr →
+staan en waar ze heen wijzen. Anders staat het in Decypharr's config, of in Bookshelf →
 Activity → History bij een geïmporteerd boek.
 
-Verder moeten drie dingen kloppen aan de mount zelf:
+Aan de mount zelf hoeft niets te veranderen — die staat al goed:
 
-1. **Mount-propagation.** Een FUSE-mount die ná Docker wordt aangekoppeld is binnen een
-   container onzichtbaar, tenzij de bind-mount `rslave` gebruikt. Dat staat al goed in
-   `docker-compose.yml`. Zonder dat zie je een lege map — verreweg de meest voorkomende
-   oorzaak van "hij importeert niks".
-2. **`--allow-other`.** rclone moet met die vlag draaien en `user_allow_other` moet
-   aanstaan in `/etc/fuse.conf`. Anders kan alleen de rclone-gebruiker bij de mount en
-   krijgt de container `Permission denied`. Zet `--uid`/`--gid` gelijk aan `PUID`/`PGID`.
-3. **Directory-cache.** rclone cachet mapinhoud standaard vijf minuten, dus een net
-   afgeronde download is er "nog niet" als Shelfarr gaat importeren. Draai de mount met
-   `--dir-cache-time 1m --poll-interval 15s`.
+```
+rclone mount torbox: /mnt/torbox --allow-other --vfs-cache-mode=full --dir-cache-time=1m
+```
+
+- `--allow-other` staat aan, dus containers kunnen erbij (`user_id=1000,group_id=1000`
+  komt overeen met `PUID`/`PGID`).
+- `--dir-cache-time=1m` is kort genoeg dat een net afgeronde download snel zichtbaar is.
+  Zonder dat cachet rclone vijf minuten en faalt de import terwijl het bestand er "al" is.
+- **Mount-propagation** is het enige wat aan Docker-kant nodig is: een FUSE-mount die ná
+  Docker wordt aangekoppeld is onzichtbaar in een container, tenzij de bind-mount
+  `rslave` gebruikt. Dat staat al zo in `docker-compose.yml`.
 
 Controleren of alles klopt:
 
@@ -235,19 +244,20 @@ docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo de
 Alle instellingen met hun defaults staan in de
 [settings reference](https://shelfarr.org/configuration.html).
 
-## 6. Naast Readarr draaien
+## 6. Naast Bookshelf draaien
 
 Twee dingen om te regelen zolang beide draaien:
 
-- **Aparte download-category** per app: Readarr staat op `readarr`, geef Shelfarr
+- **Aparte download-category** per app: Bookshelf staat op `readarr`, geef Shelfarr
   `shelfarr`. Anders pikt de één de downloads van de ander op.
-- **Aparte doelmappen.** Laat Shelfarr niet in Readarr's root folder schrijven —
-  Readarr hernoemt en verplaatst daar bestanden, en dan raken beide het spoor bijster.
+- **Aparte doelmappen.** Laat Shelfarr niet in Bookshelf's root folder schrijven —
+  Bookshelf hernoemt en verplaatst daar bestanden, en dan raken beide het spoor bijster.
   Geef Shelfarr eigen submappen binnen de map die je Dropbox-timer synct; dan lopen
   nieuwe boeken vanzelf mee naar Dropbox.
 
-Ben je tevreden over Shelfarr, dan kan Readarr uit — de metadata-bron waar het op
-draaide bestaat niet meer, dus veel toekomst heeft het niet.
+Bookshelf wordt actief onderhouden, dus er is geen reden om het weg te doen. Bevalt
+Shelfarr beter, dan kan het alsnog; bevalt Bookshelf beter, dan is deze stack in twee
+commando's weer weg (`docker compose down` en de map verwijderen).
 
 ## 7. Optionele onderdelen
 
@@ -304,8 +314,8 @@ docker compose start shelfarr
 | `Permission denied` op de bibliotheekmappen | `PUID`/`PGID` komen niet overeen met de eigenaar. Check `id -u`, `id -g`, `ls -ln /mnt/ssd/media`. |
 | Klacht over eigenaarschap bij het starten | Zet `CHOWN_ON_START=never` in `.env`. |
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
-| Prowlarr-test faalt | `localhost` gebruikt. Neem `http://prowlarr:9696` of `http://100.120.136.112:9696`. |
-| Readarr en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Readarr houdt `readarr`, Shelfarr krijgt `shelfarr`. |
+| Prowlarr-test faalt | `localhost` gebruikt, of `prowlarr` als hostnaam. Prowlarr zit in gluetun's namespace: `http://gluetun:9696`. |
+| Bookshelf en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Bookshelf houdt `readarr`, Shelfarr krijgt `shelfarr`. |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
 | Shelfarr op een subpad (`/shelfarr`) | Zet `RAILS_RELATIVE_URL_ROOT=/shelfarr` in de environment van de service. |
 
@@ -323,4 +333,4 @@ curl -H "Authorization: Bearer shf_..." \
 - [Getting started](https://shelfarr.org/getting-started.html) · [Settings reference](https://shelfarr.org/configuration.html)
 - [github.com/Pedro-Revez-Silva/shelfarr](https://github.com/Pedro-Revez-Silva/shelfarr) (GPL-3.0)
 - [Decypharr — Torbox setup](https://docs.decypharr.com/guides/debrid/torbox/)
-- [Readarr (Retired) — Servarr Wiki](https://wiki.servarr.com/readarr)
+- [Bookshelf — Readarr-revival](https://github.com/pennydreadful/bookshelf) · [Readarr (Retired)](https://wiki.servarr.com/readarr)

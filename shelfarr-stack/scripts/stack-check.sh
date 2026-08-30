@@ -49,6 +49,15 @@ for c in gluetun prowlarr readarr decypharr; do
   [ -n "$nets$mode" ] && printf '%-12s netwerk: %-28s mode: %s\n' "$c" "${nets:-–}" "${mode:-–}"
 done
 
+hdr "Draaien arm64-containers? (pullt eenmalig een testimage van ~3 MB)"
+$DOCKER run --rm --platform linux/arm64 arm64v8/alpine uname -m 2>&1 | tail -2
+
+hdr "Mounts van de bestaande containers (host -> container)"
+for c in readarr bookshelf decypharr prowlarr gluetun; do
+  out=$($DOCKER inspect "$c" -f '{{range .Mounts}}{{.Source}}  ->  {{.Destination}}{{"\n"}}{{end}}' 2>/dev/null)
+  [ -n "$out" ] && { echo "-- $c --"; printf '%s' "$out"; }
+done
+
 hdr "Decypharr-config (gemaskeerd)"
 cfg=""
 for m in $($DOCKER inspect decypharr -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' 2>/dev/null); do
@@ -64,6 +73,29 @@ if [ -n "$cfg" ] && [ -r "$cfg" ]; then
 else
   echo "config.json niet gevonden — kijk zelf in de Decypharr-UI onder Settings."
 fi
+
+hdr "Decypharr's downloadmap op de host  (config zegt /app/downloads)"
+dl=$($DOCKER inspect decypharr -f '{{range .Mounts}}{{if eq .Destination "/app/downloads"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+if [ -n "$dl" ]; then
+  echo "hostpad: $dl"
+  ls -la "$dl" 2>/dev/null | head -8
+  echo "-- symlinks hierin --"
+  dlinks=$(find "$dl" -maxdepth 4 -type l -printf '%p  ->  %l\n' 2>/dev/null | head -10)
+  printf '%s\n' "${dlinks:-(geen)}"
+else
+  echo "geen bind-mount op /app/downloads gevonden — Decypharr schrijft dan in de container"
+fi
+
+hdr "rclone-remote torbox: (gemaskeerd)"
+rclone config show torbox 2>/dev/null | mask || echo "(rclone niet in PATH)"
+
+hdr "Dropbox-sync"
+systemctl list-timers --all --no-pager 2>/dev/null | grep -i drop || echo "(geen timer met 'drop' in de naam)"
+for u in $(systemctl list-unit-files --no-pager 2>/dev/null | grep -i drop | awk '{print $1}'); do
+  echo "-- $u --"
+  systemctl cat "$u" 2>/dev/null | grep -E 'ExecStart|OnCalendar|WorkingDirectory' | mask
+done
+crontab -l 2>/dev/null | grep -i drop | mask
 
 hdr "Mounts onder /mnt"
 mount | grep -E ' on /mnt' | mask || echo "(geen)"

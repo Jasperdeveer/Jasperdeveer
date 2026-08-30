@@ -12,31 +12,37 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
   vandaar `platform: linux/arm64` op elke service. Arm64-*containers* draaien wel,
   omdat de kernel 64-bit is. Software die je rechtstreeks op de Pi installeert moet
   armhf zijn — Claude Code kan hier dus niet draaien.
-- **Prowlarr** als indexer-manager, poort 9696.
-- **Readarr** op poort 8787. Dit is de app die Shelfarr overneemt. Readarr is op
-  27 juni 2025 gearchiveerd omdat de Goodreads-metadata-API verdween; Shelfarr
-  gebruikt Open Library en Hardcover en heeft dat probleem niet.
-- **Decypharr (Torbox)** als download client, op host `gluetun` poort 8282, mét
-  gebruikersnaam en wachtwoord. Readarr gebruikt category `readarr`.
-- Readarr heeft **geen** Remote Path Mappings staan: Decypharr en Readarr zien de
-  bestanden op precies hetzelfde pad.
-- Torbox-opslag is via **rclone** gemount op `/mnt/torbox`.
+- OS: Raspbian 11 (bullseye), PUID/PGID 1000, TZ Europe/Amsterdam.
+- **Bookshelf** (`ghcr.io/pennydreadful/bookshelf:hardcover`) op poort 8787 — een
+  actief onderhouden Readarr-revival met Hardcover-metadata, géén dood project.
+  Shelfarr komt ernaast, niet in de plaats van.
+- **gluetun** (`qmcgaw/gluetun`) in netwerk `readarr-raspberrypi-setup_default`,
+  publiceert 8282 en 9696 op de host.
+- **Prowlarr** en **Decypharr** delen gluetun's netwerk-namespace
+  (`network_mode: container:<gluetun>`). Binnen dat netwerk heten ze allebei
+  `gluetun`: Prowlarr is `http://gluetun:9696`, Decypharr `http://gluetun:8282`.
+- Decypharr-config: `~/Jasperdeveer/readarr-raspberrypi-setup/config/decypharr/config.json`,
+  met `use_auth: true`, `download_folder: /app/downloads`, remote-naam `torbox`.
+  Bookshelf gebruikt category `readarr`; Shelfarr krijgt `shelfarr`.
+- Bookshelf heeft **geen** Remote Path Mappings: paden zijn aan beide kanten gelijk.
+- **rclone**: `rclone mount torbox: /mnt/torbox --allow-other --vfs-cache-mode=full
+  --dir-cache-time=1m`, uid/gid 1000. Die vlaggen zijn goed; niet aanpassen.
+- Ook op de Pi: pihole (poorten 53/80/443).
 - Een **Dropbox-timer** synct de bibliotheek door naar Dropbox.
 
 ## Wat nog open staat
 
-1. **Waar zet Decypharr zijn symlinks neer, en waarheen wijzen ze?**
-   `./scripts/stack-check.sh` beantwoordt dit (read-only, maskeert secrets).
-   - Symlinks binnen `/mnt/torbox` → laat `DOWNLOADS_PATH` en
-     `DOWNLOADS_CONTAINER_PATH` op `/mnt/torbox`.
-   - Symlinks elders onder `/mnt` → zet beide op `/mnt`, zodat elk pad 1-op-1
-     klopt. Een symlink breekt zodra de container het doel op een ander pad ziet.
-2. **Netwerknaam van gluetun** → `ARR_NETWORK` in `.env`. Zonder dat kan Shelfarr
-   `gluetun:8282` niet bereiken.
-3. **Waar de Dropbox-timer vandaan synct** → daarbinnen horen `AUDIOBOOKS_PATH`
-   en `EBOOKS_PATH` te liggen, anders lopen Shelfarr-boeken niet mee.
-4. **Zit Prowlarr ook achter gluetun?** Dan is de indexer-URL `http://gluetun:9696`
-   in plaats van `http://prowlarr:9696`.
+1. **Welk hostpad hoort bij Decypharr's `/app/downloads`, en staan daar symlinks?**
+   Onder `/mnt` staan er geen, dus ze zitten in die downloadmap of Decypharr
+   importeert rechtstreeks uit `/mnt/torbox` (939 items). `./scripts/stack-check.sh`
+   dumpt de container-mounts en zoekt daar naar symlinks.
+   - Wijzen symlinks naar `/mnt/torbox/...` → `DOWNLOADS_PATH` en
+     `DOWNLOADS_CONTAINER_PATH` moeten die map 1-op-1 zichtbaar maken; kies zo nodig
+     `/mnt` als gedeelde bovenliggende map. Een symlink breekt zodra de container het
+     doel op een ander pad ziet.
+2. **Waar de Dropbox-timer vandaan synct** → daarbinnen horen `AUDIOBOOKS_PATH` en
+   `EBOOKS_PATH` te liggen, anders lopen Shelfarr-boeken niet mee naar Dropbox.
+3. **Wat Bookshelf als root folder gebruikt** → Shelfarr moet daar níét in schrijven.
 
 ## Werkwijze
 
