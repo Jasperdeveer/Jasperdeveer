@@ -11,6 +11,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `docker-compose.yml` | De stack. Shelfarr draait standaard; extra's zitten achter profiles. |
 | `docker-compose.arr-network.yml` | Override om Shelfarr in het Docker-netwerk van gluetun te hangen. |
 | `docker-compose.symlinks.yml` | Override die de rclone-mount óók op zijn eigen pad aankoppelt. |
+| `docker-compose.compat.yml` | Override voor een 32-bit Docker-daemon die arm64-containers draait. |
 | `scripts/make-env.sh` | Leest de draaiende stack uit en schrijft daaruit `.env`. |
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
@@ -70,6 +71,14 @@ docker run --rm --platform linux/arm64 arm64v8/alpine uname -m
 - Antwoordt dit `aarch64`, dan draaien arm64-containers en kun je gewoon verder.
 - Faalt het met `exec format error`, dan kan deze Pi geen 64-bit containers draaien
   en is een herinstallatie met 64-bit Raspberry Pi OS de enige route.
+
+Er is nog een tweede gevolg. Een 32-bit daemon bouwt het seccomp-filter voor de
+arm32-syscalltabel, en de aarch64-syscalls van de container matchen daar niet mee:
+het proces wordt gedood met SIGSYS en de container herstart eindeloos met
+`exited with code 159` (128 + 31). `docker-compose.compat.yml` zet dat filter uit
+voor deze twee containers; `make-env.sh` schakelt die override automatisch in zodra
+het een 32-bit daemon ziet. Het kost een laag isolatie, en verdwijnt zodra je een
+64-bit userland draait.
 
 Wat hier níét mee opgelost wordt, is software die je rechtstreeks op de Pi
 installeert. Claude Code publiceert alleen x64- en arm64-binaries, en die starten
@@ -325,6 +334,7 @@ docker compose start shelfarr
 | `Permission denied` op de mount | rclone's `--uid`/`--gid` komen niet overeen met `PUID`/`PGID` in `.env`. |
 | Import faalt op hardlink | Zet de import-modus op `copy` — cross-filesystem hardlinks bestaan niet. |
 | `no matching manifest for linux/arm/v7` | Docker pullt armv7. `DOCKER_PLATFORM=linux/arm64` in `.env` — zie de sectie over de 32-bit userland. |
+| `exited with code 159`, container blijft herstarten | SIGSYS: seccomp doodt de arm64-container onder een 32-bit daemon. Voeg `docker-compose.compat.yml` toe aan `COMPOSE_FILE` (of draai `make-env.sh --force`). |
 | `exec format error` bij het starten | De kernel is 32-bit. `uname -m` moet `aarch64` geven; zo niet, dan is een 64-bit OS nodig. |
 | `Permission denied` op de bibliotheekmappen | `PUID`/`PGID` komen niet overeen met de eigenaar. Check `id -u`, `id -g`, `ls -ln /mnt/ssd/media`. |
 | Klacht over eigenaarschap bij het starten | Zet `CHOWN_ON_START=never` in `.env`. |

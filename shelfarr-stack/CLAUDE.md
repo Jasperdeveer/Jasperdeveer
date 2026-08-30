@@ -10,7 +10,8 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
 - **64-bit kernel (`aarch64`), 32-bit userland (`armhf`), Docker-daemon `arm`.**
   Docker pullt daardoor uit zichzelf armv7-images, die voor Shelfarr niet bestaan;
   vandaar `platform: linux/arm64` op elke service. Arm64-*containers* draaien wel,
-  omdat de kernel 64-bit is. Software die je rechtstreeks op de Pi installeert moet
+  omdat de kernel 64-bit is, maar het seccomp-filter wordt voor arm32 gebouwd en
+  doodt ze met SIGSYS (`exit 159`) — daarvoor is `docker-compose.compat.yml`. Software die je rechtstreeks op de Pi installeert moet
   armhf zijn — Claude Code kan hier dus niet draaien.
 - OS: Raspbian 11 (bullseye), PUID/PGID 1000, TZ Europe/Amsterdam.
 - **Bookshelf** (`ghcr.io/pennydreadful/bookshelf:hardcover`) op poort 8787 — een

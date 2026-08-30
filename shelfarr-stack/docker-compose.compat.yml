@@ -1,0 +1,20 @@
+# Override voor een 32-bit Docker-daemon (Server.Arch = arm) die arm64-containers
+# draait. Het seccomp-profiel wordt dan opgebouwd voor de arm32-syscalltabel; de
+# aarch64-syscalls van de container matchen daar niet mee en het proces wordt
+# gedood met SIGSYS — zichtbaar als `exited with code 159` (128 + 31).
+#
+# Deze override zet dat syscall-filter uit voor déze twee containers. Dat kost een
+# laag isolatie: ze mogen dan elke syscall doen die de kernel aanbiedt. Op een
+# eigen Pi, met images die je vertrouwt, is dat een verdedigbare ruil. De echte
+# oplossing is een 64-bit userland; daarna kan deze override weg.
+#
+# `scripts/make-env.sh` zet dit alleen in COMPOSE_FILE als je daemon 32-bit is.
+
+services:
+  shelfarr:
+    security_opt:
+      - seccomp:unconfined
+
+  shelfarr-libation:
+    security_opt:
+      - seccomp:unconfined

@@ -78,6 +78,14 @@ fi
 COMPOSE_FILE="docker-compose.yml:docker-compose.arr-network.yml"
 [ "$NEED_SYMLINK_OVERRIDE" = 1 ] && COMPOSE_FILE="$COMPOSE_FILE:docker-compose.symlinks.yml"
 
+# Een 32-bit daemon bouwt het syscall-filter voor arm32; arm64-containers worden
+# daardoor met SIGSYS gedood (exit 159). Zie docker-compose.compat.yml.
+DARCH=$($DOCKER version --format '{{.Server.Arch}}' 2>/dev/null | tr -d '[:space:]')
+if [ "$DARCH" = "arm" ]; then
+  COMPOSE_FILE="$COMPOSE_FILE:docker-compose.compat.yml"
+  note "docker-arch     arm (32-bit) — compat-override toegevoegd, anders exit 159"
+fi
+
 # Bibliotheek: kandidaten voorstellen, maar niet gokken.
 LIB_HINT=$($DOCKER inspect readarr -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' 2>/dev/null \
            | grep -iE 'book|librar|media|calibre' | head -3)
