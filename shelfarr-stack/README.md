@@ -11,6 +11,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `docker-compose.yml` | De stack. Shelfarr draait standaard; extra's zitten achter profiles. |
 | `docker-compose.arr-network.yml` | Override om Shelfarr in het Docker-netwerk van Prowlarr te hangen. |
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
+| `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
 | `scripts/tailscale-serve.sh` | Zet de web-UI achter HTTPS op je tailnet. |
 
 ## Hoe dit in je stack past
@@ -51,10 +52,10 @@ cd Jasperdeveer/shelfarr-stack
 
 cp .env.example .env
 
-# de netwerknaam die je in ARR_NETWORK nodig hebt
-docker inspect gluetun -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
+# leest je stack uit en zegt welke waarden in .env horen
+./scripts/stack-check.sh
 
-nano .env                    # ARR_NETWORK, paden, PUID/PGID (`id -u` / `id -g`), tijdzone
+nano .env                    # ARR_NETWORK, paden, PUID/PGID, tijdzone
 
 sudo mkdir -p /mnt/ssd/shelfarr/data /mnt/ssd/media/{audiobooks,ebooks}
 sudo chown -R "$(id -u):$(id -g)" /mnt/ssd/shelfarr /mnt/ssd/media
@@ -138,8 +139,9 @@ containerpad in `docker-compose.yml` op precies hetzelfde: een symlink naar
 
 Staan Decypharr's symlinks in een aparte map (bijvoorbeeld `/mnt/symlinks`), zet dan
 `DOWNLOADS_PATH` én `DOWNLOADS_CONTAINER_PATH` op de gedeelde bovenliggende map `/mnt`.
-Welke map het is zie je in Decypharr's config of in Readarr → Activity → History bij een
-geïmporteerd boek.
+Welke map het is zegt `./scripts/stack-check.sh` je — die laat zien waar de symlinks
+staan en waar ze heen wijzen. Anders staat het in Decypharr's config, of in Readarr →
+Activity → History bij een geïmporteerd boek.
 
 Verder moeten drie dingen kloppen aan de mount zelf:
 
