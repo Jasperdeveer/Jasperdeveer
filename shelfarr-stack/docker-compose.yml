@@ -3,8 +3,11 @@
 #   cp .env.example .env   # paden + PUID/PGID invullen
 #   docker compose up -d
 #
+# Downloads lopen via je bestaande Torbox-setup: Shelfarr geeft releases aan
+# dezelfde qBittorrent-compatibele shim als Readarr, en leest de afgeronde
+# bestanden uit de rclone-mount /mnt/torbox. Zie README stap 4.
+#
 # Optionele onderdelen draaien via profiles (standaard uit, scheelt RAM op een Pi):
-#   --profile qbittorrent    download client (sla over als je er al één hebt)
 #   --profile audiobookshelf library-app voor luisteren/lezen
 #   --profile flaresolverr   Cloudflare-bypass, alleen nodig voor Anna's Archive
 #   --profile audible        Libation-companion voor Audible-backups (beta)
@@ -32,9 +35,11 @@ services:
       # Bibliotheken: hier zet Shelfarr afgeronde boeken neer.
       - ${AUDIOBOOKS_PATH:?zet AUDIOBOOKS_PATH in .env}:/audiobooks
       - ${EBOOKS_PATH:?zet EBOOKS_PATH in .env}:/ebooks
-      # Downloadmap van je download client. Moet in BEIDE containers /downloads
-      # heten, anders vindt Shelfarr de afgeronde bestanden niet.
-      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads
+      # De rclone-mount van je Torbox-opslag (/mnt/torbox).
+      # `rslave` is verplicht: zonder mount-propagation ziet de container een
+      # lege map, omdat de FUSE-mount ná het starten van Docker is aangekoppeld.
+      # `ro` beschermt je cloud-opslag; Shelfarr hoeft er alleen uit te lezen.
+      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads:${DOWNLOADS_MOUNT_OPTS:-ro,rslave}
       # Audible-backups uit de Libation-companion (leeg zolang die niet draait).
       - ${LIBATION_BOOKS_PATH:-libation_books}:/imports/libation:ro
       - libation_control:/run/shelfarr-libation:ro
@@ -55,32 +60,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
-    networks:
-      - shelfarr
-
-  # ---------------------------------------------------------------------------
-  # Optioneel: download client. Laat weg als er al een qBittorrent/SAB draait.
-  # ---------------------------------------------------------------------------
-  qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
-    container_name: qbittorrent
-    profiles: ["qbittorrent"]
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - "${BIND_ADDRESS:-0.0.0.0}:${QBITTORRENT_PORT:-8081}:8081"
-      - "${TORRENT_PORT:-6881}:6881/tcp"
-      - "${TORRENT_PORT:-6881}:6881/udp"
-    volumes:
-      - ${QBITTORRENT_CONFIG_PATH:-./qbittorrent}:/config
-      # Zelfde hostmap én zelfde containerpad als bij Shelfarr — bewust.
-      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-Europe/Amsterdam}
-      - WEBUI_PORT=8081
-      - TORRENTING_PORT=6881
     networks:
       - shelfarr
 
