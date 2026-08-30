@@ -1,0 +1,172 @@
+# Shelfarr op Raspberry Pi (arm64) — zie README.md voor de volledige uitleg.
+#
+#   cp .env.example .env   # paden + PUID/PGID invullen
+#   docker compose up -d
+#
+# Optionele onderdelen draaien via profiles (standaard uit, scheelt RAM op een Pi):
+#   --profile qbittorrent    download client (sla over als je er al één hebt)
+#   --profile audiobookshelf library-app voor luisteren/lezen
+#   --profile flaresolverr   Cloudflare-bypass, alleen nodig voor Anna's Archive
+#   --profile audible        Libation-companion voor Audible-backups (beta)
+
+name: shelfarr
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  shelfarr:
+    image: ghcr.io/pedro-revez-silva/shelfarr:${SHELFARR_VERSION:-latest}
+    container_name: shelfarr
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      # BIND_ADDRESS=127.0.0.1 als je `tailscale serve` gebruikt (zie README).
+      - "${BIND_ADDRESS:-0.0.0.0}:${SHELFARR_PORT:-5056}:${HTTP_PORT:-80}"
+    volumes:
+      # Database, config en de automatisch gegenereerde secret key.
+      - ${DATA_PATH:-./data}:/rails/storage
+      # Bibliotheken: hier zet Shelfarr afgeronde boeken neer.
+      - ${AUDIOBOOKS_PATH:?zet AUDIOBOOKS_PATH in .env}:/audiobooks
+      - ${EBOOKS_PATH:?zet EBOOKS_PATH in .env}:/ebooks
+      # Downloadmap van je download client. Moet in BEIDE containers /downloads
+      # heten, anders vindt Shelfarr de afgeronde bestanden niet.
+      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads
+      # Audible-backups uit de Libation-companion (leeg zolang die niet draait).
+      - ${LIBATION_BOOKS_PATH:-libation_books}:/imports/libation:ro
+      - libation_control:/run/shelfarr-libation:ro
+    environment:
+      - SOLID_QUEUE_IN_PUMA=1
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CHOWN_ON_START=${CHOWN_ON_START:-auto}
+      - TZ=${TZ:-Europe/Amsterdam}
+      - HTTP_PORT=${HTTP_PORT:-80}
+      # Koppeling met de optionele Libation-companion (profile: audible).
+      - SHELFARR_LIBATION_URL=http://shelfarr-libation:8080
+      - SHELFARR_LIBATION_TOKEN_FILE=/run/shelfarr-libation/token
+      - SHELFARR_LIBATION_IMPORT_ROOT=/imports/libation
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${HTTP_PORT:-80}/up"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    networks:
+      - shelfarr
+
+  # ---------------------------------------------------------------------------
+  # Optioneel: download client. Laat weg als er al een qBittorrent/SAB draait.
+  # ---------------------------------------------------------------------------
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    profiles: ["qbittorrent"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${QBITTORRENT_PORT:-8081}:8081"
+      - "${TORRENT_PORT:-6881}:6881/tcp"
+      - "${TORRENT_PORT:-6881}:6881/udp"
+    volumes:
+      - ${QBITTORRENT_CONFIG_PATH:-./qbittorrent}:/config
+      # Zelfde hostmap én zelfde containerpad als bij Shelfarr — bewust.
+      - ${DOWNLOADS_PATH:?zet DOWNLOADS_PATH in .env}:/downloads
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Amsterdam}
+      - WEBUI_PORT=8081
+      - TORRENTING_PORT=6881
+    networks:
+      - shelfarr
+
+  # ---------------------------------------------------------------------------
+  # Optioneel: Audiobookshelf. Shelfarr triggert hier een scan na elke import.
+  # ---------------------------------------------------------------------------
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    profiles: ["audiobookshelf"]
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${AUDIOBOOKSHELF_PORT:-13378}:80"
+    volumes:
+      - ${AUDIOBOOKS_PATH:?zet AUDIOBOOKS_PATH in .env}:/audiobooks
+      - ${EBOOKS_PATH:?zet EBOOKS_PATH in .env}:/ebooks
+      - ${AUDIOBOOKSHELF_CONFIG_PATH:-./audiobookshelf/config}:/config
+      - ${AUDIOBOOKSHELF_METADATA_PATH:-./audiobookshelf/metadata}:/metadata
+    environment:
+      - TZ=${TZ:-Europe/Amsterdam}
+    networks:
+      - shelfarr
+
+  # ---------------------------------------------------------------------------
+  # Optioneel: FlareSolverr, alleen nodig als je Anna's Archive aanzet.
+  # Geen hostpoort: alleen bereikbaar binnen dit compose-netwerk.
+  # ---------------------------------------------------------------------------
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    profiles: ["flaresolverr"]
+    restart: unless-stopped
+    logging: *default-logging
+    expose:
+      - "8191"
+    environment:
+      - LOG_LEVEL=${FLARESOLVERR_LOG_LEVEL:-info}
+      - TZ=${TZ:-Europe/Amsterdam}
+    networks:
+      - shelfarr
+
+  # ---------------------------------------------------------------------------
+  # Optioneel: Audible Backup (beta) via Libation. Blijft idle tot je het in
+  # Admin → Audible Backup aanzet. Geen hostpoort, geen Docker socket.
+  # ---------------------------------------------------------------------------
+  shelfarr-libation:
+    image: ghcr.io/pedro-revez-silva/shelfarr-libation:${SHELFARR_VERSION:-latest}
+    container_name: shelfarr-libation
+    profiles: ["audible"]
+    restart: unless-stopped
+    logging: *default-logging
+    expose:
+      - "8080"
+    volumes:
+      - libation_config:/config
+      - ${LIBATION_BOOKS_PATH:-libation_books}:/data
+      - libation_control:/control
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - CHOWN_ON_START=${CHOWN_ON_START:-auto}
+      - TZ=${TZ:-Europe/Amsterdam}
+      - LIBATION_FILES_DIR=/config
+      - LIBATION_BOOKS_DIR=/data
+      - LIBATION_IN_PROGRESS_DIR=/config/in-progress
+      - COMPANION_STATE_DIR=/config/shelfarr-companion
+      - COMPANION_TOKEN_FILE=/control/token
+      - COMPANION_MAX_ACTIVE_JOBS=${COMPANION_MAX_ACTIVE_JOBS:-500}
+      - COMPANION_MAX_TERMINAL_JOBS=${COMPANION_MAX_TERMINAL_JOBS:-5000}
+      - COMPANION_TERMINAL_JOB_RETENTION_DAYS=${COMPANION_TERMINAL_JOB_RETENTION_DAYS:-30}
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
+    healthcheck:
+      test: ["CMD", "/companion/Shelfarr.Libation.Companion", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - shelfarr
+
+networks:
+  shelfarr:
+    name: shelfarr
+
+volumes:
+  libation_config:
+  libation_books:
+  libation_control:

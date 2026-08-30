@@ -1,0 +1,20 @@
+# Override: hang Shelfarr óók in het Docker-netwerk waar je bestaande Prowlarr
+# (en eventueel je download client) al in zit. Daarmee kun je in de Shelfarr-UI
+# `http://prowlarr:9696` gebruiken in plaats van het IP van je Pi.
+#
+# Netwerknaam opzoeken:
+#   docker inspect prowlarr -f '{{range $n,$_ := .NetworkSettings.Networks}}{{$n}}{{"\n"}}{{end}}'
+#
+# Zet die naam als ARR_NETWORK in .env en start met:
+#   docker compose -f docker-compose.yml -f docker-compose.arr-network.yml up -d
+
+services:
+  shelfarr:
+    networks:
+      - shelfarr
+      - arr
+
+networks:
+  arr:
+    external: true
+    name: ${ARR_NETWORK:?zet ARR_NETWORK in .env, bv. arr_default}

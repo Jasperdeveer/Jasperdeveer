@@ -1,0 +1,7 @@
+# Lokale configuratie met paden en eventuele secrets
+.env
+
+# Runtime-data die op de Pi ontstaat (database, config, downloads)
+data/
+qbittorrent/
+audiobookshelf/
