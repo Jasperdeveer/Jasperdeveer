@@ -11,7 +11,7 @@
 set -uo pipefail
 
 DOCKER="docker"
-docker info >/dev/null 2>&1 || DOCKER="sudo docker"
+command -v docker >/dev/null 2>&1 && { docker info >/dev/null 2>&1 || DOCKER="sudo docker"; }
 
 mask() {
   sed -E 's/("?(api[_-]?key|apikey|token|password|passwd|secret|pass)"?[[:space:]]*[:=][[:space:]]*"?)[^",[:space:]]+/\1***GEMASKEERD***/Ig'
@@ -20,7 +20,11 @@ mask() {
 hdr() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
 
 hdr "Platform"
-echo "architectuur : $(uname -m)   (moet aarch64 zijn voor de arm64-images)"
+echo "kernel-arch  : $(uname -m)   (zegt alleen iets over de kernel)"
+echo "userland     : $(dpkg --print-architecture 2>/dev/null || echo onbekend)   <-- moet arm64 zijn, niet armhf"
+echo "word-size    : $(getconf LONG_BIT)-bit"
+darch=$($DOCKER version --format '{{.Server.Arch}}' 2>/dev/null | tr -d '[:space:]')
+echo "docker-arch  : ${darch:-onbekend}   <-- bepaalt welke images gepulld worden"
 echo "kernel       : $(uname -r)"
 [ -r /etc/os-release ] && . /etc/os-release && echo "os           : ${PRETTY_NAME:-onbekend}"
 echo "uid/gid      : PUID=$(id -u) PGID=$(id -g)"

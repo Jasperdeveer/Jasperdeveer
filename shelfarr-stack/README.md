@@ -40,17 +40,34 @@ Wil je de configuratie niet met de hand narekenen, installeer dan Claude Code op
 Pi — arm64 wordt ondersteund, mits 4 GB RAM of meer:
 
 ```bash
+# repo ophalen (nog niet aanwezig op de Pi)
+git clone https://github.com/Jasperdeveer/Jasperdeveer.git ~/Jasperdeveer
+cd ~/Jasperdeveer && git checkout claude/shelfarr-stack-integration-c4z6ki
+
 curl -fsSL https://claude.ai/install.sh | bash
-cd ~/Jasperdeveer/shelfarr-stack && claude
+cd shelfarr-stack && claude
 ```
+
+Faalt de installatie met `No such file or directory` op een bestand dat er wél lijkt te
+staan, dan ontbreekt de 64-bit dynamische linker: je userland is 32-bit. Check
+`dpkg --print-architecture` — zie Vereisten hieronder.
 
 `CLAUDE.md` in deze map bevat de volledige context van je stack en wat er nog
 uitgezocht moet worden, dus die sessie begint niet blanco.
 
 ## Vereisten
 
-- **Een 64-bit OS.** Check met `uname -m` — dat moet `aarch64` geven. Op 32-bit
-  Raspberry Pi OS start Shelfarr niet: er is alleen `linux/amd64` en `linux/arm64`.
+- **Een volledig 64-bit OS.** `uname -m` is hier niet genoeg: dat toont de kernel, en
+  een 64-bit kernel met 32-bit userland is op Raspberry Pi OS heel gewoon. De
+  beslissende checks:
+
+  ```bash
+  dpkg --print-architecture                    # moet arm64 zijn, niet armhf
+  docker version --format '{{.Server.Arch}}'   # bepaalt welke images Docker pullt
+  ```
+
+  Staat daar `armhf`, dan zoekt Docker naar armv7-images en die bestaan niet voor
+  Shelfarr. Een 64-bit Raspberry Pi OS is dan de enige route.
 - **Pi 4 of 5 met minimaal 2 GB RAM.** Shelfarr is een Rails-app.
 - **Docker met de compose-plugin.**
 - **Een externe SSD of HDD** voor de database — op een SD-kaart is continu schrijven
