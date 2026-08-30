@@ -111,15 +111,23 @@ Clients** over wat er in Readarr staat:
 |---|---|
 | Type | `decypharr` |
 | URL | `http://gluetun:8282` |
-| Username / Password | leeg, net als in Readarr |
-| Category | `shelfarr-books` — **niet** dezelfde als Readarr |
+| Username / Password | dezelfde als in Readarr — zie hieronder |
+| Category | `shelfarr` — Readarr gebruikt `readarr`, dus **niet** die |
 
 Decypharr draait achter gluetun en heeft daardoor geen eigen hostnaam op het netwerk;
 `gluetun` ís het adres. Vandaar dat Shelfarr in dat netwerk moet hangen (stap 1).
 Publiceert gluetun poort 8282 op de host, dan werkt `http://100.120.136.112:8282` ook.
 
-Die eigen category is belangrijk: zonder dat gaan Readarr en Shelfarr elkaars
-downloads opeisen.
+Decypharr staat op authenticatie, dus je hebt de inloggegevens nodig. Readarr toont het
+wachtwoord niet — haal het uit Decypharr's eigen config (`config.json`, of zijn web-UI),
+niet uit het Readarr-scherm.
+
+Die eigen category is belangrijk: staat Shelfarr ook op `readarr`, dan gaan beide apps
+elkaars downloads opeisen.
+
+Readarr heeft geen Remote Path Mappings ingevuld staan — Decypharr en Readarr zien de
+bestanden dus op precies hetzelfde pad. Dat moet voor Shelfarr net zo blijven; daar
+gaat de volgende paragraaf over.
 
 ### De rclone-mount en Decypharr's symlinks
 
@@ -156,7 +164,7 @@ docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo de
 ## 5. Configuratie-checklist in de UI
 
 1. *Admin → Settings → Indexer* — Prowlarr (stap 3).
-2. *Admin → Download Clients* — Decypharr op `http://gluetun:8282`, met eigen category (stap 4). Klik `Test`.
+2. *Admin → Download Clients* — Decypharr op `http://gluetun:8282`, met inloggegevens en de category `shelfarr` (stap 4). Klik `Test`.
 3. *Admin → Settings → Downloads → Output Paths*:
    - audioboeken `/audiobooks`, e-books `/ebooks`
    - `download_local_path` op het pad waar Decypharr zijn symlinks neerzet — dus
@@ -179,8 +187,8 @@ Alle instellingen met hun defaults staan in de
 
 Twee dingen om te regelen zolang beide draaien:
 
-- **Aparte download-category** per app (stap 4), anders pikt de één de downloads van
-  de ander op.
+- **Aparte download-category** per app: Readarr staat op `readarr`, geef Shelfarr
+  `shelfarr`. Anders pikt de één de downloads van de ander op.
 - **Aparte doelmappen.** Laat Shelfarr niet in Readarr's root folder schrijven —
   Readarr hernoemt en verplaatst daar bestanden, en dan raken beide het spoor bijster.
   Geef Shelfarr eigen submappen binnen de map die je Dropbox-timer synct; dan lopen
@@ -244,7 +252,7 @@ docker compose start shelfarr
 | Klacht over eigenaarschap bij het starten | Zet `CHOWN_ON_START=never` in `.env`. |
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
 | Prowlarr-test faalt | `localhost` gebruikt. Neem `http://prowlarr:9696` of `http://100.120.136.112:9696`. |
-| Readarr en Shelfarr pakken elkaars downloads | Aparte category per app (stap 6). |
+| Readarr en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Readarr houdt `readarr`, Shelfarr krijgt `shelfarr`. |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
 | Shelfarr op een subpad (`/shelfarr`) | Zet `RAILS_RELATIVE_URL_ROOT=/shelfarr` in de environment van de service. |
 
