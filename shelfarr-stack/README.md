@@ -108,8 +108,13 @@ uitgezocht moet worden, dus die sessie begint niet blanco.
   zijn — zie hieronder — maar de kernel niet.
 - **Pi 4 of 5 met minimaal 2 GB RAM.** Shelfarr is een Rails-app.
 - **Docker met de compose-plugin.**
-- **Een externe SSD of HDD** voor de database — op een SD-kaart is continu schrijven
-  vragen om problemen.
+- **Bij voorkeur een externe SSD of HDD.** Deze Pi heeft die niet: `/mnt/torbox` is de
+  enige mount, en zowel de bibliotheek als Shelfarr's database staan op de SD-kaart.
+  Dat werkt, maar houd twee dingen in de gaten. De SQLite-database schrijft continu,
+  wat SD-kaarten op termijn sloopt. En omdat er met `copy` wordt geïmporteerd, komen
+  alle boeken écht op die kaart te staan — een handvol audioboeken is zo een paar
+  gigabyte. Check `df -h /` af en toe, en verhuis `DATA_PATH` en de bibliotheek naar
+  externe opslag zodra je die aansluit.
 - Prowlarr en Decypharr draaien al, allebei in gluetun's netwerk-namespace, en de
   rclone-mount op `/mnt/torbox` staat.
 
