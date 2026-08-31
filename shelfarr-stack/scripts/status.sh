@@ -5,7 +5,7 @@
 #   ./scripts/status.sh
 #
 # Voor de aanvragen is een API-token nodig. Zet die één keer weg:
-#   echo 'shf_...' > .shelfarr-token && chmod 600 .shelfarr-token
+#   echo 'shf_JOUW_ECHTE_TOKEN' > .shelfarr-token && chmod 600 .shelfarr-token
 # of geef hem mee als SHELFARR_TOKEN in de omgeving. Zonder token werkt de
 # rest gewoon, alleen het aanvragenoverzicht valt weg.
 #
@@ -70,13 +70,21 @@ TOKEN="${SHELFARR_TOKEN:-}"
 [ -z "$TOKEN" ] && [ -r .shelfarr-token ] && TOKEN=$(tr -d '[:space:]' < .shelfarr-token)
 if [ -z "$TOKEN" ]; then
   inf "geen token — zie de kop van dit script"
+elif [ "$TOKEN" = "shf_..." ]; then
+  bad "de placeholder uit de documentatie staat nog in .shelfarr-token"
+  inf "maak een echt token onder Profile -> API tokens en zet dat erin"
 else
-  body=$(curl -sS --max-time 10 -H "Authorization: Bearer $TOKEN" \
+  resp=$(curl -sS --max-time 10 -w '\n%{http_code}' -H "Authorization: Bearer $TOKEN" \
          "http://localhost:${PORT}/api/v1/requests?limit=200" 2>/dev/null)
-  if [ -z "$body" ]; then
-    bad "API niet bereikbaar op localhost:${PORT}"
-  else
-    printf '%s' "$body" | python3 -c '
+  code=$(printf '%s' "$resp" | tail -1)
+  body=$(printf '%s' "$resp" | sed '$d')
+  case "$code" in
+    401|403)
+      bad "token geweigerd (HTTP $code) — vervangen of ingetrokken?" ;;
+    ""|000)
+      bad "geen antwoord van localhost:${PORT} — draait de container en klopt SHELFARR_PORT?" ;;
+    200)
+      printf '%s' "$body" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -99,15 +107,23 @@ for r in stuck[:5]:
     t = (r.get("title") or book.get("title") or "?")[:48]
     st = r.get("status")
     print("      ! %s: %s" % (st, t))
-'
-  fi
+' ;;
+    *)
+      bad "onverwachte HTTP $code van de API" ;;
+  esac
 fi
 
 hdr "Dropbox-sync"
 if systemctl list-timers --all --no-pager 2>/dev/null | grep -q dropbox-sync.timer; then
   systemctl list-timers --all --no-pager 2>/dev/null | awk '/dropbox-sync.timer/ {print "    volgende: "$1" "$2" "$3"   ("$4" "$5")"}'
   res=$(systemctl show dropbox-sync.service -p Result --value 2>/dev/null)
-  [ "$res" = "success" ] && ok "laatste run: success" || bad "laatste run: ${res:-onbekend}"
+  if [ "$res" = "success" ]; then
+    ok "laatste run: success"
+  else
+    bad "laatste run: ${res:-onbekend}"
+    journalctl -u dropbox-sync.service -n 5 --no-pager -o cat 2>/dev/null \
+      | sed 's/^/      /' || inf "journalctl gaf niets terug"
+  fi
 else
   inf "geen dropbox-sync.timer gevonden"
 fi

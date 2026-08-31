@@ -395,7 +395,7 @@ docker image prune -f                          # oude images opruimen
 (*Profile → API tokens*):
 
 ```bash
-echo 'shf_...' > .shelfarr-token && chmod 600 .shelfarr-token
+echo 'shf_JOUW_ECHTE_TOKEN' > .shelfarr-token && chmod 600 .shelfarr-token
 ```
 
 Dat bestand staat in `.gitignore`. Elke minuut laten meekijken kan met
