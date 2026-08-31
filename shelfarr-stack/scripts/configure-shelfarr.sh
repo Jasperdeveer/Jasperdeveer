@@ -5,6 +5,7 @@
 #
 #   ./scripts/configure-shelfarr.sh
 #   ./scripts/configure-shelfarr.sh --with-hardcover   # betere metadata (gratis token)
+#   ./scripts/configure-shelfarr.sh --with-zlibrary    # Z-Library (eigen account)
 #   ./scripts/configure-shelfarr.sh --with-anna        # FlareSolverr + Anna's Archive
 #
 # Draai dit ná `docker compose up -d` en nadat je je adminaccount hebt
@@ -16,10 +17,12 @@ cd "$(dirname "$0")/.." || exit 1
 
 WITH_ANNA=0
 WITH_HARDCOVER=0
+WITH_ZLIB=0
 for arg in "$@"; do
   case "$arg" in
     --with-anna)      WITH_ANNA=1 ;;
     --with-hardcover) WITH_HARDCOVER=1 ;;
+    --with-zlibrary)  WITH_ZLIB=1 ;;
     *) echo "onbekende optie: $arg" >&2; exit 1 ;;
   esac
 done
@@ -112,6 +115,21 @@ if [ "$WITH_HARDCOVER" = 1 ]; then
                             || note "leeg gelaten — Hardcover blijft uit"
 fi
 
+ZLIB_EMAIL=""; ZLIB_PASS=""
+if [ "$WITH_ZLIB" = 1 ]; then
+  hdr "Z-Library"
+  note "Directe downloads: geen indexer, geen Torbox, geen seeders nodig."
+  note "Shelfarr eist e-mail én wachtwoord; zonder allebei blijft de bron uit."
+  read -rp  "  E-mail: " ZLIB_EMAIL
+  read -rsp "  Wachtwoord: " ZLIB_PASS; echo
+  if [ -n "$ZLIB_EMAIL" ] && [ -n "$ZLIB_PASS" ]; then
+    note "ingelezen voor $ZLIB_EMAIL (${#ZLIB_PASS} tekens)"
+  else
+    note "onvolledig — Z-Library blijft uit"
+    ZLIB_EMAIL=""; ZLIB_PASS=""
+  fi
+fi
+
 FLARESOLVERR_URL=""
 ANNA_ENABLED="false"
 ANNA_KEY=""
@@ -180,6 +198,8 @@ $DOCKER compose exec -T \
   -e CFG_DOWNLOAD_LOCAL_PATH="$DOWNLOAD_LOCAL_PATH" \
   -e CFG_WITH_ANNA="$WITH_ANNA" \
   -e CFG_HARDCOVER_TOKEN="$HARDCOVER_TOKEN" \
+  -e CFG_ZLIB_EMAIL="$ZLIB_EMAIL" \
+  -e CFG_ZLIB_PASS="$ZLIB_PASS" \
   -e CFG_FLARESOLVERR_URL="$FLARESOLVERR_URL" \
   -e CFG_ANNA_ENABLED="$ANNA_ENABLED" \
   -e CFG_ANNA_KEY="$ANNA_KEY" \
@@ -194,7 +214,8 @@ def put_setting(key, value)
   end
   s.typed_value = value
   s.save!
-  shown = key.include?("key") || key.include?("token") ? "***" : value.inspect
+  secret = %w[key token password secret].any? { |w| key.include?(w) }
+  shown = secret ? "***" : value.inspect
   puts "  #{key} = #{shown}"
 end
 
@@ -221,6 +242,13 @@ put_setting "metadata_source",                "auto"
 
 unless ENV["CFG_HARDCOVER_TOKEN"].to_s.empty?
   put_setting "hardcover_api_token", ENV["CFG_HARDCOVER_TOKEN"]
+end
+
+unless ENV["CFG_ZLIB_EMAIL"].to_s.empty? || ENV["CFG_ZLIB_PASS"].to_s.empty?
+  put_setting "zlibrary_enabled",  true
+  put_setting "zlibrary_url",      "https://z-library.sk\nhttps://z-library.bz\nhttps://z-library.rs"
+  put_setting "zlibrary_email",    ENV["CFG_ZLIB_EMAIL"]
+  put_setting "zlibrary_password", ENV["CFG_ZLIB_PASS"]
 end
 
 if ENV["CFG_WITH_ANNA"] == "1"
@@ -261,6 +289,8 @@ end
 begin
   puts "  gutenberg  #{SettingsService.gutenberg_configured? ? 'actief' : 'uit'}"
   puts "  librivox   #{SettingsService.librivox_configured? ? 'actief' : 'uit'}"
+  zl = SettingsService.zlibrary_configured?
+  puts "  zlibrary   #{zl ? 'actief' : 'uit'}"
   hc = SettingsService.hardcover_configured?
   puts "  hardcover  #{hc ? 'actief' : 'GEEN TOKEN — zoeken draait op Open Library alleen'}"
 rescue StandardError => e

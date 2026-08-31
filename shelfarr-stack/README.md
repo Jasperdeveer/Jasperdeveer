@@ -356,6 +356,22 @@ veel. Een token is gratis: maak een account op
 De standaardrun verhoogt sowieso de zoeklimieten van 20 naar 40 (Open Library) en van
 10 naar 25 (Hardcover); de defaults zijn krap voor auteurs met veel titels of edities.
 
+### Z-Library
+
+Directe downloads met je eigen account: geen indexer, geen Torbox, geen seeders.
+Voor een stack waar de torrent-kant weinig boeken oplevert is dit de kortste route.
+
+```bash
+./scripts/configure-shelfarr.sh --with-zlibrary
+```
+
+`zlibrary_configured?` eist vier dingen — de toggle, een URL, je e-mail én je
+wachtwoord — dus alle vier worden gezet. Het script vraagt om de eerste twee en
+vult de URL-lijst met `z-library.sk` voorop en `.bz`/`.rs` als terugval.
+
+Houd er rekening mee dat gratis accounts een daglimiet hebben, en dat Shelfarr deze
+integratie zelf als onofficieel bestempelt: verandert de site, dan kan hij breken.
+
 ### FlareSolverr en Anna's Archive
 
 ```bash
