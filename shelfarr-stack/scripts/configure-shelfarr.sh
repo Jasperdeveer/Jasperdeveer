@@ -239,6 +239,10 @@ put_setting "audiobook_output_path",          "/audiobooks"
 put_setting "ebook_output_path",              "/ebooks"
 put_setting "download_local_path",            ENV["CFG_DOWNLOAD_LOCAL_PATH"]
 put_setting "completed_download_import_mode", "copy"
+
+# Directe bronnen eerst. De publieke trackers in deze opstelling leveren voor
+# boeken structureel niets, dus torrent vooraan kost alleen een zoekronde.
+put_setting "preferred_download_types",       [ "direct", "torrent", "usenet" ]
 put_setting "enabled_languages",              [ "nl", "en" ]
 put_setting "default_language",               "nl"
 

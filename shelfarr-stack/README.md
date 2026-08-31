@@ -299,6 +299,9 @@ En de **category bepaalt de submap** waarin Decypharr de bestanden zet, dus met
 3. *Admin → Settings → Downloads → Output Paths*:
    - audioboeken `/audiobooks`, e-books `/ebooks`
    - `download_local_path` op de downloadmount, dus `/mnt/torbox`
+   - `preferred_download_types` op `["direct","torrent","usenet"]`. Leveren je
+     indexers voor boeken weinig op, dan scheelt dat per aanvraag een zoekronde
+     voordat Z-Library of Gutenberg aan de beurt is.
    - **import-modus: `copy`.** `hardlink` kán niet — de rclone-mount en je SD-kaart
      zijn verschillende filesystems, en je importeert via een symlink. `move` wil je
      niet: dat probeert te verwijderen uit je Torbox-opslag.
