@@ -2,3 +2,6 @@ node_modules/
 .env
 scorito-webapp/.env
 scorito-webapp/node_modules/
+
+# Python wheel-installatiebestanden (build-artefacten, niet in git)
+*.whl
