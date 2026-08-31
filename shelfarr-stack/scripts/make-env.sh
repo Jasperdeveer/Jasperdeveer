@@ -85,6 +85,17 @@ if [ "$DARCH" = "arm" ]; then
   note "docker-arch     arm (32-bit) — compat-override toegevoegd, anders exit 159"
 fi
 
+# Neem over welke optionele containers nu draaien, zodat --force ze niet
+# stilletjes uit COMPOSE_PROFILES gooit.
+PROFILES=""
+for pair in "flaresolverr:flaresolverr" "audiobookshelf:audiobookshelf" "shelfarr-libation:audible"; do
+  cname=${pair%%:*}; prof=${pair##*:}
+  if [ "$($DOCKER inspect "$cname" -f '{{.State.Status}}' 2>/dev/null)" = "running" ]; then
+    PROFILES="${PROFILES:+$PROFILES,}$prof"
+  fi
+done
+[ -n "$PROFILES" ] && note "profielen       $PROFILES (draaien nu)"
+
 # Bibliotheek: kandidaten voorstellen, maar niet gokken.
 LIB_HINT=$($DOCKER inspect readarr -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' 2>/dev/null \
            | grep -iE 'book|librar|media|calibre' | head -3)
@@ -128,6 +139,7 @@ HTTP_PORT=80
 
 ARR_NETWORK=$ARR_NETWORK
 COMPOSE_FILE=$COMPOSE_FILE
+COMPOSE_PROFILES=$PROFILES
 
 AUDIOBOOKSHELF_PORT=13378
 AUDIOBOOKSHELF_CONFIG_PATH=$PWD/audiobookshelf/config
