@@ -113,6 +113,46 @@ for r in stuck[:5]:
   esac
 fi
 
+hdr "Prowlarr-indexers"
+PKEY=$($DOCKER exec prowlarr cat /config/config.xml 2>/dev/null \
+       | sed -n 's:.*<ApiKey>\(.*\)</ApiKey>.*:\1:p' | head -1)
+if [ -z "$PKEY" ]; then
+  inf "API-key niet te lezen uit de prowlarr-container"
+else
+  curl -sS --max-time 10 -H "X-Api-Key: $PKEY" "http://localhost:9696/api/v1/indexer" 2>/dev/null \
+  | python3 -c '
+import json, sys
+try:
+    idx = json.load(sys.stdin)
+except Exception:
+    print("    kon de indexerlijst niet lezen"); sys.exit()
+if not isinstance(idx, list) or not idx:
+    print("    geen indexers geconfigureerd in Prowlarr"); sys.exit()
+# Newznab-categorieen: 7000-7999 = boeken, 3030 = audioboek
+def cats(i):
+    out = set()
+    for c in (i.get("capabilities") or {}).get("categories") or []:
+        out.add(c.get("id"))
+        for sub in c.get("subCategories") or []:
+            out.add(sub.get("id"))
+    return {c for c in out if c}
+withbooks = 0
+for i in sorted(idx, key=lambda x: x.get("name","")):
+    c = cats(i)
+    books = any(7000 <= n < 8000 for n in c) or 3030 in c
+    if books: withbooks += 1
+    mark = "boeken" if books else "GEEN boekcategorie"
+    on = "" if i.get("enable") else "  (uitgeschakeld)"
+    print("    %-28s %s%s" % (i.get("name","?")[:28], mark, on))
+print()
+if withbooks == 0:
+    print("    Geen enkele indexer voert boeken. Dat verklaart elke not_found:")
+    print("    Shelfarr kan zoeken wat het wil, er is niets te vinden.")
+else:
+    print("    %d van %d indexers voeren boeken." % (withbooks, len(idx)))
+'
+fi
+
 hdr "Dropbox-sync"
 if systemctl list-timers --all --no-pager 2>/dev/null | grep -q dropbox-sync.timer; then
   systemctl list-timers --all --no-pager 2>/dev/null | awk '/dropbox-sync.timer/ {print "    volgende: "$1" "$2" "$3"   ("$4" "$5")"}'

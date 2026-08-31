@@ -440,6 +440,7 @@ docker compose start shelfarr
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
 | Prowlarr-test faalt | `localhost` gebruikt, of `prowlarr` als hostnaam. Prowlarr zit in gluetun's namespace: `http://gluetun:9696`. |
 | Bookshelf en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Bookshelf houdt `readarr`, Shelfarr krijgt `shelfarr`. |
+| Alle aanvragen worden `not_found` | Het boek wordt gevonden maar er is geen release. Draai `./scripts/status.sh` en kijk onder Prowlarr-indexers of er überhaupt een indexer boeken voert. Denk ook aan de taal: met `default_language=nl` wordt per aanvraag een Nederlandse uitgave gezocht, en die zijn schaars. |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
 | Shelfarr op een subpad (`/shelfarr`) | Zet `RAILS_RELATIVE_URL_ROOT=/shelfarr` in de environment van de service. |
 
