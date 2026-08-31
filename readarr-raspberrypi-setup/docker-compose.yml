@@ -1,0 +1,77 @@
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${NORDVPN_OPENVPN_USER}
+      - OPENVPN_PASSWORD=${NORDVPN_OPENVPN_PASSWORD}
+      - SERVER_COUNTRIES=${NORDVPN_COUNTRY:-Netherlands}
+      - TZ=${TZ:-Europe/Amsterdam}
+    ports:
+      - "9696:9696"
+      - "8282:8282"
+    volumes:
+      - ./config/gluetun:/gluetun
+    restart: unless-stopped
+
+  readarr:
+    image: ghcr.io/pennydreadful/bookshelf:hardcover
+    platform: linux/arm64/v8
+    container_name: readarr
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Amsterdam}
+    volumes:
+      - ./config/readarr:/config
+      - ./library:/books
+      - /mnt/torbox:/torbox:ro
+      - ./scripts:/scripts:ro
+      - ./config/decypharr/downloads:/app/downloads
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    platform: linux/arm64/v8
+    container_name: prowlarr
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Amsterdam}
+    volumes:
+      - ./config/prowlarr:/config
+    restart: unless-stopped
+
+  decypharr:
+    image: ghcr.io/sirrobot01/decypharr:latest
+    platform: linux/arm64/v8
+    container_name: decypharr
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Amsterdam}
+    volumes:
+      - ./config/decypharr:/app
+    restart: unless-stopped
