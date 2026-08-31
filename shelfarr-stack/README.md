@@ -18,6 +18,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
 | `CLAUDE.md` | Context voor een Claude Code-sessie die op de Pi zelf draait. |
 | `scripts/status.sh` | Eén overzicht van containers, schijf, mount, aanvragen en de Dropbox-timer. |
+| `scripts/test-indexers.sh` | Laat Prowlarr zelf zoeken, buiten Shelfarr om. |
 | `scripts/tailscale-serve.sh` | Zet de web-UI achter HTTPS op je tailnet. |
 
 ## Hoe dit in je stack past
@@ -397,6 +398,10 @@ docker compose pull && docker compose up -d    # updaten
 docker image prune -f                          # oude images opruimen
 ```
 
+Blijven aanvragen op `not_found` staan, dan scheidt `./scripts/test-indexers.sh "dune"`
+de twee mogelijke oorzaken: het laat Prowlarr rechtstreeks zoeken, buiten Shelfarr om,
+en toont per indexer hoeveel resultaten er terugkomen.
+
 `status.sh` toont ook je aanvragen, mits je het een API-token geeft
 (*Profile → API tokens*):
 
@@ -440,7 +445,8 @@ docker compose start shelfarr
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
 | Prowlarr-test faalt | `localhost` gebruikt, of `prowlarr` als hostnaam. Prowlarr zit in gluetun's namespace: `http://gluetun:9696`. |
 | Bookshelf en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Bookshelf houdt `readarr`, Shelfarr krijgt `shelfarr`. |
-| Alle aanvragen worden `not_found` | Het boek wordt gevonden maar er is geen release. Draai `./scripts/status.sh` en kijk onder Prowlarr-indexers of er überhaupt een indexer boeken voert. Denk ook aan de taal: met `default_language=nl` wordt per aanvraag een Nederlandse uitgave gezocht, en die zijn schaars. |
+| Alle aanvragen worden `not_found` | Draai `./scripts/test-indexers.sh "dune"`. Komen daar resultaten uit, dan filtert Shelfarr ze weg — kijk naar de taal van de aanvraag en `min_match_confidence`. Komt er niets uit, dan ligt het bij Prowlarr, niet bij Shelfarr. |
+| Prowlarr geeft nul resultaten op alles | Publieke trackers blokkeren vaak VPN-exit-IP's, en Cloudflare-checks vragen om FlareSolverr **in Prowlarr** (Settings → Indexers → FlareSolverr op `http://flaresolverr:8191`). Kijk in Prowlarr onder System → Events of de indexers überhaupt antwoorden. |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
 | Shelfarr op een subpad (`/shelfarr`) | Zet `RAILS_RELATIVE_URL_ROOT=/shelfarr` in de environment van de service. |
 
