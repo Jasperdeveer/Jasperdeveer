@@ -44,35 +44,34 @@ TORBOX_MOUNT=$(mount | awk '$5 ~ /fuse\.rclone/ {print $3; exit}')
 TORBOX_MOUNT=${TORBOX_MOUNT:-/mnt/torbox}
 note "rclone-mount    $TORBOX_MOUNT"
 
-# Decypharr's downloadmap op de host, en waar eventuele symlinks heen wijzen.
-DL=$($DOCKER inspect decypharr -f '{{range .Mounts}}{{if eq .Destination "/app/downloads"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
-LINK_TARGET=""
-if [ -n "$DL" ] && [ -d "$DL" ]; then
-  first_link=$(find "$DL" -maxdepth 4 -type l -print -quit 2>/dev/null)
-  [ -n "$first_link" ] && LINK_TARGET=$(readlink "$first_link" 2>/dev/null)
-fi
+# Spiegel de mounts van de app die aantoonbaar werkt: Bookshelf. Die ziet
+# Decypharr's downloadmap en de rclone-mount op vaste containerpaden, en heeft
+# daardoor geen remote path mapping nodig. Shelfarr moet dezelfde kijk krijgen.
+mounts=$($DOCKER inspect readarr -f '{{range .Mounts}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}' 2>/dev/null)
+
+DOWNLOADS_PATH=$(printf '%s\n' "$mounts" | awk -F'|' '$2=="/app/downloads"{print $1; exit}')
+DOWNLOADS_CONTAINER_PATH="/app/downloads"
+
+TORBOX_HOST_PATH=$(printf '%s\n' "$mounts" | awk -F'|' -v m="$TORBOX_MOUNT" '$1==m{print $1; exit}')
+TORBOX_CONTAINER_PATH=$(printf '%s\n' "$mounts" | awk -F'|' -v m="$TORBOX_MOUNT" '$1==m{print $2; exit}')
 
 NEED_SYMLINK_OVERRIDE=0
-if [ -n "$DL" ]; then
-  DOWNLOADS_PATH="$DL"
-  note "downloadmap     $DL  (Decypharr /app/downloads)"
-  case "$DL" in
-    "$TORBOX_MOUNT"|"$TORBOX_MOUNT"/*)
-      note "                ligt in de rclone-mount, één mount volstaat" ;;
-    *)
-      if [ -n "$LINK_TARGET" ]; then
-        note "symlink wijst   $LINK_TARGET"
-        case "$LINK_TARGET" in
-          "$TORBOX_MOUNT"/*) NEED_SYMLINK_OVERRIDE=1
-            note "                buiten de mount én symlinks erheen: tweede mount nodig" ;;
-        esac
-      else
-        note "                geen symlinks aangetroffen"
-      fi ;;
-  esac
+if [ -n "$DOWNLOADS_PATH" ]; then
+  note "downloadmap     $DOWNLOADS_PATH  ->  $DOWNLOADS_CONTAINER_PATH  (zoals Bookshelf)"
 else
   DOWNLOADS_PATH="$TORBOX_MOUNT"
-  note "downloadmap     geen bind-mount op /app/downloads; $TORBOX_MOUNT gebruikt"
+  DOWNLOADS_CONTAINER_PATH="$TORBOX_MOUNT"
+  note "downloadmap     Bookshelf heeft geen /app/downloads; $TORBOX_MOUNT gebruikt"
+  note "                controleer dit — Shelfarr zoekt in <pad>/<category>"
+fi
+
+if [ -n "$TORBOX_CONTAINER_PATH" ]; then
+  NEED_SYMLINK_OVERRIDE=1
+  note "torbox-mount    $TORBOX_HOST_PATH  ->  $TORBOX_CONTAINER_PATH  (voor de symlinks)"
+else
+  TORBOX_HOST_PATH="$TORBOX_MOUNT"
+  TORBOX_CONTAINER_PATH="$TORBOX_MOUNT"
+  note "torbox-mount    Bookshelf mount hem niet; symlink-override blijft uit"
 fi
 
 COMPOSE_FILE="docker-compose.yml:docker-compose.arr-network.yml"
@@ -118,9 +117,10 @@ AUDIOBOOKS_PATH=$AUDIOBOOKS_PATH
 EBOOKS_PATH=$EBOOKS_PATH
 
 DOWNLOADS_PATH=$DOWNLOADS_PATH
-DOWNLOADS_CONTAINER_PATH=$DOWNLOADS_PATH
+DOWNLOADS_CONTAINER_PATH=$DOWNLOADS_CONTAINER_PATH
 DOWNLOADS_MOUNT_OPTS=ro,rslave
-SYMLINK_TARGET_ROOT=$TORBOX_MOUNT
+TORBOX_HOST_PATH=$TORBOX_HOST_PATH
+TORBOX_CONTAINER_PATH=$TORBOX_CONTAINER_PATH
 
 SHELFARR_PORT=5056
 BIND_ADDRESS=0.0.0.0

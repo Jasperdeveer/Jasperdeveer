@@ -1,13 +1,14 @@
-# Override: mount óók de rclone-mount op zijn eigen pad.
+# Override: geef Shelfarr dezelfde kijk op de rclone-mount als Bookshelf heeft.
 #
-# Nodig wanneer Decypharr zijn symlinks buiten /mnt/torbox neerzet en ze naar
-# bestanden ín die mount wijzen. De container moet dan beide paden 1-op-1 zien,
-# anders wijst de symlink binnen de container nergens heen.
+# Decypharr zet in zijn downloadmap symlinks neer die naar de Torbox-mount
+# wijzen. Bookshelf lost die op omdat het `/mnt/torbox` op `/torbox` gemount
+# heeft. Ziet Shelfarr dat pad niet, of op een ander containerpad, dan wijzen
+# diezelfde symlinks binnen Shelfarr nergens heen en mislukt elke import.
 #
-# `scripts/make-env.sh` zegt of je dit nodig hebt en zet zo nodig de juiste
-# COMPOSE_FILE in .env.
+# `scripts/make-env.sh` leest beide waarden uit de draaiende Bookshelf-container
+# en schakelt deze override in zodra die mount daar bestaat.
 
 services:
   shelfarr:
     volumes:
-      - ${SYMLINK_TARGET_ROOT:-/mnt/torbox}:${SYMLINK_TARGET_ROOT:-/mnt/torbox}:ro,rslave
+      - ${TORBOX_HOST_PATH:-/mnt/torbox}:${TORBOX_CONTAINER_PATH:-/torbox}:ro,rslave

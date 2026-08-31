@@ -31,19 +31,34 @@ vanuit een cloud-sessie niet kon: de echte stack uitlezen en `.env` kloppend mak
 - Ook op de Pi: pihole (poorten 53/80/443).
 - Een **Dropbox-timer** synct de bibliotheek door naar Dropbox.
 
-## Wat nog open staat
+## De downloadketen — uitgezocht, niet meer open
 
-1. **Welk hostpad hoort bij Decypharr's `/app/downloads`, en staan daar symlinks?**
-   Onder `/mnt` staan er geen, dus ze zitten in die downloadmap of Decypharr
-   importeert rechtstreeks uit `/mnt/torbox` (939 items). `./scripts/stack-check.sh`
-   dumpt de container-mounts en zoekt daar naar symlinks.
-   - Wijzen symlinks naar `/mnt/torbox/...` → `DOWNLOADS_PATH` en
-     `DOWNLOADS_CONTAINER_PATH` moeten die map 1-op-1 zichtbaar maken; kies zo nodig
-     `/mnt` als gedeelde bovenliggende map. Een symlink breekt zodra de container het
-     doel op een ander pad ziet.
-2. **Waar de Dropbox-timer vandaan synct** → daarbinnen horen `AUDIOBOOKS_PATH` en
-   `EBOOKS_PATH` te liggen, anders lopen Shelfarr-boeken niet mee naar Dropbox.
-3. **Wat Bookshelf als root folder gebruikt** → Shelfarr moet daar níét in schrijven.
+Decypharr mount `config/decypharr` op `/app`, dus zijn `download_folder`
+`/app/downloads` is op de host `config/decypharr/downloads`. Bookshelf mount
+diezelfde hostmap op **hetzelfde containerpad** `/app/downloads`, plus
+`/mnt/torbox` op `/torbox`. Daarom heeft Bookshelf geen Remote Path Mapping nodig.
+
+Shelfarr spiegelt die twee mounts, anders wijzen Decypharr's symlinks binnen
+Shelfarr nergens heen:
+
+| host | container | waarvoor |
+|---|---|---|
+| `…/config/decypharr/downloads` | `/app/downloads` | `download_local_path` |
+| `/mnt/torbox` | `/torbox` | doel van de symlinks |
+
+`/mnt/torbox` zelf is de rauwe Torbox-opslag: een platte lijst mediabestanden,
+géén category-mappen. `download_local_path` mag daar dus nooit op wijzen —
+Shelfarr zoekt in `<download_local_path>/<category>`.
+
+`make-env.sh` leest beide paden uit de draaiende Bookshelf-container in plaats
+van ze te raden, en schakelt `docker-compose.symlinks.yml` in.
+
+## Nog te controleren
+
+1. **Waar de Dropbox-timer vandaan synct.** `sync-to-dropbox.sh` doet inmiddels
+   zowel `library/` als `shelfarr/`, elk naar een eigen Dropbox-map.
+2. **Wat Bookshelf als root folder gebruikt** (`library/ -> /books`) → Shelfarr
+   moet daar níét in schrijven.
 
 ## Werkwijze
 

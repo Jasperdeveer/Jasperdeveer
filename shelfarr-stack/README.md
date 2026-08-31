@@ -219,18 +219,25 @@ Bookshelf heeft geen Remote Path Mappings ingevuld staan — Decypharr en Booksh
 de bestanden dus op precies hetzelfde pad. Dat moet voor Shelfarr net zo blijven; daar
 gaat de volgende paragraaf over.
 
-### De rclone-mount en Decypharr's symlinks
+### De downloadketen: twee mounts spiegelen
 
-Decypharr downloadt niets naar de Pi. Het zet **symlinks** neer die wijzen naar de
-rclone-mount, en Shelfarr volgt die symlinks bij het importeren. Daarom staan host- en
-containerpad in `docker-compose.yml` op precies hetzelfde: een symlink naar
-`/mnt/torbox/...` breekt zodra de container dat bestand op `/downloads/...` ziet.
+Decypharr downloadt niets naar de Pi. Het zet **symlinks** in zijn downloadmap die
+naar de rclone-mount wijzen. Bookshelf lost die op omdat het beide op vaste
+containerpaden ziet, en daarom heeft het geen Remote Path Mapping nodig. Shelfarr
+moet exact dezelfde kijk krijgen:
 
-Staan Decypharr's symlinks in een aparte map (bijvoorbeeld `/mnt/symlinks`), zet dan
-`DOWNLOADS_PATH` én `DOWNLOADS_CONTAINER_PATH` op de gedeelde bovenliggende map `/mnt`.
-Welke map het is zegt `./scripts/stack-check.sh` je — die laat zien waar de symlinks
-staan en waar ze heen wijzen. Anders staat het in Decypharr's config, of in Bookshelf →
-Activity → History bij een geïmporteerd boek.
+| host | container | waarvoor |
+|---|---|---|
+| `…/config/decypharr/downloads` | `/app/downloads` | hier zoekt Shelfarr, per category |
+| `/mnt/torbox` | `/torbox` | waar de symlinks heen wijzen |
+
+`make-env.sh` leest die paden uit de draaiende Bookshelf-container en zet ze in
+`.env`; `docker-compose.symlinks.yml` voegt de tweede mount toe.
+
+> **Let op:** `/mnt/torbox` is de rauwe Torbox-opslag — een platte lijst
+> mediabestanden zonder category-mappen. Zet `download_local_path` daar nooit op:
+> Shelfarr zoekt in `<download_local_path>/<category>`, en dat pad bestaat er niet.
+> Het dashboard meldt dat als *Download Paths: Degraded*.
 
 Aan de mount zelf hoeft niets te veranderen — die staat al goed:
 
@@ -241,16 +248,15 @@ rclone mount torbox: /mnt/torbox --allow-other --vfs-cache-mode=full --dir-cache
 - `--allow-other` staat aan, dus containers kunnen erbij (`user_id=1000,group_id=1000`
   komt overeen met `PUID`/`PGID`).
 - `--dir-cache-time=1m` is kort genoeg dat een net afgeronde download snel zichtbaar is.
-  Zonder dat cachet rclone vijf minuten en faalt de import terwijl het bestand er "al" is.
 - **Mount-propagation** is het enige wat aan Docker-kant nodig is: een FUSE-mount die ná
   Docker wordt aangekoppeld is onzichtbaar in een container, tenzij de bind-mount
-  `rslave` gebruikt. Dat staat al zo in `docker-compose.yml`.
+  `rslave` gebruikt. Dat staat al zo in de compose.
 
 Controleren of alles klopt:
 
 ```bash
-docker compose exec shelfarr ls /mnt/torbox        # ziet de container de mount?
-docker compose exec shelfarr wget -qO- http://gluetun:8282 >/dev/null && echo decypharr-ok
+docker compose exec shelfarr ls /torbox | head
+docker compose exec shelfarr ls /app/downloads
 ```
 
 ## 5. Configureren
