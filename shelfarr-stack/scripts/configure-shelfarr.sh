@@ -206,7 +206,8 @@ put_setting "audiobook_output_path",          "/audiobooks"
 put_setting "ebook_output_path",              "/ebooks"
 put_setting "download_local_path",            ENV["CFG_DOWNLOAD_LOCAL_PATH"]
 put_setting "completed_download_import_mode", "copy"
-put_setting "enabled_languages",              [ "en", "nl" ]
+put_setting "enabled_languages",              [ "nl", "en" ]
+put_setting "default_language",               "nl"
 
 # Publiek domein, geen account of key nodig — altijd aan.
 put_setting "gutenberg_enabled",              true
