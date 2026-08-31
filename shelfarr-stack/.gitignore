@@ -5,3 +5,6 @@
 data/
 qbittorrent/
 audiobookshelf/
+
+# API-token voor scripts/status.sh
+.shelfarr-token

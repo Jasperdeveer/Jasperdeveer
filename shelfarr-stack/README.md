@@ -17,6 +17,7 @@ op `/mnt/torbox`, en een Dropbox-timer die de bibliotheek wegschrijft.
 | `.env.example` | Alle paden en instellingen. Kopiëren naar `.env`. |
 | `scripts/stack-check.sh` | Leest je bestaande stack uit en zegt wat er in `.env` moet. |
 | `CLAUDE.md` | Context voor een Claude Code-sessie die op de Pi zelf draait. |
+| `scripts/status.sh` | Eén overzicht van containers, schijf, mount, aanvragen en de Dropbox-timer. |
 | `scripts/tailscale-serve.sh` | Zet de web-UI achter HTTPS op je tailnet. |
 
 ## Hoe dit in je stack past
@@ -383,11 +384,22 @@ Bewaar die regels met `iptables-persistent`, anders zijn ze na een herstart weg.
 ## 8. Beheer
 
 ```bash
+./scripts/status.sh                            # de hele keten in één blik
 docker compose ps                              # status + health
 docker compose logs -f shelfarr                # meekijken
 docker compose pull && docker compose up -d    # updaten
 docker image prune -f                          # oude images opruimen
 ```
+
+`status.sh` toont ook je aanvragen, mits je het een API-token geeft
+(*Profile → API tokens*):
+
+```bash
+echo 'shf_...' > .shelfarr-token && chmod 600 .shelfarr-token
+```
+
+Dat bestand staat in `.gitignore`. Elke minuut laten meekijken kan met
+`watch -n 60 ./scripts/status.sh`.
 
 **Updaten:** verhoog `SHELFARR_VERSION` in `.env` naar de nieuwste release van
 [shelfarr/releases](https://github.com/Pedro-Revez-Silva/shelfarr/releases) — release
