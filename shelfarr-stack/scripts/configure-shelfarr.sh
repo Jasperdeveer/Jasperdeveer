@@ -252,8 +252,9 @@ put_setting "open_library_search_limit",      40
 put_setting "hardcover_search_limit",         25
 put_setting "metadata_source",                "auto"
 
-unless ENV["CFG_HARDCOVER_TOKEN"].to_s.empty?
-  put_setting "hardcover_api_token", ENV["CFG_HARDCOVER_TOKEN"]
+hc_token = ENV["CFG_HARDCOVER_TOKEN"].to_s.strip.sub(/\ABearer\s+/i, "")
+unless hc_token.empty?
+  put_setting "hardcover_api_token", hc_token
 end
 
 unless ENV["CFG_ZLIB_EMAIL"].to_s.empty? || ENV["CFG_ZLIB_PASS"].to_s.empty?
@@ -303,10 +304,33 @@ begin
   puts "  librivox   #{SettingsService.librivox_configured? ? 'actief' : 'uit'}"
   zl = SettingsService.zlibrary_configured?
   puts "  zlibrary   #{zl ? 'actief' : 'uit'}"
-  hc = SettingsService.hardcover_configured?
-  puts "  hardcover  #{hc ? 'actief' : 'GEEN TOKEN — zoeken draait op Open Library alleen'}"
 rescue StandardError => e
   puts "  bronnen    status onleesbaar: #{e.class}"
+end
+
+begin
+  tok = Setting.find_by(key: "hardcover_api_token")&.value.to_s
+  if tok.empty?
+    puts "  hardcover  geen token — zoeken draait op Open Library alleen"
+  else
+    uri = URI("https://api.hardcover.app/v1/graphql")
+    req = Net::HTTP::Post.new(uri)
+    req["Authorization"] = "Bearer #{tok}"
+    req["Content-Type"]  = "application/json"
+    req.body = '{"query":"{ me { username } }"}'
+    res = Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 20) { |h| h.request(req) }
+    body = res.body.to_s
+    if res.code == "200" && !body.include?('"errors"')
+      puts "  hardcover  HTTP 200 — token werkt (#{tok.length} tekens)"
+    else
+      puts "  hardcover  HTTP #{res.code} — token geweigerd (#{tok.length} tekens)"
+      puts "             #{body[0, 140]}"
+      puts "             Hardcover geeft lange JWT's uit die met eyJ beginnen;"
+      puts "             is de jouwe korter, dan is hij waarschijnlijk afgekapt."
+    end
+  end
+rescue StandardError => e
+  puts "  hardcover  onbereikbaar: #{e.class} #{e.message}"
 end
 
 if ENV["CFG_WITH_ANNA"] == "1"

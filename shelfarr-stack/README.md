@@ -349,6 +349,13 @@ Hardcover is de betere van de twee, maar `hardcover_configured?` eist een niet-l
 veel. Een token is gratis: maak een account op
 [hardcover.app](https://hardcover.app/account/api) en kopieer het.
 
+Let op twee valkuilen. Hardcover toont het token mét het woord `Bearer` ervoor; plak
+je dat mee, dan staat het er straks dubbel. Het script haalt dat er zelf af. En het
+token is een lange JWT die met `eyJ` begint — is wat je hebt een stuk korter, dan heb
+je waarschijnlijk maar een deel te pakken. Het script doet na afloop een echte
+aanroep naar `api.hardcover.app` en zegt of het token wordt geaccepteerd, in plaats
+van alleen te melden dát er een token staat.
+
 ```bash
 ./scripts/configure-shelfarr.sh --with-hardcover
 ```
@@ -471,6 +478,8 @@ docker compose start shelfarr
 | Container blijft `unhealthy` na de eerste start | De healthcheck heeft 90s speling; kijk in `docker compose logs shelfarr` of hij echt vastloopt. |
 | Prowlarr-test faalt | `localhost` gebruikt, of `prowlarr` als hostnaam. Prowlarr zit in gluetun's namespace: `http://gluetun:9696`. |
 | Bookshelf en Shelfarr pakken elkaars downloads | Beide staan op dezelfde category. Bookshelf houdt `readarr`, Shelfarr krijgt `shelfarr`. |
+| Dashboard meldt `Hardcover: Down` | Het token wordt geweigerd. Draai `./scripts/configure-shelfarr.sh --with-hardcover` opnieuw; die test de aanroep nu echt en toont het antwoord van Hardcover. |
+| `Download Paths: Degraded`, category folder ontbreekt | Decypharr maakt `<downloads>/shelfarr` pas aan bij de eerste download met die category. Aanmaken mag ook met de hand: `mkdir -p …/config/decypharr/downloads/shelfarr`. |
 | Alle aanvragen worden `not_found` | Draai `./scripts/test-indexers.sh "dune"`. Komen daar resultaten uit, dan filtert Shelfarr ze weg — kijk naar de taal van de aanvraag en `min_match_confidence`. Komt er niets uit, dan ligt het bij Prowlarr, niet bij Shelfarr. |
 | Prowlarr geeft nul resultaten op alles | Publieke trackers blokkeren vaak VPN-exit-IP's, en Cloudflare-checks vragen om FlareSolverr **in Prowlarr** (Settings → Indexers → FlareSolverr op `http://flaresolverr:8191`). Kijk in Prowlarr onder System → Events of de indexers überhaupt antwoorden. |
 | Login lukt niet achter een eigen reverse proxy | De proxy moet `X-Forwarded-Proto` doorgeven. `tailscale serve` doet dat vanzelf. |
