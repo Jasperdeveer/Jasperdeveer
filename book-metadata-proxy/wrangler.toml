@@ -1,0 +1,31 @@
+name = "book-metadata-proxy"
+main = "src/worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Vul je eigen account_id in (staat in het Cloudflare dashboard, rechterkolom).
+# account_id = "..."
+
+[observability]
+enabled = true
+
+# KV wordt gebruikt voor de auteur-index en de verrijkingscache.
+# Aanmaken:  wrangler kv namespace create METADATA
+# en plak het id hieronder.
+[[kv_namespaces]]
+binding = "METADATA"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+# Contactadres in de User-Agent. Open Library vraagt hier expliciet om.
+CONTACT_EMAIL = "info@jasperdeveer.nl"
+# Maximaal aantal werken dat per auteur wordt teruggegeven aan Readarr.
+MAX_AUTHOR_WORKS = "500"
+# Maximaal aantal edities per werk.
+MAX_WORK_EDITIONS = "40"
+# Aantal werken dat per achtergrondronde bij Hardcover wordt verrijkt.
+ENRICH_BATCH_SIZE = "20"
+
+# Geheimen (niet hier invullen, maar via `wrangler secret put <NAAM>`):
+#   HARDCOVER_TOKEN    - token van https://hardcover.app/account/api
+#   GOOGLE_BOOKS_KEY   - optioneel, verhoogt het Google Books quotum

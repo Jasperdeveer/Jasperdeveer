@@ -1,0 +1,19 @@
+{
+  "name": "book-metadata-proxy",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker die rijkere boek-metadata levert aan Readarr (BookInfo-compatibel) en Shelfarr (Open Library-compatibel), gevoed door Open Library + Hardcover + Google Books",
+  "type": "module",
+  "main": "src/worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}
