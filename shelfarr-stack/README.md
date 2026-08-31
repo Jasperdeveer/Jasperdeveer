@@ -366,8 +366,18 @@ Voor een stack waar de torrent-kant weinig boeken oplevert is dit de kortste rou
 ```
 
 `zlibrary_configured?` eist vier dingen — de toggle, een URL, je e-mail én je
-wachtwoord — dus alle vier worden gezet. Het script vraagt om de eerste twee en
-vult de URL-lijst met `z-library.sk` voorop en `.bz`/`.rs` als terugval.
+wachtwoord — dus alle vier worden gezet. Het script vraagt om de laatste twee.
+
+Z-Library wisselt regelmatig van domein, en Shelfarr's ingebouwde standaardlijst
+(`z-library.bz`, `z-library.rs`) is inmiddels achterhaald. Het script zet de lijst
+die per 2026-08-31 actueel is; Shelfarr probeert ze op volgorde en gebruikt de
+eerste die je login accepteert. Rouleren de domeinen weer, dan hoef je dit bestand
+niet aan te raken:
+
+```bash
+ZLIBRARY_URLS=$'https://nieuw.example\nhttps://ander.example' \
+  ./scripts/configure-shelfarr.sh --with-zlibrary
+```
 
 Houd er rekening mee dat gratis accounts een daglimiet hebben, en dat Shelfarr deze
 integratie zelf als onofficieel bestempelt: verandert de site, dan kan hij breken.

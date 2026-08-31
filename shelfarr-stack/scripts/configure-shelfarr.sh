@@ -115,11 +115,22 @@ if [ "$WITH_HARDCOVER" = 1 ]; then
                             || note "leeg gelaten — Hardcover blijft uit"
 fi
 
+# Z-Library wisselt regelmatig van domein. Deze lijst is actueel per 2026-08-31;
+# Shelfarr probeert ze op volgorde en gebruikt de eerste die je login accepteert.
+# Overschrijven kan zonder dit bestand aan te raken:
+#   ZLIBRARY_URLS=$'https://nieuw.example\nhttps://ander.example' ./scripts/configure-shelfarr.sh --with-zlibrary
+ZLIB_URLS="${ZLIBRARY_URLS:-https://z-library.sk
+https://z-lib.sk
+https://z-library.im
+https://z-lib.fm
+https://libb.la}"
+
 ZLIB_EMAIL=""; ZLIB_PASS=""
 if [ "$WITH_ZLIB" = 1 ]; then
   hdr "Z-Library"
   note "Directe downloads: geen indexer, geen Torbox, geen seeders nodig."
   note "Shelfarr eist e-mail én wachtwoord; zonder allebei blijft de bron uit."
+  note "domeinen: $(printf '%s' "$ZLIB_URLS" | tr '\n' ' ')"
   read -rp  "  E-mail: " ZLIB_EMAIL
   read -rsp "  Wachtwoord: " ZLIB_PASS; echo
   if [ -n "$ZLIB_EMAIL" ] && [ -n "$ZLIB_PASS" ]; then
@@ -199,6 +210,7 @@ $DOCKER compose exec -T \
   -e CFG_WITH_ANNA="$WITH_ANNA" \
   -e CFG_HARDCOVER_TOKEN="$HARDCOVER_TOKEN" \
   -e CFG_ZLIB_EMAIL="$ZLIB_EMAIL" \
+  -e CFG_ZLIB_URLS="$ZLIB_URLS" \
   -e CFG_ZLIB_PASS="$ZLIB_PASS" \
   -e CFG_FLARESOLVERR_URL="$FLARESOLVERR_URL" \
   -e CFG_ANNA_ENABLED="$ANNA_ENABLED" \
@@ -246,7 +258,7 @@ end
 
 unless ENV["CFG_ZLIB_EMAIL"].to_s.empty? || ENV["CFG_ZLIB_PASS"].to_s.empty?
   put_setting "zlibrary_enabled",  true
-  put_setting "zlibrary_url",      "https://z-library.sk\nhttps://z-library.bz\nhttps://z-library.rs"
+  put_setting "zlibrary_url",      ENV["CFG_ZLIB_URLS"]
   put_setting "zlibrary_email",    ENV["CFG_ZLIB_EMAIL"]
   put_setting "zlibrary_password", ENV["CFG_ZLIB_PASS"]
 end
