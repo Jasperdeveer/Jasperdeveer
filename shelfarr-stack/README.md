@@ -330,6 +330,24 @@ Standaard uit; op een Pi scheelt dat geheugen.
 
 Permanent aanzetten kan met `COMPOSE_PROFILES=audiobookshelf` in je `.env`.
 
+### Betere zoekresultaten: Hardcover
+
+Vindt Shelfarr zelfs bekende titels niet, dan ligt dat aan de **metadata**, niet aan je
+indexers: de zoekbalk zoekt in Open Library en Hardcover, en pas ná het aanvragen gaat
+Prowlarr op zoek naar een release.
+
+Hardcover is de betere van de twee, maar `hardcover_configured?` eist een niet-lege
+`hardcover_api_token` — zonder token draait alles op Open Library alleen, en dat mist
+veel. Een token is gratis: maak een account op
+[hardcover.app](https://hardcover.app/account/api) en kopieer het.
+
+```bash
+./scripts/configure-shelfarr.sh --with-hardcover
+```
+
+De standaardrun verhoogt sowieso de zoeklimieten van 20 naar 40 (Open Library) en van
+10 naar 25 (Hardcover); de defaults zijn krap voor auteurs met veel titels of edities.
+
 ### FlareSolverr en Anna's Archive
 
 ```bash

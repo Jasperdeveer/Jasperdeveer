@@ -4,7 +4,8 @@
 # draaiende stack, zodat je niks hoeft over te typen.
 #
 #   ./scripts/configure-shelfarr.sh
-#   ./scripts/configure-shelfarr.sh --with-anna    # ook FlareSolverr + Anna's Archive
+#   ./scripts/configure-shelfarr.sh --with-hardcover   # betere metadata (gratis token)
+#   ./scripts/configure-shelfarr.sh --with-anna        # FlareSolverr + Anna's Archive
 #
 # Draai dit ná `docker compose up -d` en nadat je je adminaccount hebt
 # geregistreerd. Herhaald draaien is veilig: bestaande waarden worden bijgewerkt,
@@ -14,11 +15,14 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 WITH_ANNA=0
-case "${1:-}" in
-  --with-anna) WITH_ANNA=1 ;;
-  "")          ;;
-  *) echo "onbekende optie: $1" >&2; exit 1 ;;
-esac
+WITH_HARDCOVER=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-anna)      WITH_ANNA=1 ;;
+    --with-hardcover) WITH_HARDCOVER=1 ;;
+    *) echo "onbekende optie: $arg" >&2; exit 1 ;;
+  esac
+done
 
 DOCKER="docker"
 command -v docker >/dev/null 2>&1 && { docker info >/dev/null 2>&1 || DOCKER="sudo docker"; }
@@ -98,6 +102,16 @@ if [ -z "$DECY_PASS" ]; then
 fi
 [ -n "$DECY_PASS" ] && note "wachtwoord ingelezen (${#DECY_PASS} tekens), URL $DECY_URL"
 
+HARDCOVER_TOKEN=""
+if [ "$WITH_HARDCOVER" = 1 ]; then
+  hdr "Hardcover"
+  note "Gratis token via hardcover.app/account/api (account aanmaken, geen betaling)."
+  note "Zonder token draait de zoekfunctie op Open Library alleen, en die mist veel."
+  read -rsp "  API-token: " HARDCOVER_TOKEN; echo
+  [ -n "$HARDCOVER_TOKEN" ] && note "token ingelezen (${#HARDCOVER_TOKEN} tekens)" \
+                            || note "leeg gelaten — Hardcover blijft uit"
+fi
+
 FLARESOLVERR_URL=""
 ANNA_ENABLED="false"
 ANNA_KEY=""
@@ -165,6 +179,7 @@ $DOCKER compose exec -T \
   -e CFG_DECY_PASS="$DECY_PASS" \
   -e CFG_DOWNLOAD_LOCAL_PATH="$DOWNLOAD_LOCAL_PATH" \
   -e CFG_WITH_ANNA="$WITH_ANNA" \
+  -e CFG_HARDCOVER_TOKEN="$HARDCOVER_TOKEN" \
   -e CFG_FLARESOLVERR_URL="$FLARESOLVERR_URL" \
   -e CFG_ANNA_ENABLED="$ANNA_ENABLED" \
   -e CFG_ANNA_KEY="$ANNA_KEY" \
@@ -196,6 +211,16 @@ put_setting "enabled_languages",              [ "en", "nl" ]
 # Publiek domein, geen account of key nodig — altijd aan.
 put_setting "gutenberg_enabled",              true
 put_setting "librivox_enabled",               true
+
+# Ruimere zoekresultaten; de defaults (20 en 10) zijn krap voor auteurs met
+# veel titels of edities.
+put_setting "open_library_search_limit",      40
+put_setting "hardcover_search_limit",         25
+put_setting "metadata_source",                "auto"
+
+unless ENV["CFG_HARDCOVER_TOKEN"].to_s.empty?
+  put_setting "hardcover_api_token", ENV["CFG_HARDCOVER_TOKEN"]
+end
 
 if ENV["CFG_WITH_ANNA"] == "1"
   put_setting "flaresolverr_url",    ENV["CFG_FLARESOLVERR_URL"]
@@ -235,6 +260,8 @@ end
 begin
   puts "  gutenberg  #{SettingsService.gutenberg_configured? ? 'actief' : 'uit'}"
   puts "  librivox   #{SettingsService.librivox_configured? ? 'actief' : 'uit'}"
+  hc = SettingsService.hardcover_configured?
+  puts "  hardcover  #{hc ? 'actief' : 'GEEN TOKEN — zoeken draait op Open Library alleen'}"
 rescue StandardError => e
   puts "  bronnen    status onleesbaar: #{e.class}"
 end
