@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "Claude_buddy",
+            "tool": "buddy_hook",
+            "input": {
+              "event": "${hook_event_name}",
+              "tool": "${tool_name}",
+              "cwd": "${cwd}",
+              "input": "${tool_input}"
+            },
+            "timeout": 300
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "Claude_buddy",
+            "tool": "buddy_hook",
+            "input": {
+              "event": "${hook_event_name}",
+              "tool": "${tool_name}",
+              "cwd": "${cwd}",
+              "input": "${tool_input}"
+            },
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "Claude_buddy",
+            "tool": "buddy_hook",
+            "input": {
+              "event": "${hook_event_name}",
+              "tool": "${tool_name}",
+              "cwd": "${cwd}",
+              "input": "${tool_input}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
