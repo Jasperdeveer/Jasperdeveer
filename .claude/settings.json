@@ -53,6 +53,24 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "Claude_buddy",
+            "tool": "buddy_hook",
+            "input": {
+              "event": "${hook_event_name}",
+              "tool": "${tool_name}",
+              "cwd": "${cwd}",
+              "input": "{}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
